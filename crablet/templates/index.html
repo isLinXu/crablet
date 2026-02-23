@@ -1,0 +1,734 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Crablet v0.1.0 - AI Workspace</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#3b82f6',
+                        dark: '#0f172a',
+                        darklighter: '#1e293b',
+                    }
+                }
+            }
+        }
+    </script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.0/dist/mermaid.min.js"></script>
+    <script>mermaid.initialize({ startOnLoad: false, theme: 'default', securityLevel: 'loose' });</script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-rust.min.js"></script>
+    <style>
+        /* Toast Notification */
+        #toast-container { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 100; display: flex; flex-col-reverse: column-reverse; gap: 10px; pointer-events: none; }
+        .toast { background: #333; color: white; padding: 10px 20px; border-radius: 20px; font-size: 14px; opacity: 0; transition: opacity 0.3s; pointer-events: auto; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .toast.show { opacity: 1; }
+        .toast.error { background: #ef4444; }
+        .toast.success { background: #22c55e; }
+        
+        /* Thinking Animation */
+        .thinking-bubble {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 8px 12px;
+            background: #f3f4f6;
+            border-radius: 12px;
+            color: #6b7280;
+            font-size: 12px;
+        }
+        .dark .thinking-bubble {
+            background: #1f2937;
+            color: #9ca3af;
+        }
+        .thinking-dot {
+            width: 6px;
+            height: 6px;
+            background: currentColor;
+            border-radius: 50%;
+            animation: thinking 1.4s infinite ease-in-out both;
+        }
+        .thinking-dot:nth-child(1) { animation-delay: -0.32s; }
+        .thinking-dot:nth-child(2) { animation-delay: -0.16s; }
+        @keyframes thinking {
+            0%, 80%, 100% { transform: scale(0); }
+            40% { transform: scale(1); }
+        }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+        .dark ::-webkit-scrollbar-thumb { background: #475569; }
+        .prose pre { background-color: #1e293b; color: #e2e8f0; padding: 1rem; border-radius: 0.5rem; overflow-x: auto; }
+        .prose code { font-family: monospace; background-color: rgba(0,0,0,0.05); padding: 0.1rem 0.3rem; border-radius: 0.2rem; }
+        .dark .prose code { background-color: rgba(255,255,255,0.1); }
+    </style>
+</head>
+<body class="bg-white dark:bg-dark text-gray-900 dark:text-gray-100 font-sans antialiased h-screen flex overflow-hidden transition-colors duration-200">
+    <div id="toast-container"></div>
+
+    <!-- 1. Primary Sidebar: Projects -->
+    <aside class="w-16 bg-gray-50 dark:bg-darklighter border-r border-gray-200 dark:border-gray-700 flex flex-col items-center py-4 space-y-4 z-30 flex-shrink-0">
+        <div class="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center text-white font-bold text-2xl shadow-lg cursor-default select-none">🦀</div>
+        
+        <div id="project-list-container" class="flex flex-col space-y-3 w-full items-center overflow-y-auto flex-1 px-2 pt-2">
+            <!-- Projects rendered via JS -->
+        </div>
+        
+        <button onclick="openModal('project-modal')" class="w-10 h-10 rounded-xl bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 flex items-center justify-center transition-colors text-gray-600 dark:text-gray-300 group relative">
+            <i class="fas fa-plus"></i>
+        </button>
+
+        <div class="mt-auto flex flex-col space-y-4 items-center w-full pb-2">
+            <button class="w-10 h-10 rounded-full bg-gradient-to-tr from-blue-400 to-purple-500 overflow-hidden ring-2 ring-transparent hover:ring-blue-400 transition-all">
+               <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Felix" alt="User">
+            </button>
+        </div>
+    </aside>
+
+    <!-- 2. Secondary Sidebar: Chats -->
+    <aside class="w-64 bg-gray-50 dark:bg-darklighter border-r border-gray-200 dark:border-gray-700 flex flex-col z-20 flex-shrink-0 transition-all duration-300" id="secondary-sidebar">
+        <div class="h-14 flex items-center px-4 border-b border-gray-200 dark:border-gray-700 justify-between">
+            <div class="font-bold text-lg truncate flex items-center gap-2">
+                <span id="current-project-icon" class="text-blue-500"><i class="fas fa-folder"></i></span>
+                <span id="current-project-name">Default Project</span>
+            </div>
+            <button onclick="clearAllChats()" class="text-xs text-gray-400 hover:text-red-500 transition-colors" title="Clear all chats"><i class="fas fa-trash-alt"></i></button>
+        </div>
+
+        <div class="p-3">
+            <button onclick="createNewChat()" class="w-full py-2.5 px-4 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 hover:border-blue-500 dark:hover:border-blue-500 text-gray-700 dark:text-gray-200 rounded-lg shadow-sm transition-all flex items-center justify-center gap-2 font-medium text-sm group">
+                <i class="fas fa-plus text-blue-500 group-hover:scale-110 transition-transform"></i> New Chat
+            </button>
+        </div>
+
+        <div class="flex-1 overflow-y-auto px-2 space-y-1" id="chat-list-container">
+            <!-- Chats rendered via JS -->
+            <div class="text-center text-xs text-gray-400 mt-4 italic">No chats yet</div>
+        </div>
+    </aside>
+
+    <!-- 3. Main Content -->
+    <main class="flex-1 flex flex-col min-w-0 bg-white dark:bg-dark relative">
+        <header class="h-14 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between px-4 bg-white/80 dark:bg-dark/80 backdrop-blur-md z-10 sticky top-0">
+            <div class="flex items-center gap-2 text-sm">
+               <span id="header-chat-name" class="text-gray-900 dark:text-white font-medium flex items-center gap-2">New Chat</span>
+            </div>
+            
+            <div class="flex items-center gap-1 md:gap-2">
+                <button onclick="openModal('openclaw-modal')" class="p-2 text-gray-500 hover:text-blue-600 dark:hover:text-blue-400 transition-colors rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800" title="OpenClaw System"><i class="fas fa-robot"></i></button>
+                <button onclick="openModal('skills-modal')" class="p-2 text-gray-500 hover:text-purple-600 dark:hover:text-purple-400 transition-colors rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800" title="Skills"><i class="fas fa-puzzle-piece"></i></button>
+                <button onclick="openModal('kb-modal')" class="p-2 text-gray-500 hover:text-green-600 dark:hover:text-green-400 transition-colors rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800" title="Knowledge Base"><i class="fas fa-database"></i></button>
+                <div class="w-px h-4 bg-gray-300 dark:bg-gray-600 mx-1"></div>
+                <button onclick="toggleTheme()" class="p-2 text-gray-500 hover:text-yellow-500 dark:hover:text-yellow-400 transition-colors rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"><i class="fas fa-sun" id="theme-icon"></i></button>
+                <button onclick="toggleCanvas()" class="p-2 text-gray-500 hover:text-gray-900 dark:hover:text-white transition-colors rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"><i class="fas fa-columns"></i></button>
+            </div>
+        </header>
+
+        <div class="flex-1 flex overflow-hidden relative">
+            <div class="flex-1 flex flex-col relative min-w-0 transition-all duration-300" id="chat-panel">
+                <!-- Empty State (Moved out of chat-messages) -->
+                <div id="empty-state" class="absolute inset-0 flex flex-col items-center justify-center text-center space-y-4 opacity-50 z-0 pb-32">
+                    <div class="w-16 h-16 bg-blue-100 dark:bg-blue-900 rounded-2xl flex items-center justify-center text-3xl mb-2">🦀</div>
+                    <h2 class="text-2xl font-bold text-gray-700 dark:text-gray-200">Crablet v0.1.0</h2>
+                    <p class="text-sm text-gray-500 max-w-md">Select a project or start a new chat to begin.</p>
+                </div>
+
+                <div id="chat-messages" class="flex-1 overflow-y-auto p-4 md:p-6 space-y-6 scroll-smooth pb-32 z-10 relative">
+                    <!-- Messages will be inserted here -->
+                </div>
+                
+                <div class="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-white via-white to-transparent dark:from-dark dark:via-dark pt-10 z-20">
+                    <div class="max-w-4xl mx-auto bg-white dark:bg-gray-800 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 p-2 transition-all focus-within:ring-2 focus-within:ring-blue-500/50">
+                        <div class="flex items-center gap-2 px-2 pb-2 border-b border-gray-100 dark:border-gray-700 mb-2">
+                            <button onclick="document.getElementById('file-upload').click()" class="text-gray-400 hover:text-blue-500 text-sm flex items-center gap-1 px-2 py-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700 transition"><i class="fas fa-paperclip"></i> <span class="hidden sm:inline">Attach</span></button>
+                            <input type="file" id="file-upload" class="hidden" multiple onchange="handleFileUpload(this)">
+                            <select id="model-mode" class="bg-transparent text-xs text-gray-500 dark:text-gray-400 border-none focus:ring-0 cursor-pointer hover:text-gray-700 dark:hover:text-gray-200">
+                                <option value="auto">Auto Routing</option>
+                                <option value="cloud">Force Cloud</option>
+                                <option value="local">Force Local</option>
+                            </select>
+                        </div>
+                        <div class="flex items-end gap-2">
+                            <textarea id="chat-input" class="w-full bg-transparent border-0 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:ring-0 resize-none max-h-48 py-2 px-3" rows="1" placeholder="Type a message..." style="min-height: 44px;" onkeydown="if(event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); submitChat(); }"></textarea>
+                            <button onclick="submitChat()" class="mb-1 p-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-sm transition-transform active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed" id="send-btn"><i class="fas fa-arrow-up"></i></button>
+            </div>
+            <div id="latency-display" class="absolute -top-6 right-2 text-xs text-gray-400 font-mono hidden">Latency: <span id="latency-value">0</span>ms</div>
+        </div>
+                </div>
+            </div>
+
+            <div class="w-96 border-l border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-darklighter flex flex-col transition-all duration-300 transform translate-x-0" id="canvas-panel">
+                <div class="p-3 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center bg-white dark:bg-darklighter sticky top-0 z-10">
+                    <h2 class="font-semibold text-gray-700 dark:text-gray-200 text-sm flex items-center gap-2"><i class="fas fa-layer-group text-blue-500"></i> Canvas</h2>
+                    <div class="flex gap-1">
+                        <button class="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 rounded" onclick="document.getElementById('canvas-content').innerHTML=''"><i class="fas fa-eraser text-xs"></i></button>
+                        <button class="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 rounded md:hidden" onclick="toggleCanvas()"><i class="fas fa-times text-xs"></i></button>
+                    </div>
+                </div>
+                <div id="canvas-content" class="flex-1 overflow-y-auto p-4 space-y-4">
+                    <div class="text-center text-gray-400 text-xs mt-10" id="canvas-placeholder">
+                        <i class="fas fa-paint-brush text-2xl mb-2 opacity-20"></i>
+                        <p>Artifacts will appear here.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Modals -->
+    <div id="project-modal" class="fixed inset-0 bg-black/50 backdrop-blur-sm hidden z-50 flex justify-center items-center opacity-0 transition-opacity duration-200">
+        <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md transform scale-95 transition-transform duration-200 p-6 border border-gray-100 dark:border-gray-700">
+            <h3 class="text-xl font-bold mb-4 dark:text-white">Create New Project</h3>
+            <div class="space-y-4">
+                <div><label class="block text-xs font-medium text-gray-500 uppercase mb-1">Project Name</label><input type="text" id="new-project-name" class="w-full bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none dark:text-white"></div>
+                <div><label class="block text-xs font-medium text-gray-500 uppercase mb-1">System Prompt</label><textarea id="new-project-prompt" class="w-full bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none dark:text-white h-24 resize-none"></textarea></div>
+                <div class="flex justify-end gap-2 mt-6"><button onclick="closeModal('project-modal')" class="px-4 py-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">Cancel</button><button onclick="createProject()" class="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg shadow-lg">Create</button></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="skills-modal" class="fixed inset-0 bg-black/50 backdrop-blur-sm hidden z-50 flex justify-center items-center">
+        <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-3/4 h-3/4 flex flex-col overflow-hidden border border-gray-100 dark:border-gray-700">
+            <div class="p-5 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center bg-gray-50 dark:bg-gray-900/50">
+                <h2 class="text-lg font-bold dark:text-white">Skills Center</h2>
+                <button onclick="closeModal('skills-modal')" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="flex-1 overflow-y-auto p-6 bg-gray-50/50 dark:bg-dark">
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {% for skill in skills %}
+                    <div class="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-200 dark:border-gray-700 hover:shadow-md transition-shadow">
+                        <div class="flex justify-between items-start mb-2"><div class="p-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-blue-600 dark:text-blue-400"><i class="fas fa-code"></i></div><span class="bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full">v{{ skill.version }}</span></div>
+                        <h3 class="font-bold text-gray-800 dark:text-gray-200">{{ skill.name }}</h3>
+                        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1 line-clamp-2">{{ skill.description }}</p>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="openclaw-modal" class="fixed inset-0 bg-black/50 backdrop-blur-sm hidden z-50 flex justify-center items-center">
+        <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-2/3 max-w-2xl overflow-hidden border border-gray-100 dark:border-gray-700">
+            <div class="p-5 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
+                <h2 class="text-lg font-bold dark:text-white">System Status & Config</h2>
+                <button onclick="closeModal('openclaw-modal')" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="p-6 space-y-6">
+                <div class="grid grid-cols-3 gap-4">
+                    <div class="bg-green-50 dark:bg-green-900/20 p-4 rounded-xl border border-green-100 dark:border-green-800 text-center"><div class="text-xs text-green-600 font-bold uppercase">System 1</div><div class="text-xl font-bold text-green-700">Active</div></div>
+                    <div class="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-xl border border-blue-100 dark:border-blue-800 text-center"><div class="text-xs text-blue-600 font-bold uppercase">System 2</div><div class="text-xl font-bold text-blue-700">Ready</div></div>
+                    <div class="bg-gray-50 dark:bg-gray-700/30 p-4 rounded-xl border border-gray-200 dark:border-gray-700 text-center"><div class="text-xs text-gray-500 font-bold uppercase">System 3</div><div class="text-xl font-bold text-gray-400">Idle</div></div>
+                </div>
+                
+                <div class="border-t border-gray-200 dark:border-gray-700 pt-6">
+                    <h3 class="text-md font-bold dark:text-white mb-3">Model Configuration</h3>
+                    <div class="space-y-3">
+                        <div>
+                            <label class="block text-xs font-medium text-gray-500 uppercase mb-1">Ollama Model (Local)</label>
+                            <div class="flex gap-2">
+                                <input type="text" id="config-ollama-model" class="flex-1 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none dark:text-white" placeholder="e.g. qwen3:4b">
+                                <button onclick="saveConfig()" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg shadow-sm">Save</button>
+                            </div>
+                            <p class="text-xs text-gray-400 mt-1">Changes require server restart to take full effect for env vars, but current session will try to use this.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="kb-modal" class="fixed inset-0 bg-black/50 backdrop-blur-sm hidden z-50 flex justify-center items-center">
+        <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-3/4 h-3/4 flex flex-col border border-gray-100 dark:border-gray-700">
+             <div class="p-5 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
+                <h2 class="text-lg font-bold dark:text-white">Knowledge Base</h2>
+                <button onclick="closeModal('kb-modal')" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="flex-1 p-6 overflow-y-auto"><ul id="kb-file-list" class="space-y-2"></ul></div>
+        </div>
+    </div>
+
+    <script>
+        const state = {
+            projects: JSON.parse(localStorage.getItem('crablet_projects')) || [{ id: 'default', name: 'General Workspace', prompt: '', icon: 'fa-home' }],
+            chats: JSON.parse(localStorage.getItem('crablet_chats')) || {},
+            currentProjectId: localStorage.getItem('crablet_current_project') || 'default',
+            currentChatId: null,
+            theme: localStorage.getItem('crablet_theme') || 'light'
+        };
+
+        document.addEventListener('DOMContentLoaded', () => {
+            applyTheme(state.theme);
+            renderProjects();
+            selectProject(state.currentProjectId);
+            initWebSocket();
+        });
+
+        function toggleTheme() {
+            state.theme = state.theme === 'light' ? 'dark' : 'light';
+            localStorage.setItem('crablet_theme', state.theme);
+            applyTheme(state.theme);
+        }
+
+        function applyTheme(theme) {
+            const icon = document.getElementById('theme-icon');
+            if (theme === 'dark') {
+                document.documentElement.classList.add('dark');
+                icon.classList.remove('fa-sun'); icon.classList.add('fa-moon');
+            } else {
+                document.documentElement.classList.remove('dark');
+                icon.classList.remove('fa-moon'); icon.classList.add('fa-sun');
+            }
+        }
+
+        function renderProjects() {
+            const container = document.getElementById('project-list-container');
+            container.innerHTML = '';
+            state.projects.forEach(p => {
+                const isActive = p.id === state.currentProjectId;
+                const div = document.createElement('div');
+                div.className = `w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all duration-200 relative group ${isActive ? 'bg-blue-600 text-white shadow-lg' : 'bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-blue-500'}`;
+                div.onclick = () => selectProject(p.id);
+                div.innerHTML = `<i class="fas ${p.icon || 'fa-folder'}"></i>${isActive ? '<div class="absolute -left-3 w-1 h-6 bg-blue-500 rounded-r-full"></div>' : ''}`;
+                container.appendChild(div);
+            });
+        }
+
+        function createProject() {
+            const name = document.getElementById('new-project-name').value.trim();
+            if (!name) return;
+            const newProject = { id: crypto.randomUUID(), name: name, prompt: document.getElementById('new-project-prompt').value.trim(), icon: 'fa-folder' };
+            state.projects.push(newProject);
+            saveState();
+            renderProjects();
+            selectProject(newProject.id);
+            closeModal('project-modal');
+        }
+
+        function selectProject(pid) {
+            state.currentProjectId = pid;
+            localStorage.setItem('crablet_current_project', pid);
+            const project = state.projects.find(p => p.id === pid) || state.projects[0];
+            document.getElementById('current-project-name').innerText = project.name;
+            renderProjects();
+            renderChats(pid);
+            document.getElementById('chat-messages').innerHTML = ''; 
+            
+            const emptyState = document.getElementById('empty-state');
+            if (emptyState) {
+                emptyState.classList.remove('hidden');
+            } else {
+                console.warn("empty-state element not found during project switch");
+            }
+            
+            state.currentChatId = null;
+            document.getElementById('header-chat-name').innerText = 'New Chat';
+        }
+
+        function renderChats(pid) {
+            const container = document.getElementById('chat-list-container');
+            container.innerHTML = '';
+            const chats = state.chats[pid] || [];
+            if (chats.length === 0) { container.innerHTML = '<div class="text-center text-xs text-gray-400 mt-4 italic">No chats yet</div>'; return; }
+            chats.sort((a, b) => b.timestamp - a.timestamp).forEach(chat => {
+                const div = document.createElement('div');
+                div.className = `p-2.5 rounded-lg cursor-pointer text-sm truncate transition-colors mb-1 flex justify-between items-center group ${state.currentChatId === chat.id ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 font-medium' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'}`;
+                div.onclick = () => loadChat(chat.id);
+                div.innerHTML = `<span class="truncate flex-1">${chat.name || 'Untitled Chat'}</span><button onclick="event.stopPropagation(); deleteChat('${chat.id}')" class="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity ml-2"><i class="fas fa-times"></i></button>`;
+                container.appendChild(div);
+            });
+        }
+
+        function deleteChat(cid) {
+            if (!confirm('Are you sure you want to delete this chat?')) return;
+            if (state.chats[state.currentProjectId]) {
+                state.chats[state.currentProjectId] = state.chats[state.currentProjectId].filter(c => c.id !== cid);
+                saveState();
+                if (state.currentChatId === cid) {
+                    state.currentChatId = null;
+                    document.getElementById('chat-messages').innerHTML = '';
+                    const emptyState = document.getElementById('empty-state');
+                    if (emptyState) emptyState.classList.remove('hidden');
+                    document.getElementById('header-chat-name').innerText = 'New Chat';
+                }
+                renderChats(state.currentProjectId);
+            }
+        }
+
+        function clearAllChats() {
+            if (!confirm('Delete ALL chats in this project? This cannot be undone.')) return;
+            if (state.chats[state.currentProjectId]) {
+                state.chats[state.currentProjectId] = [];
+                saveState();
+                state.currentChatId = null;
+                document.getElementById('chat-messages').innerHTML = '';
+                const emptyState = document.getElementById('empty-state');
+                if (emptyState) emptyState.classList.remove('hidden');
+                document.getElementById('header-chat-name').innerText = 'New Chat';
+                renderChats(state.currentProjectId);
+            }
+        }
+
+        function createNewChat() {
+            if (!state.currentProjectId) return;
+            const chatId = crypto.randomUUID();
+            const newChat = { id: chatId, name: 'New Conversation', timestamp: Date.now(), messages: [] };
+            if (!state.chats[state.currentProjectId]) state.chats[state.currentProjectId] = [];
+            state.chats[state.currentProjectId].push(newChat);
+            saveState();
+            renderChats(state.currentProjectId);
+            loadChat(chatId);
+        }
+
+        function loadChat(cid) {
+            state.currentChatId = cid;
+            const chat = state.chats[state.currentProjectId].find(c => c.id === cid);
+            if (!chat) {
+                console.error("Chat not found:", cid);
+                return;
+            }
+            
+            const header = document.getElementById('header-chat-name');
+            if (header) header.innerText = chat.name;
+            
+            const emptyState = document.getElementById('empty-state');
+            if (emptyState) {
+                emptyState.classList.add('hidden');
+            } else {
+                console.warn("empty-state element not found");
+            }
+            
+            renderChats(state.currentProjectId);
+            
+            const msgs = document.getElementById('chat-messages');
+            if (msgs) {
+                msgs.innerHTML = '<div class="text-center text-xs text-gray-400 my-4">Session Started: ' + new Date(chat.timestamp).toLocaleString() + '</div>';
+                if (chat.messages) {
+                    chat.messages.forEach(msg => renderMessageToDom(msg.role, msg.content));
+                }
+            }
+        }
+
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toast-container');
+            if (!container) return; // Guard clause
+            
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.innerText = message;
+            container.appendChild(toast);
+            setTimeout(() => toast.classList.add('show'), 10);
+            setTimeout(() => {
+                toast.classList.remove('show');
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+
+        function submitChat() {
+            try {
+                const input = document.getElementById('chat-input');
+                const message = input.value.trim();
+                if (!message) return;
+                
+                // Ensure currentChatId exists
+                if (!state.currentChatId) {
+                    try {
+                        createNewChat(); // This is synchronous now in our state management
+                    } catch (e) {
+                        console.error('Failed to create chat:', e);
+                        showToast('Error creating new chat: ' + e.message, 'error');
+                        return;
+                    }
+                }
+                
+                // Double check it was created
+                if (!state.currentChatId) {
+                     showToast('Error: Could not initialize chat session', 'error');
+                     return;
+                }
+                
+                appendMessage('user', message);
+                input.value = '';
+                input.style.height = 'auto';
+    
+                let finalPrompt = message;
+                const mode = document.getElementById('model-mode').value;
+                if (mode === 'cloud') finalPrompt = '[FORCE_CLOUD] ' + finalPrompt;
+                if (mode === 'local') finalPrompt = '[FORCE_LOCAL] ' + finalPrompt;
+    
+                const formData = new URLSearchParams();
+                formData.append('prompt', finalPrompt);
+                formData.append('session_id', state.currentChatId);
+                formData.append('image_paths', JSON.stringify(window.uploadedFiles || []));
+                
+                // Show thinking animation
+                showThinking();
+                const startTime = Date.now();
+                document.getElementById('send-btn').disabled = true;
+
+                fetch('/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: formData
+                })
+                .then(r => {
+                    if (!r.ok) throw new Error(`Server returned ${r.status}`);
+                    return r.json();
+                })
+                .then(d => { 
+                    hideThinking();
+                    const latency = Date.now() - startTime;
+                    showLatency(latency);
+                    
+                    window.uploadedFiles = []; 
+                    if (d.status === 'success') {
+                        if (d.response) {
+                            appendMessage('assistant', d.response);
+                        }
+                    } else if (d.status === 'error') {
+                        showToast('Server Error: ' + d.message, 'error');
+                        appendMessage('system', '❌ Error: ' + d.message);
+                    }
+                })
+                .catch(err => {
+                    hideThinking();
+                    console.error('Fetch error:', err);
+                    showToast('Network Error: ' + err.message, 'error');
+                    appendMessage('system', '❌ Network Error: ' + err.message);
+                })
+                .finally(() => {
+                    document.getElementById('send-btn').disabled = false;
+                });
+                
+                // Update chat name if it's new
+                if (state.projects && state.currentProjectId && state.chats) {
+                    const projectChats = state.chats[state.currentProjectId];
+                    if (projectChats) {
+                        const chat = projectChats.find(c => c.id === state.currentChatId);
+                        if (chat && chat.name === 'New Conversation') {
+                            chat.name = message.substring(0, 30) + (message.length > 30 ? '...' : '');
+                            saveState();
+                            renderChats(state.currentProjectId);
+                            const headerName = document.getElementById('header-chat-name');
+                            if (headerName) headerName.innerText = chat.name;
+                        }
+                    }
+                }
+            } catch (e) {
+                console.error('Submit error:', e);
+                showToast('Application Error: ' + e.message, 'error');
+            }
+        }
+    
+        function showThinking() {
+            const container = document.getElementById('chat-messages');
+            if (document.getElementById('thinking-indicator')) return;
+            const div = document.createElement('div');
+            div.id = 'thinking-indicator';
+            div.className = "flex justify-start mb-4 gap-3";
+            div.innerHTML = `
+                <div class="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center flex-shrink-0 text-lg animate-pulse">🦀</div>
+                <div class="thinking-bubble">
+                    <div class="thinking-dot"></div>
+                    <div class="thinking-dot"></div>
+                    <div class="thinking-dot"></div>
+                </div>
+            `;
+            container.appendChild(div);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function hideThinking() {
+            const el = document.getElementById('thinking-indicator');
+            if (el) el.remove();
+        }
+
+        function showLatency(ms) {
+            const el = document.getElementById('latency-display');
+            const val = document.getElementById('latency-value');
+            if (el && val) {
+                val.innerText = ms;
+                el.classList.remove('hidden');
+                setTimeout(() => el.classList.add('hidden'), 5000);
+            }
+        }
+
+        function renderMessageToDom(role, text) {
+            try {
+                const container = document.getElementById('chat-messages');
+                const div = document.createElement('div');
+                if (role === 'user') {
+                    div.className = "flex justify-end mb-4";
+                    div.innerHTML = `<div class="bg-blue-600 text-white rounded-2xl rounded-tr-none px-4 py-3 max-w-[85%] shadow-md text-sm">${text.replace(/\n/g, '<br>')}</div>`;
+                } else if (role === 'system') {
+                    div.className = "flex justify-center mb-4";
+                    div.innerHTML = `<div class="bg-red-100 text-red-600 rounded-lg px-3 py-1 text-xs font-bold shadow-sm">${text}</div>`;
+                } else {
+                    let contentHtml = text;
+                    // Safely try to parse markdown
+                    if (typeof marked !== 'undefined') {
+                        try {
+                            contentHtml = marked.parse(text, { breaks: true });
+                        } catch (e) {
+                            console.warn('Markdown parse failed:', e);
+                            contentHtml = text.replace(/\n/g, '<br>');
+                        }
+                    } else {
+                        contentHtml = text.replace(/\n/g, '<br>'); // Fallback if marked not loaded
+                    }
+
+                    div.className = "flex justify-start mb-4 gap-3";
+                    div.innerHTML = `<div class="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center flex-shrink-0 text-lg">🦀</div><div class="bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 text-gray-800 dark:text-gray-100 rounded-2xl rounded-tl-none px-4 py-3 max-w-[85%] shadow-sm text-sm prose dark:prose-invert">${contentHtml}</div>`;
+                }
+                
+                const emptyState = document.getElementById('empty-state');
+                if (emptyState) {
+                    emptyState.classList.add('hidden');
+                }
+                
+                if (container) {
+                    container.appendChild(div);
+                    container.scrollTop = container.scrollHeight;
+                }
+                
+                if (role !== 'user' && typeof Prism !== 'undefined') {
+                    try {
+                        Prism.highlightAllUnder(div);
+                    } catch (e) { console.warn('Prism highlight failed:', e); }
+                }
+            } catch (e) {
+                console.error('Render message error:', e);
+                showToast('Display Error: ' + e.message, 'error');
+            }
+        }
+
+        function appendMessage(role, text) {
+            try {
+                // Save to local state if chat is active
+                if (state.currentChatId && state.chats[state.currentProjectId]) {
+                    const chat = state.chats[state.currentProjectId].find(c => c.id === state.currentChatId);
+                    if (chat) {
+                        if (!chat.messages) chat.messages = [];
+                        // Simple de-duplication: check if last message is identical
+                        const lastMsg = chat.messages[chat.messages.length - 1];
+                        if (!lastMsg || lastMsg.role !== role || lastMsg.content !== text) {
+                             chat.messages.push({ role, content: text, timestamp: Date.now() });
+                             saveState();
+                             renderMessageToDom(role, text);
+                        } else {
+                            console.log('Duplicate message ignored:', text.substring(0, 20));
+                        }
+                    }
+                } else {
+                    // Fallback if no chat state found (should be rare)
+                    renderMessageToDom(role, text);
+                }
+            } catch (e) {
+                console.error('Append message error:', e);
+                showToast('State Error: ' + e.message, 'error');
+            }
+        }
+
+        function openModal(id) { document.getElementById(id).classList.remove('hidden'); setTimeout(() => document.getElementById(id).classList.remove('opacity-0'), 10); if (id === 'kb-modal') refreshKnowledgeList(); }
+        function closeModal(id) { document.getElementById(id).classList.add('opacity-0'); setTimeout(() => document.getElementById(id).classList.add('hidden'), 200); }
+        function saveState() { localStorage.setItem('crablet_projects', JSON.stringify(state.projects)); localStorage.setItem('crablet_chats', JSON.stringify(state.chats)); }
+        function toggleCanvas() { document.getElementById('canvas-panel').classList.toggle('hidden'); }
+        function toggleTheme() { state.theme = state.theme === 'light' ? 'dark' : 'light'; localStorage.setItem('crablet_theme', state.theme); applyTheme(state.theme); }
+
+        function initWebSocket() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
+            
+            ws.onopen = () => {
+                console.log("WebSocket connected");
+            };
+            
+            ws.onerror = (error) => {
+                console.error("WebSocket error:", error);
+                showToast("Real-time connection failed", "error");
+            };
+            
+            ws.onclose = () => {
+                console.log("WebSocket disconnected, retrying...");
+                setTimeout(initWebSocket, 3000);
+            };
+
+            ws.onmessage = (event) => {
+                const msg = event.data;
+                console.log("WS Message:", msg); // Debug log
+                if (msg.startsWith("RESPONSE:")) {
+                     appendMessage('assistant', msg.replace("RESPONSE: ", ""));
+                } else if (msg.startsWith("CANVAS:")) {
+                    const parts = msg.replace("CANVAS: ", "").split("|");
+                    if (parts.length >= 3) {
+                         try {
+                            const b64 = parts.slice(2).join("|");
+                            const binaryString = atob(b64);
+                            const bytes = new Uint8Array(binaryString.length);
+                            for (let i = 0; i < binaryString.length; i++) bytes[i] = binaryString.charCodeAt(i);
+                            const content = new TextDecoder().decode(bytes);
+                            updateCanvas(parts[1], content, parts[0]);
+                        } catch(e) { console.error(e); }
+                    }
+                } else if (msg.startsWith("ERROR:")) {
+                    showToast(msg.replace("ERROR: ", ""), "error");
+                    appendMessage('system', "❌ " + msg.replace("ERROR: ", ""));
+                }
+            };
+        }
+        
+        function updateCanvas(title, content, kind) {
+            const container = document.getElementById('canvas-content');
+            document.getElementById('canvas-placeholder').classList.add('hidden');
+            const card = document.createElement('div');
+            card.className = "bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 mb-4 group";
+            let innerHTML = `<div class="flex justify-between items-center mb-3"><h3 class="text-sm font-bold text-gray-700 dark:text-gray-200">${title}</h3><button class="text-gray-400 hover:text-red-500" onclick="this.parentElement.parentElement.parentElement.remove()"><i class="fas fa-times"></i></button></div>`;
+            if (kind === 'code' || kind === 'html') innerHTML += `<div class="relative"><pre class="text-xs bg-gray-50 dark:bg-dark p-2 rounded overflow-x-auto"><code class="language-${kind === 'html' ? 'html' : 'rust'}">${content.replace(/</g, '&lt;')}</code></pre></div>`;
+            else if (kind === 'mermaid') { const id = 'mermaid-' + Math.random().toString(36).substr(2, 9); innerHTML += `<div class="mermaid" id="${id}">${content}</div>`; }
+            else innerHTML += `<div class="prose dark:prose-invert text-sm">${marked.parse(content)}</div>`;
+            card.innerHTML = innerHTML;
+            container.insertBefore(card, container.firstChild);
+            if (kind === 'code' || kind === 'html') Prism.highlightAllUnder(card);
+            if (kind === 'mermaid') mermaid.run();
+        }
+
+        function handleFileUpload(input) {
+            const files = input.files;
+            if (!window.uploadedFiles) window.uploadedFiles = [];
+            Array.from(files).forEach(file => {
+                 const formData = new FormData(); formData.append('file', file);
+                 fetch('/api/upload', { method: 'POST', body: formData }).then(r => r.json()).then(d => { if(d.status === 'success') window.uploadedFiles.push(d.files[0]); });
+            });
+        }
+        
+        function refreshKnowledgeList() {
+            fetch('/api/knowledge').then(r => r.json()).then(data => {
+                const list = document.getElementById('kb-file-list');
+                list.innerHTML = '';
+                if (data.status === 'success' && data.documents) {
+                    data.documents.forEach(doc => {
+                        const li = document.createElement('li');
+                        li.className = "flex justify-between items-center bg-gray-50 dark:bg-gray-900/50 p-2 rounded text-sm dark:text-gray-300";
+                        li.innerHTML = `<span>${(doc.source || 'Unknown').split('/').pop()}</span><button onclick="deleteDocument('${encodeURIComponent(doc.source)}')" class="text-red-500 hover:text-red-700"><i class="fas fa-trash"></i></button>`;
+                        list.appendChild(li);
+                    });
+                }
+            });
+        }
+        function deleteDocument(s) { fetch(`/api/knowledge?source=${s}`, { method: 'DELETE' }).then(r => r.json()).then(() => refreshKnowledgeList()); }
+
+        function saveConfig() {
+            const model = document.getElementById('config-ollama-model').value.trim();
+            if (model) {
+                showToast('Configuration saved (Restart required for backend)', 'success');
+            }
+        }
+    </script>
+</body>
+</html>
