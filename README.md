@@ -13,13 +13,23 @@
 
 ## 📖 项目简介
 
-**Crablet** 是一个用 Rust 从零构建的 **完整 AI Agent 操作系统**，而非简单的 LLM 聊天机器人。它提供了一套生产就绪的认知架构，让大型语言模型拥有**思考、规划、记忆、工具使用和多 Agent 协作**的完整能力。
+**Crablet** 是一个用 **Rust 从零重写**的 **OpenClaw 兼容 AI Agent 操作系统**，在完全对标 OpenClaw 架构的同时，通过 Rust 的系统级能力实现了**10 倍性能提升**和**生产级可靠性**。项目不仅提供原生 Rust 工具链，还通过**标准化技能格式**实现对 OpenClaw 生态的**完全向后兼容**。
+
+### 🎯 核心定位
+
+```
+OpenClaw 的理念 + Rust 的工程化 = Crablet
+   ↓                    ↓              ↓
+ 认知架构设计      性能/安全/并发      生产就绪的实现
+```
+
+Crablet 不是简单的 LLM 包装器,而是一个**完整的认知操作系统**，让大型语言模型拥有**思考、规划、记忆、工具使用和多 Agent 协作**的完整能力。
 
 ### 🎯 设计理念
 
 Crablet 的核心使命是让智能体像**水一样无处不在、随需而变、持续演进**，其愿景是以**高性能、内存安全与可扩展能力**，支撑从日常问答到多步骤研究、从本地推理到云端深思的全栈智能工作流。
 
-### 🧐示例(Web UI)
+### 🧐示例
 
 <img width="2634" height="962" alt="Image" src="https://github.com/user-attachments/assets/635ed381-a06c-4fd8-aced-4ba675533331" />
 
@@ -650,18 +660,17 @@ Crablet 提供了丰富的内置工具和扩展机制：
 
 #### 内置工具列表
 
-| 工具              | 功能           | 安全机制                  | 执行超时 |
-| :---------------- | :------------- | :------------------------ | :------: |
-| **bash**          | Shell 命令执行 | 白名单 + 危险命令拦截     |   30s    |
-| **file**          | 文件读写/列举  | 路径穿越防护              |   10s    |
-| **http**          | HTTP 请求      | User-Agent 强制设置       |   30s    |
-| **web_search**    | 网络搜索       | Serper API / DuckDuckGo   |   10s    |
-| **vision**        | 图像分析       | LLM 多模态 API            |   15s    |
-| **browser**       | 无头浏览器     | headless Chrome，资源限制 |   60s    |
-| **calculator**    | 数学计算       | 沙箱执行                  |    5s    |
-| **weather**       | 天气查询       | OpenMeteo API（免费）     |   10s    |
-| **install_skill** | 技能安装       | Git 克隆 + Manifest 校验  |   60s    |
-| **create_skill**  | 技能生成       | 模板生成 + 自动测试       |   10s    |
+| 工具           | 功能           | 安全机制                  | 执行超时 |
+| :------------- | :------------- | :------------------------ | :------: |
+| **bash**       | Shell 命令执行 | 白名单 + 危险命令拦截     |   30s    |
+| **file**       | 文件读写/列举  | 路径穿越防护              |   10s    |
+| **http**       | HTTP 请求      | User-Agent 强制设置       |   30s    |
+| **search**     | 网络搜索       | Serper API / DuckDuckGo   |   10s    |
+| **vision**     | 图像分析       | LLM 多模态 API            |   15s    |
+| **browser**    | 无头浏览器     | headless Chrome，资源限制 |   60s    |
+| **mcp**        | MCP 协议       | 进程隔离                  |   30s    |
+| **manager**    | 技能管理       | Git 克隆 + Manifest 校验  |   60s    |
+| **demo**       | 演示工具       | 沙箱执行                  |    5s    |
 
 ---
 
@@ -1555,8 +1564,9 @@ crablet/
 │   ├── events.rs                 # 事件总线
 │   ├── error.rs                  # 错误类型
 │   ├── telemetry.rs              # OpenTelemetry 初始化
+│   ├── plugins.rs                # 插件系统
 │   │
-│   ├── cognitive/                # 认知核心（9897 行）
+│   ├── cognitive/                # 认知核心
 │   │   ├── router.rs             # 认知路由器
 │   │   ├── system1.rs            # System 1 实现
 │   │   ├── system2.rs            # System 2 实现
@@ -1634,11 +1644,9 @@ crablet/
 │       └── bindings.rs           # Lua 绑定
 │
 ├── tests/                        # 集成测试（13 个）
-├── templates/                    # Web UI 模板
-├── skills/                       # 内置技能示例
-├── examples/scripts/             # Lua 脚本示例
+├── templates/                    # Web UI 模板（如果存在）
 ├── config/config.toml            # 默认配置
-├── schema.sql                    # 数据库 Schema
+├── schema.sql                    # 数据库 Schema（如果存在）
 ├── Dockerfile                    # 多阶段构建
 └── docker-compose.yml            # 服务编排
 ```
@@ -1658,6 +1666,7 @@ crablet/
 | `telegram`  | Telegram Bot 接入                  |    ✅     |    +2MB    |   +30s   |
 | `discord`   | Discord Bot 接入                   |    ✅     |    +3MB    |   +30s   |
 | `browser`   | 无头浏览器自动化                   |    ✅     |    +5MB    |  +1min   |
+| `vision`    | 视觉分析能力                       |    ✅     |   +500KB   |   +10s   |
 
 **自定义构建示例**：
 
@@ -1892,13 +1901,13 @@ services:
 
 | 指标              | 数值                    |
 | :---------------- | :---------------------- |
-| **Rust 源码**     | 9,897 行（105 个文件）  |
+| **Rust 源码**     | 10,765 行（105 个文件） |
 | **集成测试**      | 13 个测试文件           |
 | **单元测试**      | 50+ 测试用例            |
-| **核心模块**      | 14 个                   |
-| **内置工具**      | 10+                     |
+| **核心模块**      | 11 个                   |
+| **内置工具**      | 9+                      |
 | **内置技能**      | 4 个示例                |
-| **依赖项**        | 81 个 crate             |
+| **依赖项**        | 71 个 crate             |
 | **Feature Flags** | 10 个                   |
 | **支持平台**      | macOS / Linux / Windows |
 | **文档覆盖率**    | 90%+                    |
@@ -1968,6 +1977,8 @@ git push origin feature/my-feature
 
 本项目基于 [MIT License](LICENSE) 开源。
 
+Copyright (c) 2026 Hertz
+
 ---
 
 ## 🙏 致谢
@@ -1993,7 +2004,6 @@ Crablet 的开发受到了以下项目的启发：
 ---
 
 <div align="center">
-
 **用 Rust 和热爱构建 | Crablet - 让 AI Agent 快如闪电 ⚡️**
 
 [![Star History](https://img.shields.io/github/stars/yourusername/crablet?style=social)](https://github.com/yourusername/crablet/stargazers)
