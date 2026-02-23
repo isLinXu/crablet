@@ -1,9 +1,9 @@
 <div align="center">
-# 🦀 Crablet
-
+<img width="320" height="320" alt="Image" src="https://github.com/user-attachments/assets/5ec9d5ec-6603-4ff1-adf4-89abcd2819a6" />
 <h3>基于 Rust 构建的新一代 AI Agent 操作系统</h3>
 
 [![Rust](https://img.shields.io/badge/rust-1.80%2B-orange?logo=rust)](https://www.rust-lang.org)[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)[![Status](https://img.shields.io/badge/status-Alpha-yellow)]()[![Lines of Code](https://img.shields.io/badge/lines-9.9k-blue)]()
+
 [English](README.md) | [中文文档](README_CN.md) | [完整文档](docs/)
 [快速开始](#-快速开始) · [核心特性](#-核心特性) · [架构设计](#-架构设计) · [开发指南](#-开发指南) · [部署运维](#-部署运维)
 
@@ -18,6 +18,17 @@
 ### 🎯 设计理念
 
 Crablet 的核心使命是让智能体像**水一样无处不在、随需而变、持续演进**，其愿景是以**高性能、内存安全与可扩展能力**，支撑从日常问答到多步骤研究、从本地推理到云端深思的全栈智能工作流。
+
+### 🧐示例(Web UI)
+
+<img width="2634" height="962" alt="Image" src="https://github.com/user-attachments/assets/635ed381-a06c-4fd8-aced-4ba675533331" />
+
+|                                                              |                                                              |                                                              |
+| ------------------------------------------------------------ | ------------------------------------------------------------ | ------------------------------------------------------------ |
+| <img width="3452" height="1832" alt="Image" src="https://github.com/user-attachments/assets/2f9f87e0-6ad6-471e-89b9-731651c53cec" /> | <img width="3452" height="1836" alt="Image" src="https://github.com/user-attachments/assets/47eb297c-dd0c-4e12-ac8e-7bca11940df0" /> | <img width="3444" height="1826" alt="Image" src="https://github.com/user-attachments/assets/a5cceb55-4527-453a-88ae-84e73aece8ce" /> |
+| <img width="3446" height="1836" alt="Image" src="https://github.com/user-attachments/assets/a9761939-2806-440c-81b3-844a383d875e" /> | <img width="3454" height="1832" alt="Image" src="https://github.com/user-attachments/assets/ce59f4a4-2083-4c09-9bcc-12ae7ca99686" /> | <img width="3456" height="1840" alt="Image" src="https://github.com/user-attachments/assets/c181fcbc-3fa9-4e3c-855b-d9adc3556b35" /> |
+
+
 
 ### 🌟 为什么选择 Rust？
 
