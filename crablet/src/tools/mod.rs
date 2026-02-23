@@ -1,0 +1,11 @@
+pub mod bash;
+pub mod file;
+pub mod http;
+pub mod search;
+pub mod vision;
+pub mod mcp;
+pub mod manager;
+pub mod management_plugin;
+pub mod demo;
+pub mod mcp_plugins;
+pub mod browser;
