@@ -95,22 +95,55 @@ export function useStreamingChat() {
         },
       };
       const baseUrl = getApiBaseUrl().replace(/\/+$/, '');
-      const primary = `${baseUrl}/v1/chat/stream`;
-      const fallback = `${baseUrl}/api/v1/chat/stream`;
-      let response = await fetch(primary, {
-        method: 'POST',
-        headers: buildHeaders(),
-        body: JSON.stringify(payload),
-      });
-      if (!response.ok && (response.status === 404 || response.status === 405 || response.status === 401)) {
-        response = await fetch(fallback, {
-          method: 'POST',
-          headers: buildHeaders(),
-          body: JSON.stringify(payload),
-        });
+      const candidates = [`${baseUrl}/v1/chat/stream`];
+      if (!baseUrl.endsWith('/api')) {
+        candidates.push(`${baseUrl}/api/v1/chat/stream`);
       }
-      if (!response.ok || !response.body) {
-        throw new Error(`流式请求失败: HTTP ${response.status}`);
+      if (baseUrl === '/api' || /:\/\/(?:localhost|127\.0\.0\.1):3000\/api$/i.test(baseUrl)) {
+        candidates.push('http://127.0.0.1:18789/api/v1/chat/stream');
+      }
+      let response: Response | null = null;
+      let lastError: any = null;
+      const candidatesList = [...new Set(candidates)];
+      
+      for (const url of candidatesList) {
+        try {
+          // Add logging to debug
+          console.log(`[Chat] Trying stream URL: ${url}`);
+          const res = await fetch(url, {
+            method: 'POST',
+            headers: buildHeaders(),
+            body: JSON.stringify(payload),
+          });
+
+          // If OK, use this response
+          if (res.ok) {
+            response = res;
+            break;
+          }
+          
+          // If not OK, but it's a "soft" error (404/405/401/5xx), try next candidate
+          // Note: 401 might need re-auth, but we treat it as "try next" here
+          if ([404, 405, 401, 502, 503].includes(res.status)) {
+            console.warn(`[Chat] Request to ${url} failed with ${res.status}, trying next...`);
+            lastError = new Error(`HTTP ${res.status}`);
+            continue;
+          }
+          
+          // Other errors (e.g. 400 Bad Request) -> stop trying
+          response = res;
+          break;
+        } catch (e) {
+          console.warn(`[Chat] Request to ${url} failed with network error`, e);
+          lastError = e;
+          // Continue to next candidate on network error (e.g. CORS failure)
+        }
+      }
+
+      if (!response || !response.ok || !response.body) {
+        const status = response?.status;
+        const msg = status ? `HTTP ${status}` : (lastError?.message || 'Network Error');
+        throw new Error(`流式请求失败: ${msg}`);
       }
       const reader = response.body.getReader();
       const decoder = new TextDecoder('utf-8');
