@@ -61,6 +61,12 @@ pub struct Config {
     pub feishu_app_id: Option<String>,
     #[serde(skip)]
     pub feishu_app_secret: Option<String>,
+    #[serde(skip)]
+    pub wecom_corp_id: Option<String>,
+    #[serde(skip)]
+    pub wecom_corp_secret: Option<String>,
+    #[serde(skip)]
+    pub wecom_agent_id: Option<String>,
     #[serde(default)]
     pub providers: HashMap<String, ProviderConfig>,
     #[serde(default = "default_port")]
@@ -101,6 +107,9 @@ impl Default for Config {
             serper_api_key: None,
             feishu_app_id: None,
             feishu_app_secret: None,
+            wecom_corp_id: None,
+            wecom_corp_secret: None,
+            wecom_agent_id: None,
             providers: HashMap::new(),
             port: default_port(),
             oidc_issuer: None,
@@ -235,6 +244,9 @@ impl Config {
         let mut serper_api_key = None;
         let mut feishu_app_id = None;
         let mut feishu_app_secret = None;
+        let mut wecom_corp_id = None;
+        let mut wecom_corp_secret = None;
+        let mut wecom_agent_id = None;
         let mut providers = HashMap::new();
         let mut port = 3000;
         let mut oidc_issuer = None;
@@ -286,6 +298,9 @@ impl Config {
         if let Ok(env_serper) = std::env::var("SERPER_API_KEY") { serper_api_key = Some(env_serper); }
         if let Ok(env_feishu_id) = std::env::var("FEISHU_APP_ID") { feishu_app_id = Some(env_feishu_id); }
         if let Ok(env_feishu_secret) = std::env::var("FEISHU_APP_SECRET") { feishu_app_secret = Some(env_feishu_secret); }
+        if let Ok(env_wecom_id) = std::env::var("WECOM_CORP_ID") { wecom_corp_id = Some(env_wecom_id); }
+        if let Ok(env_wecom_secret) = std::env::var("WECOM_CORP_SECRET") { wecom_corp_secret = Some(env_wecom_secret); }
+        if let Ok(env_wecom_agent) = std::env::var("WECOM_AGENT_ID") { wecom_agent_id = Some(env_wecom_agent); }
         
         if let Ok(val) = std::env::var("OIDC_ISSUER") { oidc_issuer = Some(val); }
         if let Ok(val) = std::env::var("OIDC_CLIENT_ID") { oidc_client_id = Some(val); }
@@ -405,6 +420,9 @@ impl Config {
             serper_api_key,
             feishu_app_id,
             feishu_app_secret,
+            wecom_corp_id,
+            wecom_corp_secret,
+            wecom_agent_id,
             providers,
             port,
             ollama_model,
