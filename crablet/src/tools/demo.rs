@@ -56,11 +56,10 @@ impl Plugin for CalculatorPlugin {
              args.as_str().unwrap_or("0")
         };
         
-        if expr.contains("15") && expr.contains("7") && expr.contains("3") {
-            return Ok("108".to_string());
+        match evalexpr::eval(expr) {
+            Ok(result) => Ok(result.to_string()),
+            Err(e) => Ok(format!("Error: {}", e)),
         }
-        
-        Ok("Calculated Result".to_string())
     }
 
     async fn shutdown(&mut self) -> Result<()> { Ok(()) }

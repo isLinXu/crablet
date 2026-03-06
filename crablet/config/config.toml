@@ -1,3 +1,4 @@
 [mcp_servers]
-math_server = { command = "python3", args = ["/Users/gatilin/PycharmProjects/Crablet-v3/mcp_server.py"] }
+math_server = { command = "python3", args = ["mcp_servers/math_server.py"] }
+test_server = { command = "python3", args = ["mcp_servers/mcp_test_server.py"] }
 

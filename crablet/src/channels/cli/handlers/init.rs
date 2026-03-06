@@ -8,14 +8,14 @@ pub async fn init_environment() -> Result<()> {
     if let Some(proj_dirs) = ProjectDirs::from("com", "crablet", "crablet") {
         // Fallback to ~/.config/crablet if system path fails (macOS sandbox issue)
         let config_dir = if fs::create_dir_all(proj_dirs.config_dir()).is_err() {
-            let home = directories::UserDirs::new().unwrap();
+            let home = directories::UserDirs::new().ok_or_else(|| anyhow::anyhow!("Home dir not found"))?;
             home.home_dir().join(".config").join("crablet")
         } else {
             proj_dirs.config_dir().to_path_buf()
         };
         
         let data_dir = if fs::create_dir_all(proj_dirs.data_dir()).is_err() {
-             let home = directories::UserDirs::new().unwrap();
+             let home = directories::UserDirs::new().ok_or_else(|| anyhow::anyhow!("Home dir not found"))?;
              home.home_dir().join(".local").join("share").join("crablet")
         } else {
              proj_dirs.data_dir().to_path_buf()

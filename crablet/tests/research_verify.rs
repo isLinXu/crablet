@@ -2,9 +2,13 @@ use anyhow::Result;
 use crablet::agent::researcher::ResearchAgent;
 use crablet::agent::Agent;
 use crablet::cognitive::llm::LlmClient;
-use crablet::types::{Message, ContentPart};
+use crablet::types::Message;
+#[allow(unused_imports)]
+use crablet::types::ContentPart;
+use crablet::events::EventBus;
 use async_trait::async_trait;
 use std::sync::Arc;
+#[allow(unused_imports)]
 use serde_json::json;
 
 // Mock LLM for Research
@@ -30,8 +34,12 @@ impl LlmClient for MockResearchLlm {
     }
 
     async fn chat_complete_with_tools(&self, messages: &[Message], _tools: &[serde_json::Value]) -> Result<Message> {
-        let text = self.chat_complete(messages).await?;
-        Ok(Message::new("assistant", &text))
+        let content = self.chat_complete(messages).await?;
+        Ok(Message::new("assistant", &content))
+    }
+
+    fn model_name(&self) -> &str {
+        "mock-research-verify"
     }
 }
 
@@ -48,7 +56,8 @@ async fn test_deep_research_agent() -> Result<()> {
     // However, for this test, we just want to verify the Agent's orchestration logic (LLM calls).
     
     let llm = Arc::new(Box::new(MockResearchLlm) as Box<dyn LlmClient>);
-    let agent = ResearchAgent::new(llm);
+    let event_bus = Arc::new(EventBus::new(100));
+    let agent = ResearchAgent::new(llm, event_bus);
     
     // 2. Execute Task
     let task = "Research Rust Async Performance";

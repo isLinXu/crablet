@@ -1,6 +1,6 @@
 use crate::cognitive::CognitiveSystem;
 use crate::types::{Message, TraceStep};
-use anyhow::Result;
+use crate::error::{Result, CrabletError};
 use async_trait::async_trait;
 use std::sync::Arc;
 use strsim::levenshtein;
@@ -71,6 +71,12 @@ impl IntentTrie {
         } else {
             None
         }
+    }
+}
+
+impl Default for System1 {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -191,6 +197,26 @@ impl CognitiveSystem for System1 {
         // We only check the first word for command dispatch
         let first_word = input_trim.split_whitespace().next().unwrap_or("");
         
+        // Try searching the whole input first (for multi-word commands like "who are you")
+        // But our Trie is currently word-based in insertion? No, it's char based.
+        // But we insert "who are you".
+        // If we search "who", it won't match "who are you" because "who" is not end.
+        // If we search "who are you", it matches.
+        
+        // Strategy: Check exact match of whole string, then first word.
+        
+        if let Some(cmd_key) = self.intent_trie.search(input_trim) {
+            if let Some(rule) = self.rules.iter().find(|r| r.primary_command == cmd_key) {
+                 return Ok(((rule.handler)(input_trim), vec![TraceStep {
+                    step: 0,
+                    thought: format!("System 1 Trie Hit: {}", cmd_key),
+                    action: Some("FastRespond".to_string()),
+                    action_input: Some(input_trim.to_string()),
+                    observation: Some("Executed".to_string()),
+                }]));
+            }
+        }
+        
         if let Some(cmd_key) = self.intent_trie.search(first_word) {
             if let Some(rule) = self.rules.iter().find(|r| r.primary_command == cmd_key) {
                  return Ok(((rule.handler)(input_trim), vec![TraceStep {
@@ -221,6 +247,71 @@ impl CognitiveSystem for System1 {
         // ... (Optional: Regex logic can be added here if needed)
 
         // If no match, return error to fall through to System 2
-        Err(anyhow::anyhow!("No intuitive match found"))
+        Err(CrabletError::NotFound("No intuitive match found".to_string()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_intent_trie_insert_search() {
+        let mut trie = IntentTrie::new();
+        trie.insert("help", "help_intent");
+        trie.insert("hello", "greet_intent");
+        
+        assert_eq!(trie.search("help"), Some("help_intent".to_string()));
+        assert_eq!(trie.search("hello"), Some("greet_intent".to_string()));
+        assert_eq!(trie.search("he"), None);
+        assert_eq!(trie.search("helpme"), None);
+    }
+    
+    #[test]
+    fn test_intent_trie_case_insensitive() {
+        let mut trie = IntentTrie::new();
+        trie.insert("Help", "help_intent");
+        
+        assert_eq!(trie.search("help"), Some("help_intent".to_string()));
+        assert_eq!(trie.search("HELP"), Some("help_intent".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_system1_exact_match() {
+        let system1 = System1::new();
+        let (response, _) = system1.process("hello", &[]).await.unwrap();
+        assert!(response.contains("你好"));
+        
+        let (response, _) = system1.process("help", &[]).await.unwrap();
+        assert!(response.contains("Available commands"));
+    }
+    
+    #[tokio::test]
+    async fn test_system1_alias_match() {
+        let system1 = System1::new();
+        let (response, _) = system1.process("hi", &[]).await.unwrap();
+        assert!(response.contains("你好"));
+        
+        let (response, _) = system1.process("你是谁", &[]).await.unwrap();
+        assert!(response.contains("Crablet"));
+    }
+
+    #[tokio::test]
+    async fn test_system1_fuzzy_match() {
+        let system1 = System1::new();
+        // "halp" -> "help" (dist 1)
+        let (response, _) = system1.process("halp", &[]).await.unwrap();
+        assert!(response.contains("Available commands"));
+        
+        // "stats" -> "status" (dist 1, alias match)
+        let (response, _) = system1.process("stats", &[]).await.unwrap();
+        assert!(response.contains("System Status"));
+    }
+
+    #[tokio::test]
+    async fn test_system1_no_match() {
+        let system1 = System1::new();
+        let result = system1.process("unknown_command_123", &[]).await;
+        assert!(result.is_err());
     }
 }

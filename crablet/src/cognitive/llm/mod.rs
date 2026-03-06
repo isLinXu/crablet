@@ -2,8 +2,9 @@ use anyhow::{Result, Context};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::env;
-use crate::types::{Message, ContentPart};
-use tracing::{error, info};
+use crate::types::{Message, ContentPart, ChatChunk};
+use futures::Stream;
+use std::pin::Pin;
 
 pub mod cache;
 pub mod kimi;
@@ -16,6 +17,17 @@ pub use zhipu::ZhipuClient;
 pub trait LlmClient: Send + Sync {
     async fn chat_complete(&self, messages: &[Message]) -> Result<String>;
     async fn chat_complete_with_tools(&self, messages: &[Message], tools: &[serde_json::Value]) -> Result<Message>;
+    async fn chat_complete_with_reasoning(&self, messages: &[Message]) -> Result<(String, String)> {
+        // Default implementation: just return content as response, empty reasoning
+        let response = self.chat_complete(messages).await?;
+        Ok((String::new(), response))
+    }
+    
+    async fn chat_stream(&self, _messages: &[Message]) -> Result<Pin<Box<dyn Stream<Item = Result<ChatChunk>> + Send>>> {
+        Err(anyhow::anyhow!("Streaming not implemented for this provider"))
+    }
+
+    fn model_name(&self) -> &str;
 }
 
 pub struct OpenAiClient {
@@ -41,6 +53,34 @@ struct OpenAiResponse {
 #[derive(Deserialize, Debug)]
 struct Choice {
     message: Message,
+}
+
+use tracing::{error, info};
+// use futures::StreamExt;
+
+#[derive(Serialize)]
+struct OpenAiStreamRequest {
+    model: String,
+    messages: Vec<Message>,
+    stream: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tools: Option<Vec<serde_json::Value>>,
+}
+
+#[derive(Deserialize, Debug)]
+struct OpenAiStreamResponse {
+    choices: Vec<StreamChoice>,
+}
+
+#[derive(Deserialize, Debug)]
+struct StreamChoice {
+    delta: StreamDelta,
+    finish_reason: Option<String>,
+}
+
+#[derive(Deserialize, Debug)]
+struct StreamDelta {
+    content: Option<String>,
 }
 
 impl OpenAiClient {
@@ -114,6 +154,10 @@ impl LlmClient for OpenAiClient {
             tools: if tools.is_empty() { None } else { Some(tools.to_vec()) },
         };
 
+        if let Ok(body) = serde_json::to_string(&request) {
+            info!("OpenAI Request Body: {}", body);
+        }
+
         // Construct full URL, handling potential double slashes
         let base_url = self.base_url.trim_end_matches('/');
         let url = format!("{}/chat/completions", base_url);
@@ -139,6 +183,71 @@ impl LlmClient for OpenAiClient {
         response.choices.into_iter().next()
             .map(|c| c.message)
             .context("No response from OpenAI")
+    }
+
+    fn model_name(&self) -> &str {
+        &self.model
+    }
+    async fn chat_stream(&self, messages: &[Message]) -> Result<Pin<Box<dyn Stream<Item = Result<ChatChunk>> + Send>>> {
+        let request = OpenAiStreamRequest {
+            model: self.model.clone(),
+            messages: messages.to_vec(),
+            stream: true,
+            tools: None, // Streaming tools not supported yet in this simple implementation
+        };
+
+        let base_url = self.base_url.trim_end_matches('/');
+        let url = format!("{}/chat/completions", base_url);
+
+        let response = self.client
+            .post(&url)
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .json(&request)
+            .send()
+            .await?;
+
+        let status = response.status();
+        if !status.is_success() {
+            let text = response.text().await?;
+            error!("OpenAI API Stream Error: Status={}, Body={}", status, text);
+            return Err(anyhow::anyhow!("OpenAI API returned error: {}", status));
+        }
+
+        let stream = response.bytes_stream();
+        
+        let chunk_stream = async_stream::try_stream! {
+            let mut buffer = String::new();
+            
+            for await chunk in stream {
+                let chunk = chunk?;
+                let chunk_str = String::from_utf8_lossy(&chunk);
+                buffer.push_str(&chunk_str);
+                
+                while let Some(pos) = buffer.find("\n\n") {
+                    let line = buffer.drain(..pos+2).collect::<String>();
+                    let line = line.trim();
+                    
+                    if let Some(data) = line.strip_prefix("data: ") {
+                        if data == "[DONE]" {
+                            break;
+                        }
+                        
+                        if let Ok(response) = serde_json::from_str::<OpenAiStreamResponse>(data) {
+                            if let Some(choice) = response.choices.first() {
+                                if let Some(content) = &choice.delta.content {
+                                    yield ChatChunk {
+                                        delta: content.clone(),
+                                        finish_reason: choice.finish_reason.clone(),
+                                    };
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        };
+
+        Ok(Box::pin(chunk_stream))
     }
 }
 
@@ -171,6 +280,10 @@ impl LlmClient for MockClient {
     async fn chat_complete_with_tools(&self, messages: &[Message], _tools: &[serde_json::Value]) -> Result<Message> {
         let text = self.chat_complete(messages).await?;
         Ok(Message::new("assistant", &text))
+    }
+
+    fn model_name(&self) -> &str {
+        "mock-model"
     }
 }
 
@@ -380,5 +493,9 @@ impl LlmClient for OllamaClient {
         };
 
         Ok(response.message)
+    }
+
+    fn model_name(&self) -> &str {
+        &self.model
     }
 }

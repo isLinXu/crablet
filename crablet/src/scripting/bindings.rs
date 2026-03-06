@@ -5,6 +5,8 @@ use crate::tools::search::WebSearchTool;
 use crate::cognitive::llm::{LlmClient, OpenAiClient};
 use crate::types::Message;
 use crate::cognitive::multimodal::image::ImageProcessor;
+use crate::safety::oracle::{SafetyOracle, SafetyLevel, SafetyDecision};
+
 #[cfg(feature = "audio")]
 use crate::cognitive::multimodal::audio::AudioTool;
 #[cfg(feature = "knowledge")]
@@ -17,18 +19,32 @@ pub fn register_bindings(lua: &Lua) -> Result<()> {
     let crablet = lua.create_table()?;
     
     // Bind 'run_command'
-    crablet.set("run_command", lua.create_function(|_, cmd: String| {
-        match BashTool::execute(&cmd) {
-            Ok(output) => Ok(output),
-            Err(e) => Ok(format!("Error: {}", e)),
+    crablet.set("run_command", lua.create_async_function(|_, cmd: String| async move {
+        let oracle = SafetyOracle::new(SafetyLevel::Strict);
+        match oracle.check_bash_command(&cmd) {
+            SafetyDecision::Allowed => {
+                match BashTool::execute(&cmd).await {
+                    Ok(output) => Ok(output),
+                    Err(e) => Ok(format!("Error: {}", e)),
+                }
+            },
+            SafetyDecision::Blocked(reason) => Ok(format!("🚫 Safety Oracle Blocked: {}", reason)),
+            SafetyDecision::RequireConfirmation(reason) => Ok(format!("⚠️ Confirmation Required: {}", reason)),
         }
     })?)?;
 
     // Bind 'read_file'
     crablet.set("read_file", lua.create_function(|_, path: String| {
-        match FileTool::read(&path) {
-            Ok(content) => Ok(content),
-            Err(e) => Ok(format!("Error: {}", e)),
+        let oracle = SafetyOracle::new(SafetyLevel::Strict);
+        match oracle.check_file_access(&path) {
+            SafetyDecision::Allowed => {
+                match FileTool::read(&path) {
+                    Ok(content) => Ok(content),
+                    Err(e) => Ok(format!("Error: {}", e)),
+                }
+            },
+            SafetyDecision::Blocked(reason) => Ok(format!("🚫 Safety Oracle Blocked: {}", reason)),
+            SafetyDecision::RequireConfirmation(reason) => Ok(format!("⚠️ Confirmation Required: {}", reason)),
         }
     })?)?;
 

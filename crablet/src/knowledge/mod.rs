@@ -3,3 +3,7 @@ pub mod extractor;
 pub mod vector_store;
 pub mod chunking;
 pub mod reranking;
+pub mod graph_rag;
+pub mod ingestion;
+pub mod graph;
+pub mod multimodal;

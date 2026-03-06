@@ -1,231 +1,17 @@
-// use crate::types::{Message, TraceStep, ContentPart};
-// use std::sync::Arc;
-// use tokio::sync::RwLock;
-// use tracing::{info, warn};
-// use crate::events::{AgentEvent, EventBus};
-// use crate::skills::SkillRegistry;
-// use crate::cognitive::llm::LlmClient;
-// use anyhow::Result;
-
-// pub struct ReActEngine {
-//     llm: Arc<Box<dyn LlmClient>>,
-//     skills: Arc<RwLock<SkillRegistry>>,
-//     event_bus: Arc<EventBus>,
-//     max_steps: usize,
-// }
-
-// impl ReActEngine {
-//     pub fn new(llm: Arc<Box<dyn LlmClient>>, skills: Arc<RwLock<SkillRegistry>>, event_bus: Arc<EventBus>) -> Self {
-//         Self {
-//             llm,
-//             skills,
-//             event_bus,
-//             max_steps: 5,
-//         }
-//     }
-
-//     pub async fn execute(&self, initial_context: &[Message]) -> Result<(String, Vec<TraceStep>)> {
-//         let mut current_context = initial_context.to_vec();
-//         let mut traces = Vec::new();
-        
-//         for step in 0..self.max_steps {
-//             info!("ReAct Step {}/{}", step + 1, self.max_steps);
-            
-//             // Get available tools definition
-//             let tool_definitions = {
-//                 let registry = self.skills.read().await;
-//                 registry.to_tool_definitions()
-//             };
-
-//             // Force system prompt instruction to use tool outputs
-//             let mut current_context_with_system = current_context.clone();
-//             if step > 0 {
-//                 // Add a system reminder to use the tool output
-//                 current_context_with_system.push(Message::new("system", "You have just received the output from a tool. Use this information to answer the user's question. Do not repeat the same tool call with the same arguments."));
-//             }
-
-//             let response_msg = match self.llm.chat_complete_with_tools(&current_context_with_system, &tool_definitions).await {
-//                 Ok(msg) => msg,
-//                 Err(e) => {
-//                     warn!("ReAct Loop LLM Error: {}", e);
-//                     self.event_bus.publish(AgentEvent::Error(format!("LLM Error: {}", e)));
-//                     if step == 0 {
-//                         return Err(anyhow::anyhow!("LLM Error: {}", e));
-//                     } else {
-//                          return Ok(("I encountered an error while thinking. Please try again.".to_string(), traces));
-//                     }
-//                 }
-//             };
-            
-//             // Extract content for thought trace
-//             let thought = response_msg.content.as_ref().map(|c| {
-//                 c.iter().filter_map(|p| match p {
-//                     ContentPart::Text { text } => Some(text.as_str()),
-//                     _ => None,
-//                 }).collect::<Vec<_>>().join("")
-//             }).unwrap_or_default();
-            
-//             if !thought.is_empty() {
-//                 self.event_bus.publish(AgentEvent::ThoughtGenerated(thought.clone()));
-//             }
-
-//             let mut current_trace = TraceStep {
-//                 step: step + 1,
-//                 thought: thought.clone(),
-//                 action: None,
-//                 action_input: None,
-//                 observation: None,
-//             };
-
-//             // Fallback: Parse ReAct style "Action: ..." from text if no tool calls
-//             let mut effective_tool_calls = response_msg.tool_calls.clone().unwrap_or_default();
-            
-//             if effective_tool_calls.is_empty() && thought.contains("Action:") {
-//                 // Try to parse Action: use <tool> <args> or Action: <tool> <args>
-//                 if let Some(action_part) = thought.split("Action:").nth(1) {
-//                     let action_line = action_part.lines().next().unwrap_or("").trim();
-//                     if !action_line.is_empty() {
-//                         // Handle "use tool {...}" or "tool {...}"
-//                         let (tool_name, args_str) = if action_line.starts_with("use ") {
-//                             let rest = action_line.strip_prefix("use ").unwrap().trim();
-//                             // Split by first space or first brace
-//                             if let Some(idx) = rest.find(|c| c == ' ' || c == '{') {
-//                                 (&rest[..idx], &rest[idx..])
-//                             } else {
-//                                 (rest, "{}")
-//                             }
-//                         } else {
-//                              if let Some(idx) = action_line.find(|c| c == ' ' || c == '{') {
-//                                 (&action_line[..idx], &action_line[idx..])
-//                             } else {
-//                                 (action_line, "{}")
-//                             }
-//                         };
-                        
-//                         let tool_name = tool_name.trim();
-//                         let args_str = args_str.trim();
-                        
-//                         if !tool_name.is_empty() {
-//                             info!("ReAct Fallback: Parsed action '{}' args '{}'", tool_name, args_str);
-//                             effective_tool_calls.push(crate::types::ToolCall {
-//                                 id: format!("call_{}", uuid::Uuid::new_v4()),
-//                                 r#type: "function".to_string(),
-//                                 function: crate::types::FunctionCall {
-//                                     name: tool_name.to_string(),
-//                                     arguments: args_str.to_string(),
-//                                 }
-//                             });
-//                         }
-//                     }
-//                 }
-//             }
-
-//             // Check for Tool Calls
-//             if !effective_tool_calls.is_empty() {
-//                 // Add assistant message with tool calls to context
-//                 // If we parsed fallback calls, we need to ensure the message in context reflects that
-//                 let mut msg_to_push = response_msg.clone();
-//                 if msg_to_push.tool_calls.is_none() || msg_to_push.tool_calls.as_ref().unwrap().is_empty() {
-//                     msg_to_push.tool_calls = Some(effective_tool_calls.clone());
-//                 }
-//                 current_context.push(msg_to_push);
-                
-//                 for tool_call in &effective_tool_calls {
-//                     let function_name = &tool_call.function.name;
-//                     let arguments = &tool_call.function.arguments;
-                        
-//                         info!("ReAct: Decided to use skill '{}'", function_name);
-//                         current_trace.action = Some(function_name.clone());
-//                         current_trace.action_input = Some(arguments.clone());
-                        
-//                         self.event_bus.publish(AgentEvent::ToolExecutionStarted { 
-//                             tool: function_name.clone(), 
-//                             args: arguments.clone() 
-//                         });
-                        
-//                         let registry = self.skills.read().await;
-                        
-//                         // Execute Skill
-//                         let output_result = match serde_json::from_str(&arguments) {
-//                             Ok(args) => registry.execute(function_name, args).await,
-//                             Err(e) => Err(anyhow::anyhow!("Error parsing arguments: {}", e)),
-//                         };
-
-//                         let output = match output_result {
-//                             Ok(o) => o,
-//                             Err(e) => format!("Error executing skill: {}", e),
-//                         };
-                        
-//                         self.event_bus.publish(AgentEvent::ToolExecutionFinished { 
-//                             tool: function_name.clone(), 
-//                             output: output.clone() 
-//                         });
-                        
-//                         // Update current trace with observation
-//                         current_trace.observation = Some(output.clone());
-//                         traces.push(current_trace.clone());
-
-//                         // Add tool response message to context
-//                         current_context.push(Message::new_tool_response(&tool_call.id, &output));
-                    
-//                 } // End for loop over tool_calls
-
-//                 // Loop Detection: Check if we are repeating the exact same tool calls
-//                 if traces.len() >= 2 {
-//                     let last_trace = &traces[traces.len() - 1];
-//                     let prev_trace = &traces[traces.len() - 2];
-                    
-//                     if last_trace.action.is_some() && 
-//                        last_trace.action == prev_trace.action && 
-//                        last_trace.action_input == prev_trace.action_input {
-                        
-//                         warn!("ReAct Loop Detected: Repeating tool {} with args {:?}", last_trace.action.as_deref().unwrap_or("?"), last_trace.action_input);
-                        
-//                         let final_answer = format!("I seem to be repeating myself. Here is the result from the tool:\n\n{}", last_trace.observation.as_deref().unwrap_or(""));
-//                         self.event_bus.publish(AgentEvent::ResponseGenerated(final_answer.clone()));
-//                         return Ok((final_answer, traces));
-//                     }
-//                 }
-                
-//                 // IMPORTANT: Continue to next iteration so LLM can see the tool output
-//                 continue;
-//             }
-
-//             // If no tool calls, this is the final response
-//             self.event_bus.publish(AgentEvent::ResponseGenerated(thought.clone()));
-//             traces.push(current_trace);
-//             return Ok((thought, traces));
-//         }
-
-//         warn!("ReAct loop reached maximum steps ({}) without final answer.", self.max_steps);
-//         // Return the last thought or observation if available
-//         let final_msg = if let Some(last) = traces.last() {
-//              if let Some(obs) = &last.observation {
-//                  format!("I reached the maximum number of steps. Here is the last tool output:\n\n{}", obs)
-//              } else {
-//                  last.thought.clone()
-//              }
-//         } else {
-//             "I thought for too long and couldn't reach a conclusion.".to_string()
-//         };
-        
-//         Ok((final_msg, traces))
-//     }
-// }
-
 use crate::types::{Message, TraceStep, ContentPart, ToolCall, FunctionCall};
 use crate::events::{AgentEvent, EventBus};
 use crate::skills::SkillRegistry;
 use crate::cognitive::llm::LlmClient;
 use anyhow::{Result, anyhow};
 use std::sync::Arc;
-use std::collections::{HashSet, HashMap};
+use std::collections::{HashSet, HashMap, VecDeque};
 use std::time::Duration;
 use tokio::sync::RwLock;
 use tokio::time::timeout;
-use tracing::{info, warn};
+use tracing::{info, warn, error};
 use regex::Regex;
 use lazy_static::lazy_static;
+// use uuid::Uuid;
 
 // --- 增强型循环检测器 ---
 
@@ -235,6 +21,12 @@ struct LoopDetector {
     // 记录特定资源的访问频率 (防止对同一张图不断变换 Prompt 刷屏)
     // 结构: tool_name -> resource_id (如 image_path) -> count
     resource_usage: HashMap<String, HashMap<String, usize>>,
+    // 语义相似度滑动窗口
+    window: VecDeque<String>,
+    max_window: usize,
+    similarity_threshold: f32,
+    // 连续重复计数
+    consecutive_repeats: usize,
 }
 
 impl LoopDetector {
@@ -242,14 +34,25 @@ impl LoopDetector {
         Self {
             exact_history: HashSet::new(),
             resource_usage: HashMap::new(),
+            window: VecDeque::new(),
+            max_window: 5,
+            similarity_threshold: 0.85, // 85% Jaccard similarity threshold
+            consecutive_repeats: 0,
         }
     }
 
     /// 检测是否陷入循环。包含针对 'see' 工具的特殊逻辑。
     fn is_looping(&mut self, tool: &str, args: &str) -> bool {
         // 1. 基础检测：如果参数完全一致，直接判定为循环
-        if !self.exact_history.insert((tool.to_string(), args.to_string())) {
-            return true;
+        // 允许最多 1 次重试，但第 2 次相同则报错
+        if self.exact_history.contains(&(tool.to_string(), args.to_string())) {
+             self.consecutive_repeats += 1;
+             if self.consecutive_repeats >= 2 {
+                 return true;
+             }
+        } else {
+            self.consecutive_repeats = 0;
+            self.exact_history.insert((tool.to_string(), args.to_string()));
         }
 
         // 2. 资源级语义检测：针对多模态 'see' 工具
@@ -261,15 +64,48 @@ impl LoopDetector {
                     let count = counts.entry(path.to_string()).or_insert(0);
                     *count += 1;
                     
-                    // 如果对同一张图片操作超过 2 次，即使 Prompt 不同，也视为陷入语义循环
-                    if *count > 2 {
+                    // 如果对同一张图片操作超过 3 次，即使 Prompt 不同，也视为陷入语义循环
+                    if *count > 3 {
                         warn!("Resource loop detected for path: {}", path);
                         return true;
                     }
                 }
             }
         }
+        
+        // 3. 语义相似度检测 (Sliding Window)
+        let action_str = format!("{} {}", tool, args);
+        
+        for prev in &self.window {
+            if self.similarity(prev, &action_str) > self.similarity_threshold {
+                warn!("Semantic loop detected: '{}' is similar to '{}'", action_str, prev);
+                // 同样允许少量相似重试
+                if self.consecutive_repeats >= 1 {
+                    return true;
+                }
+                self.consecutive_repeats += 1;
+                return false;
+            }
+        }
+        
+        if self.window.len() >= self.max_window {
+            self.window.pop_front();
+        }
+        self.window.push_back(action_str);
+
         false
+    }
+    
+    fn similarity(&self, s1: &str, s2: &str) -> f32 {
+        // Jaccard Similarity on words (Simple Semantic Proxy)
+        let set1: HashSet<&str> = s1.split_whitespace().collect();
+        let set2: HashSet<&str> = s2.split_whitespace().collect();
+        
+        let intersection = set1.intersection(&set2).count();
+        let union = set1.union(&set2).count();
+        
+        if union == 0 { return 0.0; }
+        intersection as f32 / union as f32
     }
 }
 
@@ -278,10 +114,11 @@ impl LoopDetector {
 struct ActionParser;
 
 impl ActionParser {
-    /// 使用正则提取 "Action: tool {json}" 格式
+    /// 使用正则提取 "Action: tool {json}" 格式，支持多行 JSON
     fn parse_fallback(text: &str) -> Option<(String, String)> {
         lazy_static! {
-            static ref RE: Regex = Regex::new(r"(?i)Action:\s*(?:use\s+)?(?P<name>[\w\-]+)\s*(?P<args>\{.*\})").unwrap();
+            // Updated regex to support multiline JSON args with dot matches newline (?s)
+            static ref RE: Regex = Regex::new(r"(?is)Action:\s*(?:use\s+)?(?P<name>[\w\-]+)\s*(?P<args>\{[\s\S]*?\})").expect("Invalid regex pattern");
         }
         RE.captures(text).map(|cap| (cap["name"].to_string(), cap["args"].trim().to_string()))
     }
@@ -293,7 +130,7 @@ pub struct ReActEngine {
     llm: Arc<Box<dyn LlmClient>>,
     skills: Arc<RwLock<SkillRegistry>>,
     event_bus: Arc<EventBus>,
-    max_steps: usize,
+    // max_steps: usize,
     skill_timeout: Duration,
 }
 
@@ -307,20 +144,20 @@ impl ReActEngine {
             llm,
             skills,
             event_bus,
-            max_steps: 5,
+            // max_steps: 5,
             // 针对多模态任务，设置一个合理的全局超时（如 30 秒）
             skill_timeout: Duration::from_secs(30),
         }
     }
 
-    pub async fn execute(&self, initial_context: &[Message]) -> Result<(String, Vec<TraceStep>)> {
+    pub async fn execute(&self, initial_context: &[Message], max_steps: usize) -> Result<(String, Vec<TraceStep>)> {
         let mut current_context = initial_context.to_vec();
-        let mut traces = Vec::with_capacity(self.max_steps);
+        let mut traces = Vec::with_capacity(max_steps);
         let mut loop_detector = LoopDetector::new();
 
-        for step in 0..self.max_steps {
+        for step in 0..max_steps {
             let step_num = step + 1;
-            info!("ReAct Step {}/{}", step_num, self.max_steps);
+            info!("ReAct Step {}/{}", step_num, max_steps);
 
             let tool_definitions = self.skills.read().await.to_tool_definitions();
 
@@ -363,6 +200,33 @@ impl ReActEngine {
 
             // 4. 终止条件检查
             if tool_calls.is_empty() {
+                // Scheme E: Self-Reflection
+                // If thought is the final answer, reflect on it.
+                // We do a simple reflection if the answer seems short or if we have history.
+                // For MVP, we reflect if max_steps > 3 (complex task) and step > 1
+                if max_steps > 3 && step > 1 {
+                    info!("Triggering Self-Reflection on final answer...");
+                    match self.reflect_on_result(&thought, &current_context).await {
+                         Ok(reflection) => {
+                             if reflection.confidence < 0.8 {
+                                 info!("Reflection confidence low ({}), revising...", reflection.confidence);
+                                 // Return revised response
+                                 let revised = format!("{} (Revised after reflection)", reflection.revised_response);
+                                 self.event_bus.publish(AgentEvent::ResponseGenerated(revised.clone()));
+                                 traces.push(TraceStep {
+                                     step: step_num,
+                                     thought: format!("Reflection: {}\nCritique: {}", thought, reflection.critique),
+                                     action: None,
+                                     action_input: None,
+                                     observation: None,
+                                 });
+                                 return Ok((revised, traces));
+                             }
+                         },
+                         Err(e) => warn!("Reflection failed: {}", e),
+                    }
+                }
+                
                 self.event_bus.publish(AgentEvent::ResponseGenerated(thought.clone()));
                 traces.push(TraceStep {
                     step: step_num,
@@ -374,74 +238,183 @@ impl ReActEngine {
                 return Ok((thought, traces));
             }
 
-            // 5. 执行工具 (同步 Assistant 消息)
+            // 5. 执行工具 (并行优化)
             let mut assistant_msg_record = response_msg.clone();
             if assistant_msg_record.tool_calls.is_none() {
                 assistant_msg_record.tool_calls = Some(tool_calls.clone());
             }
             current_context.push(assistant_msg_record);
 
-            for tool_call in tool_calls {
-                let func_name = &tool_call.function.name;
-                let args_str = &tool_call.function.arguments;
+            // 分组工具调用：根据依赖关系 (MVP: 简单地全部并行，除非有明确依赖，这里假设无依赖)
+            // 如果工具有副作用或顺序依赖，应该在 Prompt 中要求 LLM 顺序调用或使用 Planner。
+            // 这里我们使用 FuturesUnordered 或 tokio::join! 进行并行执行。
+            
+            // 为了安全，限制最大并发数，例如 5
+            let semaphore = Arc::new(tokio::sync::Semaphore::new(5));
+            let mut tasks = Vec::new();
 
-                // --- 循环拦截 ---
-                if loop_detector.is_looping(func_name, args_str) {
+            for tool_call in tool_calls {
+                let func_name = tool_call.function.name.clone();
+                let args_str = tool_call.function.arguments.clone();
+                let tool_id = tool_call.id.clone();
+                
+                // 循环检测 (Pre-check)
+                // 注意：由于并行执行，resource_usage 可能需要锁，但这里 LoopDetector 是局部的且单线程访问
+                // 除非我们将 LoopDetector 放入任务中。
+                // 简单起见，我们在主线程做 check，如果通过则 spawn。
+                
+                if loop_detector.is_looping(&func_name, &args_str) {
                     let loop_msg = format!("Loop detected: repeated or redundant use of '{}'.", func_name);
                     warn!("{}", loop_msg);
-                    let last_obs = traces.last().and_then(|t| t.observation.clone()).unwrap_or_default();
-                    return Ok((format!("I noticed a loop in my thinking. Here's the last info I got: {}", last_obs), traces));
+                    let obs = format!("System Warning: {}", loop_msg);
+                    // Push a completed result immediately
+                    tasks.push(tokio::spawn(async move {
+                        (tool_id, func_name, args_str, obs)
+                    }));
+                    continue;
                 }
-
-                // --- 带超时的执行 ---
-                let observation = match timeout(self.skill_timeout, self.run_skill_task(func_name, args_str)).await {
-                    Ok(result) => result,
-                    Err(_) => {
-                        let timeout_err = format!("Execution of '{}' timed out after {}s.", func_name, self.skill_timeout.as_secs());
-                        warn!("{}", timeout_err);
-                        timeout_err
-                    }
-                };
-
-                // --- 更新 Trace 和上下文 ---
+                
+                // Clone necessary ARCs for the task
+                let skills_clone = self.skills.clone();
+                let bus_clone = self.event_bus.clone();
+                let timeout_duration = self.skill_timeout;
+                let sem_clone = semaphore.clone();
+                
+                tasks.push(tokio::spawn(async move {
+                    // Use unwrap_or_default() or handle error gracefully instead of unwrap()
+                    let _permit = match sem_clone.acquire().await {
+                        Ok(p) => p,
+                        Err(e) => {
+                            error!("Semaphore acquire failed: {}", e);
+                            return (tool_id, func_name, args_str, format!("System Error: Failed to acquire concurrency permit: {}", e));
+                        }
+                    };
+                    
+                    // Publish Start Event
+                    bus_clone.publish(AgentEvent::ToolExecutionStarted {
+                        tool: func_name.clone(),
+                        args: args_str.clone(),
+                    });
+                    
+                    // Execute
+                    let execution_future = async {
+                        let registry = skills_clone.read().await;
+                        match serde_json::from_str(&args_str) {
+                            Ok(parsed_json) => registry.execute(&func_name, parsed_json).await
+                                .unwrap_or_else(|e| format!("Skill execution failed: {}", e)),
+                            Err(e) => format!("Parameter Error: {}. Please use valid JSON.", e),
+                        }
+                    };
+                    
+                    let output = match timeout(timeout_duration, execution_future).await {
+                        Ok(res) => res,
+                        Err(_) => {
+                            let err = format!("Execution of '{}' timed out after {}s.", func_name, timeout_duration.as_secs());
+                            warn!("{}", err);
+                            err
+                        }
+                    };
+                    
+                    // Publish Finish Event
+                    bus_clone.publish(AgentEvent::ToolExecutionFinished {
+                        tool: func_name.clone(),
+                        output: output.clone(),
+                    });
+                    
+                    (tool_id, func_name, args_str, output)
+                }));
+            }
+            
+            // Await all tasks
+            let mut results = Vec::new();
+            for task in tasks {
+                if let Ok(res) = task.await {
+                    results.push(res);
+                } else {
+                    // Task panic handling
+                    error!("A tool execution task panicked");
+                }
+            }
+            
+            // Process results in order (or any order, but we need to match tool_ids)
+            // Since we collected them, we can just iterate.
+            
+            for (tool_id, func_name, args_str, observation) in results {
                 traces.push(TraceStep {
                     step: step_num,
                     thought: thought.clone(),
-                    action: Some(func_name.clone()),
-                    action_input: Some(args_str.clone()),
+                    action: Some(func_name),
+                    action_input: Some(args_str),
                     observation: Some(observation.clone()),
                 });
-
-                current_context.push(Message::new_tool_response(&tool_call.id, &observation));
+                
+                current_context.push(Message::new_tool_response(&tool_id, &observation));
             }
         }
 
         // 6. 达到步数上限
-        warn!("ReAct engine reached max_steps ({})", self.max_steps);
+        warn!("ReAct engine reached max_steps ({})", max_steps);
         Ok((self.format_limit_reached_msg(&traces), traces))
     }
 
     // --- 内部辅助函数 ---
-
-    async fn run_skill_task(&self, name: &str, args: &str) -> String {
-        self.event_bus.publish(AgentEvent::ToolExecutionStarted {
-            tool: name.into(),
-            args: args.into(),
-        });
-
-        let registry = self.skills.read().await;
-        let output = match serde_json::from_str(args) {
-            Ok(parsed_json) => registry.execute(name, parsed_json).await
-                .unwrap_or_else(|e| format!("Skill execution failed: {}", e)),
-            Err(e) => format!("Parameter Error: {}. Please use valid JSON.", e),
+    
+    // Scheme E: Self-Reflection Implementation
+    async fn reflect_on_result(&self, result: &str, context: &[Message]) -> Result<ReflectionStep> {
+        let critique_prompt = format!(
+            "Review your answer critically:\n\
+             1. Are there factual errors?\n\
+             2. Did you miss important nuances?\n\
+             3. Could the reasoning be improved?\n\
+             Original answer: {}\n\
+             \n\
+             Provide your critique and a revised answer in JSON format: \
+             {{ \"critique\": \"...\", \"revised_response\": \"...\", \"confidence\": 0.0-1.0 }}",
+            result
+        );
+        
+        let mut reflection_context = context.to_vec();
+        reflection_context.push(Message::new("user", &critique_prompt));
+        
+        let response = self.llm.chat_complete(&reflection_context).await?;
+        
+        // Parse JSON from response (naive parsing)
+        // Try to find JSON block
+        let json_str = if let Some(start) = response.find('{') {
+            if let Some(end) = response.rfind('}') {
+                &response[start..=end]
+            } else {
+                &response
+            }
+        } else {
+            &response
         };
-
-        self.event_bus.publish(AgentEvent::ToolExecutionFinished {
-            tool: name.into(),
-            output: output.clone(),
-        });
-        output
+        
+        let reflection: ReflectionStep = serde_json::from_str(json_str)
+            .map_err(|e| anyhow!("Failed to parse reflection JSON: {}", e))?;
+            
+        Ok(reflection)
     }
+
+    // async fn run_skill_task(&self, name: &str, args: &str) -> String {
+    //     self.event_bus.publish(AgentEvent::ToolExecutionStarted {
+    //         tool: name.into(),
+    //         args: args.into(),
+    //     });
+    //
+    //     let registry = self.skills.read().await;
+    //     let output = match serde_json::from_str(args) {
+    //         Ok(parsed_json) => registry.execute(name, parsed_json).await
+    //             .unwrap_or_else(|e| format!("Skill execution failed: {}", e)),
+    //         Err(e) => format!("Parameter Error: {}. Please use valid JSON.", e),
+    //     };
+    //
+    //     self.event_bus.publish(AgentEvent::ToolExecutionFinished {
+    //         tool: name.into(),
+    //         output: output.clone(),
+    //     });
+    //     output
+    // }
 
     fn extract_thought(&self, msg: &Message) -> String {
         msg.content.as_ref().map(|parts| {
@@ -461,4 +434,12 @@ impl ReActEngine {
         }
         "I couldn't finish the task within the maximum step limit.".to_string()
     }
+}
+
+#[derive(serde::Deserialize)]
+struct ReflectionStep {
+    #[allow(dead_code)]
+    critique: String,
+    revised_response: String,
+    confidence: f64,
 }

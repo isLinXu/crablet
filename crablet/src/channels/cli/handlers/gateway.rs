@@ -1,7 +1,11 @@
 use anyhow::Result;
 use crate::gateway::{CrabletGateway, types::GatewayConfig};
+use crate::cognitive::router::CognitiveRouter;
+use std::sync::Arc;
 
-pub async fn handle_gateway(host: &str, port: u16) -> Result<()> {
+use crate::events::AgentEvent;
+
+pub async fn handle_gateway(host: &str, port: u16, router: Arc<CognitiveRouter>) -> Result<()> {
     println!("Starting Crablet Gateway on {}:{}...", host, port);
     
     let gateway_config = GatewayConfig {
@@ -10,7 +14,7 @@ pub async fn handle_gateway(host: &str, port: u16) -> Result<()> {
         auth_mode: "off".to_string(),
     };
     
-    let gateway = CrabletGateway::new(gateway_config);
+    let gateway = CrabletGateway::new(gateway_config, router);
     
     // Register a ping method for testing
     gateway.rpc.register("ping", |_| async { 
@@ -25,7 +29,7 @@ pub async fn handle_gateway(host: &str, port: u16) -> Result<()> {
             let msg = params.and_then(|p| p.get("message").and_then(|v| v.as_str()).map(|s| s.to_string()))
                 .unwrap_or_else(|| "default message".to_string());
             
-            let _ = event_bus.publish(crate::gateway::events::GatewayEvent::SystemAlert(msg));
+            event_bus.publish(AgentEvent::SystemLog(msg));
             Ok(Some(serde_json::json!("broadcast_sent")))
         }
     }).await;

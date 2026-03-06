@@ -34,6 +34,9 @@
         .toast.error { background: #ef4444; }
         .toast.success { background: #22c55e; }
         
+        /* Error Boundary */
+        #error-boundary { z-index: 9999; }
+        
         /* Thinking Animation */
         .thinking-bubble {
             display: inline-flex;
@@ -68,9 +71,31 @@
         .prose pre { background-color: #1e293b; color: #e2e8f0; padding: 1rem; border-radius: 0.5rem; overflow-x: auto; }
         .prose code { font-family: monospace; background-color: rgba(0,0,0,0.05); padding: 0.1rem 0.3rem; border-radius: 0.2rem; }
         .dark .prose code { background-color: rgba(255,255,255,0.1); }
+        /* Background Patterns */
+        .bg-dot-pattern {
+            background-image: radial-gradient(#cbd5e1 1px, transparent 1px);
+            background-size: 20px 20px;
+        }
+        .dark .bg-dot-pattern {
+            background-image: radial-gradient(#475569 1px, transparent 1px);
+        }
     </style>
 </head>
 <body class="bg-white dark:bg-dark text-gray-900 dark:text-gray-100 font-sans antialiased h-screen flex overflow-hidden transition-colors duration-200">
+    <!-- Error Boundary & Toast Container -->
+    <div id="error-boundary" class="hidden fixed inset-0 bg-red-500/10 backdrop-blur-sm z-[100] flex items-center justify-center">
+        <div class="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-2xl max-w-md text-center border border-red-200 dark:border-red-900">
+            <div class="w-16 h-16 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
+                <i class="fas fa-exclamation-triangle text-2xl text-red-600 dark:text-red-400"></i>
+            </div>
+            <h3 class="text-lg font-bold text-gray-900 dark:text-white mb-2">Something went wrong</h3>
+            <p id="error-boundary-message" class="text-sm text-gray-500 dark:text-gray-400 mb-6">An unexpected error occurred. Please try reloading.</p>
+            <div class="flex justify-center gap-3">
+                <button onclick="window.location.reload()" class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors">Reload Page</button>
+                <button onclick="document.getElementById('error-boundary').classList.add('hidden')" class="px-4 py-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">Dismiss</button>
+            </div>
+        </div>
+    </div>
     <div id="toast-container"></div>
 
     <!-- 1. Primary Sidebar: Projects -->
@@ -122,6 +147,9 @@
             </div>
             
             <div class="flex items-center gap-1 md:gap-2">
+                <div class="text-xs text-gray-400 mr-2 flex items-center gap-1">
+                    <i id="ws-status-icon" class="fas fa-circle text-gray-300" title="Connecting..."></i>
+                </div>
                 <button onclick="openModal('openclaw-modal')" class="p-2 text-gray-500 hover:text-blue-600 dark:hover:text-blue-400 transition-colors rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800" title="OpenClaw System"><i class="fas fa-robot"></i></button>
                 <button onclick="openModal('skills-modal')" class="p-2 text-gray-500 hover:text-purple-600 dark:hover:text-purple-400 transition-colors rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800" title="Skills"><i class="fas fa-puzzle-piece"></i></button>
                 <button onclick="openModal('kb-modal')" class="p-2 text-gray-500 hover:text-green-600 dark:hover:text-green-400 transition-colors rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800" title="Knowledge Base"><i class="fas fa-database"></i></button>
@@ -215,18 +243,99 @@
     </div>
 
     <div id="openclaw-modal" class="fixed inset-0 bg-black/50 backdrop-blur-sm hidden z-50 flex justify-center items-center">
-        <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-2/3 max-w-2xl overflow-hidden border border-gray-100 dark:border-gray-700">
-            <div class="p-5 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
-                <h2 class="text-lg font-bold dark:text-white">System Status & Config</h2>
+        <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-3/4 max-w-4xl h-[85vh] overflow-hidden border border-gray-100 dark:border-gray-700 flex flex-col">
+            <div class="p-5 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center bg-gray-50 dark:bg-gray-900/50">
+                <h2 class="text-lg font-bold dark:text-white flex items-center gap-2">
+                    <i class="fas fa-network-wired text-blue-500"></i> Agent Orchestration & Status
+                </h2>
                 <button onclick="closeModal('openclaw-modal')" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times"></i></button>
             </div>
-            <div class="p-6 space-y-6">
-                <div class="grid grid-cols-3 gap-4">
-                    <div class="bg-green-50 dark:bg-green-900/20 p-4 rounded-xl border border-green-100 dark:border-green-800 text-center"><div class="text-xs text-green-600 font-bold uppercase">System 1</div><div class="text-xl font-bold text-green-700">Active</div></div>
-                    <div class="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-xl border border-blue-100 dark:border-blue-800 text-center"><div class="text-xs text-blue-600 font-bold uppercase">System 2</div><div class="text-xl font-bold text-blue-700">Ready</div></div>
-                    <div class="bg-gray-50 dark:bg-gray-700/30 p-4 rounded-xl border border-gray-200 dark:border-gray-700 text-center"><div class="text-xs text-gray-500 font-bold uppercase">System 3</div><div class="text-xl font-bold text-gray-400">Idle</div></div>
+            
+            <div class="flex-1 overflow-y-auto p-6 space-y-8 bg-white dark:bg-dark">
+                <!-- Agent Status Panel -->
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <!-- System 1: ReAct -->
+                    <div class="bg-white dark:bg-gray-800 p-5 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm relative overflow-hidden group">
+                        <div class="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity"><i class="fas fa-bolt text-6xl text-green-500"></i></div>
+                        <div class="flex justify-between items-start mb-4">
+                            <div>
+                                <h3 class="font-bold text-gray-800 dark:text-gray-200">System 1 (ReAct)</h3>
+                                <p class="text-xs text-gray-500 dark:text-gray-400">Fast, Instinctive Execution</p>
+                            </div>
+                            <span id="status-sys1" class="bg-green-100 text-green-700 text-xs px-2 py-1 rounded-full font-bold uppercase tracking-wider">Active</span>
+                        </div>
+                        <div class="space-y-2">
+                            <div class="flex justify-between text-xs text-gray-500"><span>Tools Used</span><span class="font-mono">12</span></div>
+                            <div class="flex justify-between text-xs text-gray-500"><span>Avg Latency</span><span class="font-mono">1.2s</span></div>
+                            <div class="h-1.5 w-full bg-gray-100 dark:bg-gray-700 rounded-full mt-2 overflow-hidden">
+                                <div class="h-full bg-green-500 w-3/4 animate-pulse"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- System 2: Planner -->
+                    <div class="bg-white dark:bg-gray-800 p-5 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm relative overflow-hidden group">
+                        <div class="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity"><i class="fas fa-chess text-6xl text-blue-500"></i></div>
+                        <div class="flex justify-between items-start mb-4">
+                            <div>
+                                <h3 class="font-bold text-gray-800 dark:text-gray-200">System 2 (Planner)</h3>
+                                <p class="text-xs text-gray-500 dark:text-gray-400">Slow, Deliberate Reasoning</p>
+                            </div>
+                            <span id="status-sys2" class="bg-blue-100 text-blue-700 text-xs px-2 py-1 rounded-full font-bold uppercase tracking-wider">Ready</span>
+                        </div>
+                        <div class="space-y-2">
+                            <div class="flex justify-between text-xs text-gray-500"><span>Active Plans</span><span class="font-mono">1</span></div>
+                            <div class="flex justify-between text-xs text-gray-500"><span>Depth</span><span class="font-mono">Level 3</span></div>
+                             <div class="h-1.5 w-full bg-gray-100 dark:bg-gray-700 rounded-full mt-2 overflow-hidden">
+                                <div class="h-full bg-blue-500 w-1/4"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- System 3: Swarm -->
+                    <div class="bg-white dark:bg-gray-800 p-5 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm relative overflow-hidden group">
+                        <div class="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity"><i class="fas fa-users text-6xl text-purple-500"></i></div>
+                        <div class="flex justify-between items-start mb-4">
+                            <div>
+                                <h3 class="font-bold text-gray-800 dark:text-gray-200">System 3 (Swarm)</h3>
+                                <p class="text-xs text-gray-500 dark:text-gray-400">Multi-Agent Collaboration</p>
+                            </div>
+                            <span id="status-sys3" class="bg-gray-100 text-gray-500 text-xs px-2 py-1 rounded-full font-bold uppercase tracking-wider">Idle</span>
+                        </div>
+                        <div class="space-y-2">
+                            <div class="flex justify-between text-xs text-gray-500"><span>Active Agents</span><span class="font-mono">0</span></div>
+                            <div class="flex justify-between text-xs text-gray-500"><span>Messages</span><span class="font-mono">0</span></div>
+                             <div class="h-1.5 w-full bg-gray-100 dark:bg-gray-700 rounded-full mt-2 overflow-hidden">
+                                <div class="h-full bg-gray-300 w-0"></div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
                 
+                <!-- Task Orchestration Canvas -->
+                <div class="border border-gray-200 dark:border-gray-700 rounded-2xl bg-gray-50 dark:bg-gray-900/50 p-1 min-h-[400px] flex flex-col">
+                    <div class="flex justify-between items-center px-4 py-2 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-t-xl">
+                        <h3 class="font-bold text-sm text-gray-700 dark:text-gray-300"><i class="fas fa-project-diagram mr-2"></i>Task Orchestration Flow</h3>
+                        <div class="flex gap-2 text-xs">
+                             <span class="flex items-center gap-1"><div class="w-2 h-2 rounded-full bg-green-500"></div> Executing</span>
+                             <span class="flex items-center gap-1"><div class="w-2 h-2 rounded-full bg-gray-300"></div> Pending</span>
+                        </div>
+                    </div>
+                    <div class="flex-1 relative overflow-hidden bg-dot-pattern" id="flow-canvas">
+                        <!-- Simulated Flow Visualization (Mermaid or HTML based) -->
+                        <div class="absolute inset-0 flex items-center justify-center text-gray-400" id="flow-placeholder">
+                            <div class="text-center">
+                                <i class="fas fa-sitemap text-4xl mb-2 opacity-20"></i>
+                                <p class="text-sm">No active task flow</p>
+                            </div>
+                        </div>
+                        <div id="active-flow-diagram" class="w-full h-full p-4 flex items-center justify-center opacity-0 transition-opacity duration-500">
+                             <!-- Mermaid diagram container -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Config Section (Collapsible) -->
                 <div class="border-t border-gray-200 dark:border-gray-700 pt-6">
                     <h3 class="text-md font-bold dark:text-white mb-3">Model Configuration</h3>
                     <div class="space-y-3">
@@ -250,7 +359,20 @@
                 <h2 class="text-lg font-bold dark:text-white">Knowledge Base</h2>
                 <button onclick="closeModal('kb-modal')" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times"></i></button>
             </div>
-            <div class="flex-1 p-6 overflow-y-auto"><ul id="kb-file-list" class="space-y-2"></ul></div>
+            <div class="flex-1 flex overflow-hidden">
+                <div class="w-1/3 border-r border-gray-200 dark:border-gray-700 p-4 overflow-y-auto">
+                    <div class="mb-4">
+                        <input type="text" id="kb-search" placeholder="Search documents..." class="w-full bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500">
+                    </div>
+                    <ul id="kb-file-list" class="space-y-2"></ul>
+                </div>
+                <div class="flex-1 p-6 overflow-y-auto bg-gray-50 dark:bg-gray-900/30" id="kb-preview">
+                    <div class="text-center text-gray-400 mt-20">
+                        <i class="fas fa-file-alt text-4xl mb-3 opacity-30"></i>
+                        <p>Select a document to preview chunks</p>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -644,23 +766,56 @@
         function initWebSocket() {
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             const ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
+            let retryCount = 0;
+            const maxRetries = 5;
             
+            // Connection Status Indicator
+            const updateStatus = (status) => {
+                const icon = document.getElementById('ws-status-icon');
+                if (icon) {
+                    icon.className = `fas fa-circle text-xs ${status === 'connected' ? 'text-green-500' : status === 'connecting' ? 'text-yellow-500' : 'text-red-500'}`;
+                    icon.title = status === 'connected' ? 'Connected' : status === 'connecting' ? 'Reconnecting...' : 'Disconnected';
+                }
+            };
+
             ws.onopen = () => {
                 console.log("WebSocket connected");
+                updateStatus('connected');
+                retryCount = 0;
+                // Heartbeat
+                window.wsHeartbeat = setInterval(() => {
+                    if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'ping' }));
+                }, 30000);
             };
             
             ws.onerror = (error) => {
                 console.error("WebSocket error:", error);
-                showToast("Real-time connection failed", "error");
+                updateStatus('error');
             };
             
-            ws.onclose = () => {
-                console.log("WebSocket disconnected, retrying...");
-                setTimeout(initWebSocket, 3000);
+            ws.onclose = (e) => {
+                console.log("WebSocket disconnected", e.code, e.reason);
+                updateStatus('disconnected');
+                if (window.wsHeartbeat) clearInterval(window.wsHeartbeat);
+                
+                if (retryCount < maxRetries) {
+                    const timeout = Math.min(1000 * Math.pow(2, retryCount), 10000);
+                    console.log(`Retrying in ${timeout}ms...`);
+                    setTimeout(() => {
+                        retryCount++;
+                        initWebSocket();
+                    }, timeout);
+                } else {
+                    showToast("Connection lost. Please reload.", "error");
+                }
             };
 
             ws.onmessage = (event) => {
-                const msg = event.data;
+                try {
+                    const msg = event.data;
+                    // ... (existing message handling)
+                    if (msg === 'pong') return; // Heartbeat response
+
                 console.log("WS Message:", msg); // Debug log
                 if (msg.startsWith("RESPONSE:")) {
                      appendMessage('assistant', msg.replace("RESPONSE: ", ""));
@@ -676,9 +831,20 @@
                             updateCanvas(parts[1], content, parts[0]);
                         } catch(e) { console.error(e); }
                     }
+                } else if (msg.startsWith("SWARM:")) {
+                    // Update Swarm/Flow visualization
+                    // Format: SWARM: {"task_id":"...", "from":"...", "to":"...", "message_type":"...", "content":"..."}
+                    try {
+                        const swarmEvent = JSON.parse(msg.replace("SWARM: ", ""));
+                        updateFlowVisualization(swarmEvent);
+                        updateAgentStatus(swarmEvent);
+                    } catch(e) { console.error("Swarm event parse error:", e); }
                 } else if (msg.startsWith("ERROR:")) {
                     showToast(msg.replace("ERROR: ", ""), "error");
                     appendMessage('system', "❌ " + msg.replace("ERROR: ", ""));
+                }
+                } catch (e) {
+                    console.error("WS Message Parse Error:", e);
                 }
             };
         }
@@ -698,6 +864,99 @@
             if (kind === 'mermaid') mermaid.run();
         }
 
+        let flowData = { nodes: [], links: [] };
+        
+        function updateAgentStatus(event) {
+            // event: { from: "...", to: "...", message_type: "..." }
+            const activeAgent = event.from;
+            
+            // Simple mapping for demo
+            if (activeAgent === 'user') return;
+            
+            document.getElementById('status-sys1').className = "bg-gray-100 text-gray-500 text-xs px-2 py-1 rounded-full font-bold uppercase tracking-wider";
+            document.getElementById('status-sys2').className = "bg-gray-100 text-gray-500 text-xs px-2 py-1 rounded-full font-bold uppercase tracking-wider";
+            document.getElementById('status-sys3').className = "bg-gray-100 text-gray-500 text-xs px-2 py-1 rounded-full font-bold uppercase tracking-wider";
+            
+            if (activeAgent === 'system1' || activeAgent === 'react') {
+                document.getElementById('status-sys1').className = "bg-green-100 text-green-700 text-xs px-2 py-1 rounded-full font-bold uppercase tracking-wider animate-pulse";
+                document.getElementById('status-sys1').innerText = "Active";
+            } else if (activeAgent === 'planner') {
+                document.getElementById('status-sys2').className = "bg-blue-100 text-blue-700 text-xs px-2 py-1 rounded-full font-bold uppercase tracking-wider animate-pulse";
+                document.getElementById('status-sys2').innerText = "Planning";
+            } else {
+                // Assume Swarm agent
+                document.getElementById('status-sys3').className = "bg-purple-100 text-purple-700 text-xs px-2 py-1 rounded-full font-bold uppercase tracking-wider animate-pulse";
+                document.getElementById('status-sys3').innerText = "Collaborating";
+            }
+        }
+
+        // Debounce helper
+        function debounce(func, wait) {
+            let timeout;
+            return function(...args) {
+                clearTimeout(timeout);
+                timeout = setTimeout(() => func.apply(this, args), wait);
+            };
+        }
+
+        const debouncedRenderMermaidFlow = debounce(renderMermaidFlow, 300);
+
+        function updateFlowVisualization(event) {
+            // Build Mermaid Graph dynamically
+            const { from, to, message_type } = event;
+            const linkId = `${from}-${to}`;
+            
+            // Add nodes if not exist
+            if (!flowData.nodes.includes(from)) flowData.nodes.push(from);
+            if (!flowData.nodes.includes(to)) flowData.nodes.push(to);
+            
+            // Add link
+            flowData.links.push(`${from} -->|${message_type}| ${to}`);
+            
+            // Limit history
+            if (flowData.links.length > 10) flowData.links.shift();
+            
+            debouncedRenderMermaidFlow();
+        }
+        
+        function renderMermaidFlow() {
+            const placeholder = document.getElementById('flow-placeholder');
+            const diagram = document.getElementById('active-flow-diagram');
+            
+            if (flowData.nodes.length > 0) {
+                placeholder.classList.add('hidden');
+                diagram.classList.remove('opacity-0');
+                
+                let graphDefinition = 'graph LR\n';
+                // Styles
+                const isDark = document.documentElement.classList.contains('dark');
+                const agentFill = isDark ? '#4f46e5' : '#e0e7ff';
+                const agentStroke = isDark ? '#818cf8' : '#3730a3';
+                const userFill = isDark ? '#10b981' : '#d1fae5';
+                const userStroke = isDark ? '#34d399' : '#047857';
+                
+                graphDefinition += `classDef agent fill:${agentFill},stroke:${agentStroke},stroke-width:2px,color:${isDark?'#fff':'#000'};\n`;
+                graphDefinition += `classDef user fill:${userFill},stroke:${userStroke},stroke-width:2px,color:${isDark?'#fff':'#000'};\n`;
+                
+                flowData.links.forEach(link => {
+                    graphDefinition += link + '\n';
+                });
+                
+                // Apply classes
+                flowData.nodes.forEach(node => {
+                    if (node === 'user') graphDefinition += `class ${node} user;\n`;
+                    else graphDefinition += `class ${node} agent;\n`;
+                });
+
+                diagram.innerHTML = `<div class="mermaid">${graphDefinition}</div>`;
+                try {
+                    mermaid.run({
+                        nodes: [diagram.querySelector('.mermaid')]
+                    });
+                } catch(e) { console.warn("Mermaid render error", e); }
+            }
+        }
+
         function handleFileUpload(input) {
             const files = input.files;
             if (!window.uploadedFiles) window.uploadedFiles = [];
@@ -708,18 +967,71 @@
         }
         
         function refreshKnowledgeList() {
-            fetch('/api/knowledge').then(r => r.json()).then(data => {
+            fetch('/api/knowledge/documents').then(r => r.json()).then(data => {
                 const list = document.getElementById('kb-file-list');
                 list.innerHTML = '';
                 if (data.status === 'success' && data.documents) {
                     data.documents.forEach(doc => {
                         const li = document.createElement('li');
-                        li.className = "flex justify-between items-center bg-gray-50 dark:bg-gray-900/50 p-2 rounded text-sm dark:text-gray-300";
-                        li.innerHTML = `<span>${(doc.source || 'Unknown').split('/').pop()}</span><button onclick="deleteDocument('${encodeURIComponent(doc.source)}')" class="text-red-500 hover:text-red-700"><i class="fas fa-trash"></i></button>`;
+                        li.className = "group flex justify-between items-center bg-white dark:bg-gray-800 p-3 rounded-lg border border-gray-100 dark:border-gray-700 cursor-pointer hover:border-blue-500 transition-colors shadow-sm";
+                        li.onclick = () => loadDocumentPreview(doc.id, doc.source);
+                        li.innerHTML = `
+                            <div class="flex items-center gap-2 overflow-hidden">
+                                <div class="bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 p-1.5 rounded"><i class="fas fa-file-alt"></i></div>
+                                <div class="truncate">
+                                    <div class="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">${(doc.source || 'Unknown').split('/').pop()}</div>
+                                    <div class="text-xs text-gray-400">${doc.chunk_count || 0} chunks • ${new Date(doc.created_at * 1000).toLocaleDateString()}</div>
+                                </div>
+                            </div>
+                            <button onclick="event.stopPropagation(); deleteDocument('${encodeURIComponent(doc.source)}')" class="text-gray-300 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"><i class="fas fa-trash"></i></button>
+                        `;
                         list.appendChild(li);
                     });
                 }
             });
+        }
+        
+        function loadDocumentPreview(docId, source) {
+            const preview = document.getElementById('kb-preview');
+            preview.innerHTML = '<div class="flex items-center justify-center h-full"><div class="animate-spin text-blue-500"><i class="fas fa-circle-notch text-2xl"></i></div></div>';
+            
+            fetch(`/api/v1/knowledge/chunks?source=${encodeURIComponent(source)}`)
+                .then(r => r.json())
+                .then(data => {
+                    if (data.status === 'success' && data.chunks) {
+                        let html = `
+                            <div class="mb-6 pb-4 border-b border-gray-200 dark:border-gray-700">
+                                <h3 class="text-xl font-bold text-gray-800 dark:text-gray-100">${source.split('/').pop()}</h3>
+                                <p class="text-sm text-gray-500 break-all">${source}</p>
+                                <div class="mt-2 text-xs text-gray-400">Total Chunks: ${data.chunks.length}</div>
+                            </div>
+                            <div class="space-y-4">`;
+                            
+                        data.chunks.forEach((chunk, idx) => {
+                            const meta = chunk.metadata || {};
+                            // Safe parsing of chunk index if available
+                            const chunkIndex = meta.chunk_index !== undefined ? meta.chunk_index : idx;
+                            
+                            html += `
+                                <div class="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm transition-all hover:shadow-md">
+                                    <div class="flex justify-between mb-2">
+                                        <span class="text-xs font-mono text-gray-400">Chunk #${chunkIndex + 1}</span>
+                                        ${meta.score ? `<span class="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">Score: ${meta.score.toFixed(2)}</span>` : ''}
+                                    </div>
+                                    <p class="text-sm text-gray-600 dark:text-gray-300 leading-relaxed font-mono whitespace-pre-wrap">${chunk.content.replace(/</g, '&lt;')}</p>
+                                </div>`;
+                        });
+                        
+                        html += `</div>`;
+                        preview.innerHTML = html;
+                    } else {
+                        preview.innerHTML = '<div class="text-center text-red-500 mt-10">Failed to load chunks</div>';
+                    }
+                })
+                .catch(e => {
+                    console.error(e);
+                    preview.innerHTML = '<div class="text-center text-red-500 mt-10">Error loading document</div>';
+                });
         }
         function deleteDocument(s) { fetch(`/api/knowledge?source=${s}`, { method: 'DELETE' }).then(r => r.json()).then(() => refreshKnowledgeList()); }
 

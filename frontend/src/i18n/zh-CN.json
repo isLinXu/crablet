@@ -1,0 +1,31 @@
+{
+  "common": {
+    "confirm": "确认",
+    "cancel": "取消",
+    "delete": "删除",
+    "save": "保存",
+    "loading": "加载中...",
+    "error": "错误"
+  },
+  "chat": {
+    "new_chat": "新对话",
+    "type_message": "输入消息...",
+    "send": "发送",
+    "thinking": "思考中...",
+    "connected": "已连接",
+    "disconnected": "未连接",
+    "start_conversation": "与 Crablet 开始对话",
+    "delete_chat_title": "删除对话",
+    "delete_chat_confirm": "您确定要删除此对话吗？此操作无法撤销。",
+    "trace_reasoning": "推理过程",
+    "swarm_activity": "群体活动",
+    "copied": "已复制!",
+    "copy": "复制"
+  },
+  "settings": {
+    "theme": "主题",
+    "language": "语言",
+    "api_key": "API 密钥",
+    "model": "模型"
+  }
+}

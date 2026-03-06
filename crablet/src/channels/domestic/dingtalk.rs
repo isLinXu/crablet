@@ -15,6 +15,12 @@ pub struct DingTalkChannel {
     client: Client,
 }
 
+impl Default for DingTalkChannel {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DingTalkChannel {
     pub fn new() -> Self {
         Self {
@@ -74,7 +80,7 @@ impl Channel for DingTalkChannel {
             let status = res.status();
             let text = res.text().await.unwrap_or_default();
             error!("DingTalk webhook send failed: {} - {}", status, text);
-            return Err(anyhow::anyhow!("DingTalk send failed: {}", status).into());
+            return Err(anyhow::anyhow!("DingTalk send failed: {}", status));
         }
         
         Ok(())

@@ -2,27 +2,62 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum CrabletError {
-    #[error("LLM Provider Error: {0}")]
-    LlmError(String),
+    #[error("Configuration error: {0}")]
+    Config(String),
 
-    #[error("Tool Execution Error: {0}")]
-    ToolError(String),
+    #[error("Database error: {0}")]
+    Database(#[from] sqlx::Error),
 
-    #[error("Memory Error: {0}")]
-    MemoryError(String),
+    #[error("Memory error: {0}")]
+    Memory(String),
 
-    #[error("Database Error: {0}")]
-    DatabaseError(#[from] sqlx::Error),
+    #[error("Cognitive system error: {0}")]
+    Cognitive(String),
 
-    #[error("Configuration Error: {0}")]
-    ConfigError(String),
+    #[error("LLM client error: {0}")]
+    Llm(String),
 
-    #[error("IO Error: {0}")]
-    IoError(#[from] std::io::Error),
+    #[error("Agent execution error: {0}")]
+    Agent(String),
 
-    #[error("Serialization Error: {0}")]
-    SerializationError(#[from] serde_json::Error),
+    #[error("Swarm orchestration error: {0}")]
+    Swarm(String),
 
-    #[error("Unknown Error: {0}")]
+    #[error("Tool execution error: {0}")]
+    Tool(String),
+
+    #[error("Authentication error: {0}")]
+    Auth(String),
+
+    #[error("Network error: {0}")]
+    Network(String),
+
+    #[error("IO error: {0}")]
+    IO(#[from] std::io::Error),
+
+    #[error("Serialization error: {0}")]
+    Serialization(#[from] serde_json::Error),
+
+    #[error("Validation error: {0}")]
+    Validation(String),
+
+    #[error("Not found: {0}")]
+    NotFound(String),
+
+    #[error("Timeout: {0}")]
+    Timeout(String),
+
+    #[error("Internal error: {0}")]
+    Internal(String),
+
+    #[error("Search error: {0}")]
+    SearchError(String),
+
+    #[error("Unknown error: {0}")]
     Unknown(String),
+
+    #[error(transparent)]
+    Other(#[from] anyhow::Error),
 }
+
+pub type Result<T> = std::result::Result<T, CrabletError>;

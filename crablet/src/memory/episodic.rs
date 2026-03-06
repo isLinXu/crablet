@@ -1,42 +1,41 @@
 use sqlx::{sqlite::SqlitePool, Row};
-use anyhow::Result;
+use crate::error::Result;
 use crate::types::Message;
 use uuid::Uuid;
 use chrono::Utc;
 
 pub struct EpisodicMemory {
-    pool: SqlitePool,
+    pub pool: SqlitePool,
 }
 
 impl EpisodicMemory {
     pub async fn new(database_url: &str) -> Result<Self> {
         let pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(10)
+            .min_connections(2)
+            .acquire_timeout(std::time::Duration::from_secs(5))
+            .idle_timeout(std::time::Duration::from_secs(300))
+            .after_connect(|conn, _meta| Box::pin(async move {
+                sqlx::query("PRAGMA journal_mode=WAL").execute(&mut *conn).await?;
+                sqlx::query("PRAGMA synchronous=NORMAL").execute(&mut *conn).await?;
+                sqlx::query("PRAGMA cache_size=-64000").execute(&mut *conn).await?; // 64MB cache
+                Ok(())
+            }))
             .connect(database_url).await?;
         
-        // Ensure tables exist
-        let schema = r#"
-        CREATE TABLE IF NOT EXISTS sessions (
-            id TEXT PRIMARY KEY,
-            user_id TEXT NOT NULL,
-            channel TEXT NOT NULL,
-            created_at INTEGER NOT NULL,
-            last_active INTEGER NOT NULL,
-            message_count INTEGER DEFAULT 0
-        );
-
-        CREATE TABLE IF NOT EXISTS messages (
-            id TEXT PRIMARY KEY,
-            session_id TEXT NOT NULL,
-            role TEXT NOT NULL,
-            content TEXT NOT NULL,
-            timestamp INTEGER NOT NULL,
-            tokens INTEGER,
-            latency_ms INTEGER,
-            FOREIGN KEY (session_id) REFERENCES sessions(id)
-        );
-        "#;
-        
-        sqlx::query(schema).execute(&pool).await?;
+        // Run migrations
+        // sqlx::migrate!("./migrations") can return sqlx::migrate::MigrateError
+        // which might not be sqlx::Error directly?
+        // Let's check.
+        // migrate! returns Migrator. run returns Result<(), MigrateError>.
+        // MigrateError implements Error.
+        // CrabletError has Other(anyhow::Error).
+        // So `?` works via anyhow conversion?
+        // No, `?` tries `From`.
+        // If MigrateError impl From<MigrateError> for CrabletError? No.
+        // So `?` on migrate might fail if not mapped.
+        // Let's wrap it.
+        sqlx::migrate!("./migrations").run(&pool).await.map_err(|e| crate::error::CrabletError::Database(sqlx::Error::Migrate(Box::new(e))))?;
         
         Ok(Self { pool })
     }
@@ -58,9 +57,15 @@ impl EpisodicMemory {
     }
 
     pub async fn save_message(&self, session_id: &str, role: &str, content: &str) -> Result<()> {
+        self.save_message_transactional(session_id, role, content).await
+    }
+
+    pub async fn save_message_transactional(&self, session_id: &str, role: &str, content: &str) -> Result<()> {
         let id = Uuid::new_v4().to_string();
         let now = Utc::now().timestamp();
         
+        let mut tx = self.pool.begin().await?;
+
         // Ensure session exists (auto-create for fallback)
         sqlx::query("INSERT OR IGNORE INTO sessions (id, user_id, channel, created_at, last_active) VALUES (?, ?, ?, ?, ?)")
             .bind(session_id)
@@ -68,7 +73,7 @@ impl EpisodicMemory {
             .bind("unknown")
             .bind(now)
             .bind(now)
-            .execute(&self.pool)
+            .execute(&mut *tx)
             .await?;
 
         sqlx::query("INSERT INTO messages (id, session_id, role, content, timestamp) VALUES (?, ?, ?, ?, ?)")
@@ -77,9 +82,10 @@ impl EpisodicMemory {
             .bind(role)
             .bind(content)
             .bind(now)
-            .execute(&self.pool)
+            .execute(&mut *tx)
             .await?;
             
+        tx.commit().await?;
         Ok(())
     }
 
@@ -92,7 +98,7 @@ impl EpisodicMemory {
             
         let mut messages: Vec<Message> = rows.into_iter().map(|row| {
             let content: String = row.get("content");
-            Message::new(&row.get::<String, _>("role"), &content)
+            Message::new(row.get::<String, _>("role"), &content)
         }).collect();
         
         // Reverse to get chronological order

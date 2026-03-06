@@ -61,7 +61,7 @@ impl VisionTool {
 
     pub async fn analyze_image(&self, image_path: &str, prompt: &str) -> Result<String> {
         // Read and encode image
-        let image_data = std::fs::read(image_path)?;
+        let image_data = tokio::fs::read(image_path).await?;
         let base64_image = general_purpose::STANDARD.encode(&image_data);
         let mime_type = if image_path.ends_with(".png") { "image/png" } else { "image/jpeg" };
         let data_url = format!("data:{};base64,{}", mime_type, base64_image);

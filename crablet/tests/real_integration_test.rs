@@ -16,10 +16,11 @@ async fn test_real_llm_integration() {
     env::remove_var("OPENAI_API_KEY");
     env::remove_var("DASHSCOPE_API_KEY");
 
-    let event_bus = Arc::new(EventBus::new());
+    let event_bus = Arc::new(EventBus::new(100));
+    let config = crablet::config::Config::default();
     
     // Initialize Router (this will pick up OLLAMA_MODEL and use OllamaClient)
-    let router = CognitiveRouter::new(None, event_bus).await;
+    let router = CognitiveRouter::new(&config, None, event_bus).await;
 
     println!("Starting real LLM integration test with model: qwen3:4b");
 
@@ -55,10 +56,11 @@ async fn test_real_llm_tool_usage() {
     env::remove_var("OPENAI_API_KEY");
     env::remove_var("DASHSCOPE_API_KEY");
 
-    let event_bus = Arc::new(EventBus::new());
+    let event_bus = Arc::new(EventBus::new(100));
+    let config = crablet::config::Config::default();
     
     // Initialize Router (this will pick up OLLAMA_MODEL and use OllamaClient)
-    let router = CognitiveRouter::new(None, event_bus).await;
+    let router = CognitiveRouter::new(&config, None, event_bus).await;
 
     println!("Starting real LLM tool usage test with model: qwen3:4b");
 

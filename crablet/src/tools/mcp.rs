@@ -2,9 +2,13 @@ use serde::{Deserialize, Serialize};
 use std::process::Stdio;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, Command};
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, oneshot};
+use dashmap::DashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use anyhow::{Result, anyhow};
-use tracing::info;
+use tracing::{info, warn, error};
+use std::time::Duration;
 
 // --- JSON-RPC Types ---
 
@@ -102,10 +106,11 @@ struct ContentItem {
 // --- MCP Client ---
 
 pub struct McpClient {
-    _child: Mutex<Child>,
-    stdin: Mutex<tokio::process::ChildStdin>,
-    stdout: Mutex<BufReader<tokio::process::ChildStdout>>,
-    request_id: Mutex<u64>,
+    writer: Arc<Mutex<tokio::process::ChildStdin>>,
+    pending: Arc<DashMap<u64, oneshot::Sender<JsonRpcResponse>>>,
+    next_id: Arc<AtomicU64>,
+    _reader_task: tokio::task::JoinHandle<()>,
+    _child: Arc<Mutex<Child>>,
 }
 
 impl McpClient {
@@ -114,19 +119,50 @@ impl McpClient {
             .args(args)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::inherit()) // Log stderr to parent's stderr
+            .stderr(Stdio::inherit())
+            .kill_on_drop(true)
             .spawn()
             .map_err(|e| anyhow!("Failed to spawn MCP server '{}': {}", command, e))?;
 
         let stdin = child.stdin.take().ok_or_else(|| anyhow!("Failed to open stdin"))?;
         let stdout = child.stdout.take().ok_or_else(|| anyhow!("Failed to open stdout"))?;
-        let reader = BufReader::new(stdout);
+        
+        let pending: Arc<DashMap<u64, oneshot::Sender<JsonRpcResponse>>> = Arc::new(DashMap::new());
+        let pending_clone = pending.clone();
+        
+        // Background reader task
+        let reader_task = tokio::spawn(async move {
+            let reader = BufReader::new(stdout);
+            let mut lines = reader.lines();
+            
+            while let Ok(Some(line)) = lines.next_line().await {
+                if let Ok(response) = serde_json::from_str::<JsonRpcResponse>(&line) {
+                    if let Some(id) = response.id {
+                        if let Some((_, sender)) = pending_clone.remove(&id) {
+                            let _ = sender.send(response);
+                        } else {
+                            // ID mismatch or timed out
+                            warn!("Received response for unknown ID: {}", id);
+                        }
+                    } else {
+                        // Notification or error without ID
+                        if response.error.is_some() {
+                             warn!("MCP Notification Error: {:?}", response.error);
+                        }
+                    }
+                } else {
+                    warn!("MCP Client received invalid JSON: {}", line);
+                }
+            }
+            error!("MCP Server stdout closed");
+        });
 
         let client = Self {
-            _child: Mutex::new(child),
-            stdin: Mutex::new(stdin),
-            stdout: Mutex::new(reader),
-            request_id: Mutex::new(0),
+            writer: Arc::new(Mutex::new(stdin)),
+            pending,
+            next_id: Arc::new(AtomicU64::new(1)),
+            _reader_task: reader_task,
+            _child: Arc::new(Mutex::new(child)),
         };
 
         client.initialize().await?;
@@ -134,11 +170,10 @@ impl McpClient {
     }
 
     async fn send_request(&self, method: &str, params: Option<serde_json::Value>) -> Result<serde_json::Value> {
-        let id = {
-            let mut lock = self.request_id.lock().await;
-            *lock += 1;
-            *lock
-        };
+        let id = self.next_id.fetch_add(1, Ordering::SeqCst);
+        let (tx, rx) = oneshot::channel();
+        
+        self.pending.insert(id, tx);
 
         let request = JsonRpcRequest {
             jsonrpc: "2.0".to_string(),
@@ -150,40 +185,26 @@ impl McpClient {
         let json_str = serde_json::to_string(&request)?;
         
         {
-            let mut stdin = self.stdin.lock().await;
-            stdin.write_all(json_str.as_bytes()).await?;
-            stdin.write_all(b"\n").await?;
-            stdin.flush().await?;
+            let mut writer = self.writer.lock().await;
+            writer.write_all(json_str.as_bytes()).await?;
+            writer.write_all(b"\n").await?;
+            writer.flush().await?;
         }
 
-        // Read response
-        // Note: This is a simplified implementation that assumes synchronous request-response over stdio.
-        // A robust implementation would need a background reader task and a map of pending requests.
-        // For MVP, we assume the server responds to requests in order or we just read lines until we find the matching ID.
-        
-        let mut stdout = self.stdout.lock().await;
-        let mut line = String::new();
-        
-        loop {
-            line.clear();
-            if stdout.read_line(&mut line).await? == 0 {
-                return Err(anyhow!("MCP Server closed connection"));
-            }
-
-            // Parse line
-            if let Ok(response) = serde_json::from_str::<JsonRpcResponse>(&line) {
-                if response.id == Some(id) {
-                    if let Some(error) = response.error {
-                        return Err(anyhow!("MCP Error {}: {}", error.code, error.message));
-                    }
-                    return Ok(response.result.unwrap_or(serde_json::Value::Null));
-                }
-                // Ignore notifications or other responses for now
-            } else {
-                // Maybe log debug?
-                // warn!("MCP Client received invalid JSON: {}", line);
-            }
+        // Wait for response with timeout
+        let response = tokio::time::timeout(Duration::from_secs(30), rx)
+            .await
+            .map_err(|_| {
+                self.pending.remove(&id); // Cleanup on timeout
+                anyhow!("MCP Request '{}' timed out", method)
+            })?
+            .map_err(|_| anyhow!("MCP Response channel closed"))?;
+            
+        if let Some(error) = response.error {
+            return Err(anyhow!("MCP Error {}: {}", error.code, error.message));
         }
+        
+        Ok(response.result.unwrap_or(serde_json::Value::Null))
     }
 
     async fn initialize(&self) -> Result<()> {
@@ -198,17 +219,17 @@ impl McpClient {
 
         let _res = self.send_request("initialize", Some(serde_json::to_value(params)?)).await?;
         
-        // Send initialized notification
+        // Send initialized notification (no response expected)
         let notification = serde_json::json!({
             "jsonrpc": "2.0",
             "method": "notifications/initialized"
         });
         
         {
-            let mut stdin = self.stdin.lock().await;
-            stdin.write_all(serde_json::to_string(&notification)?.as_bytes()).await?;
-            stdin.write_all(b"\n").await?;
-            stdin.flush().await?;
+            let mut writer = self.writer.lock().await;
+            writer.write_all(serde_json::to_string(&notification)?.as_bytes()).await?;
+            writer.write_all(b"\n").await?;
+            writer.flush().await?;
         }
         
         info!("MCP Client initialized");

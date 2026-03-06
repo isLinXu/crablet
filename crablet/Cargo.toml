@@ -4,16 +4,16 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-default = ["full"]
+default = ["qdrant-support", "web"]
 inference = ["dep:ort"]
-browser = ["dep:headless_chrome"]
+browser = ["dep:chromiumoxide"]
 discord = ["dep:serenity"]
 full = ["knowledge", "audio", "vision", "web", "scripting", "telemetry", "sandbox", "telegram", "browser", "discord"]
 telegram = ["dep:teloxide"]
 knowledge = ["dep:fastembed", "dep:pdf-extract", "dep:neo4rs", "qdrant-support"]
 # knowledge = ["dep:fastembed", "dep:pdf-extract", "dep:neo4rs"] # Qdrant disabled for now due to dep issues
 audio = ["dep:rubato", "dep:dasp", "dep:hound"]
-web = ["dep:axum", "dep:tower-http", "dep:askama", "dep:askama_axum"]
+web = ["dep:axum", "dep:tower-http", "dep:askama", "dep:askama_axum", "dep:axum-extra"]
 scripting = ["dep:mlua"]
 telemetry = ["dep:opentelemetry", "dep:opentelemetry_sdk", "dep:opentelemetry-otlp", "dep:tracing-opentelemetry"]
 sandbox = ["dep:bollard"]
@@ -22,10 +22,11 @@ qdrant-support = ["dep:qdrant-client"]
 
 [dependencies]
 tokio = { version = "1.40", features = ["full"] }
-axum = { version = "0.7", features = ["ws", "multipart"], optional = true }
+axum = { version = "0.7", features = ["ws", "multipart", "macros"], optional = true }
+axum-extra = { version = "0.9", features = ["cookie", "form", "query"], optional = true }
 reqwest = { version = "0.12", features = ["json", "stream", "multipart", "cookies"] }
 serde = { version = "1.0", features = ["derive"] }
-sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite"] }
+sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "chrono"] }
 clap = { version = "4.5", features = ["derive"] }
 teloxide = { version = "0.13", features = ["macros"], optional = true }
 anyhow = "1.0"
@@ -50,7 +51,7 @@ directories = "6.0.0"
 toml = "1.0.2"
 indicatif = "0.18.4"
 tokio-stream = { version = "0.1.18", features = ["sync"] }
-tower-http = { version = "0.6.8", features = ["fs", "trace"], optional = true }
+tower-http = { version = "0.6.8", features = ["fs", "trace", "cors"], optional = true }
 askama = { version = "0.15.4", optional = true }
 notify = "8.2.0"
 lru = "0.16.3"
@@ -76,7 +77,32 @@ qdrant-client = { version = "1.3.0", optional = true }
 image = { version = "0.25.5", optional = true }
 strsim = "0.10.0" # For Levenshtein distance
 ort = { version = "2.0.0-rc.9", optional = true } # Modern ONNX Runtime wrapper (replaces onnxruntime)
-headless_chrome = { version = "1.0", optional = true }
+chromiumoxide = { version = "0.5", features = ["tokio-runtime"], optional = true }
 serenity = { version = "0.12", default-features = false, features = ["client", "gateway", "rustls_backend", "model"], optional = true }
 colored = "3.1.1"
 scraper = "0.25.0"
+evalexpr = "11.0"
+tiktoken-rs = "0.5.8"
+which = "6.0"
+argon2 = "0.5.3"
+rand = "0.8.5"
+async-stream = "0.3.6"
+moka = { version = "0.12.13", features = ["future"] }
+opentelemetry-prometheus = "0.31.0"
+prometheus = "0.14.0"
+sqlite-vec = "0.1.6"
+parking_lot = "0.12.5"
+jsonwebtoken = "9.2.0"
+governor = { version = "0.6.3", features = ["std", "dashmap", "jitter", "quanta"] }
+tower = { version = "0.4.13", features = ["util", "limit"] }
+tower_governor = "0.4.2"
+openid = "0.23.0"
+connect = "0.2.4"
+url = "2.5.8"
+validator = { version = "0.18", features = ["derive"] }
+walkdir = "2.5.0"
+
+[dev-dependencies]
+tokio-test = "0.4.4"
+tempfile = "3.10"
+proptest = "1.4"

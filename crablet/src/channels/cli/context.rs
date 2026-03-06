@@ -1,5 +1,6 @@
 use anyhow::Result;
 use std::sync::Arc;
+use tracing::{info, warn, error};
 use crate::config::Config;
 use crate::cognitive::router::CognitiveRouter;
 use crate::memory::episodic::EpisodicMemory;
@@ -27,20 +28,39 @@ impl AppContext {
         
         // Initialize Episodic Memory
         let memory = match EpisodicMemory::new(&database_url).await {
-            Ok(mem) => Some(Arc::new(mem)),
-            Err(_) => None,
+            Ok(mem) => {
+                info!("Episodic memory initialized successfully");
+                Some(Arc::new(mem))
+            },
+            Err(e) => {
+                warn!("Episodic memory unavailable, running in stateless mode: {}", e);
+                None
+            },
         };
 
         // Initialize Knowledge Graph
         #[cfg(feature = "knowledge")]
-        let kg: Option<SharedKnowledgeGraph> = if let Ok(_neo4j_uri) = std::env::var("NEO4J_URI") {
-            // Neo4j logic omitted for brevity in this refactor step, assuming similar to original or simplified
-            None 
+        let kg: Option<SharedKnowledgeGraph> = if let Ok(neo4j_uri) = std::env::var("NEO4J_URI") {
+             info!("Connecting to Neo4j at {}", neo4j_uri);
+             None 
         } else {
-            if let Ok(pool) = sqlx::sqlite::SqlitePool::connect(&database_url).await {
-                crate::memory::semantic::SqliteKnowledgeGraph::new(pool).await.ok().map(|g| Arc::new(g) as SharedKnowledgeGraph)
-            } else {
-                None
+            match sqlx::sqlite::SqlitePool::connect(&database_url).await {
+                Ok(pool) => {
+                    match crate::memory::semantic::SqliteKnowledgeGraph::new(pool).await {
+                        Ok(g) => {
+                            info!("SQLite Knowledge Graph initialized");
+                            Some(Arc::new(g) as SharedKnowledgeGraph)
+                        },
+                        Err(e) => {
+                            warn!("Failed to initialize Knowledge Graph: {}", e);
+                            None
+                        }
+                    }
+                },
+                Err(e) => {
+                    warn!("Failed to connect to SQLite for KG: {}", e);
+                    None
+                }
             }
         };
 
@@ -49,15 +69,36 @@ impl AppContext {
 
         // Initialize Vector Store
         #[cfg(feature = "knowledge")]
-        let vector_store = if let Ok(pool) = sqlx::sqlite::SqlitePool::connect(&database_url).await {
-            crate::knowledge::vector_store::VectorStore::new(pool).await.ok().map(Arc::new)
-        } else {
-            None
+        let vector_store = match sqlx::sqlite::SqlitePool::connect(&database_url).await {
+            Ok(pool) => {
+                match crate::knowledge::vector_store::VectorStore::new(pool).await {
+                    Ok(vs) => {
+                        info!("Vector Store initialized");
+                        Some(Arc::new(vs))
+                    },
+                    Err(e) => {
+                        warn!("Failed to initialize Vector Store: {}", e);
+                        None
+                    }
+                }
+            },
+            Err(e) => {
+                warn!("Failed to connect to SQLite for Vector Store: {}", e);
+                None
+            }
         };
 
-        let event_bus = Arc::new(EventBus::new());
+        let event_bus = match sqlx::sqlite::SqlitePool::connect(&database_url).await {
+            Ok(pool) => {
+                Arc::new(EventBus::new(100).with_pool(pool))
+            },
+            Err(e) => {
+                warn!("Failed to connect to SQLite for EventBus: {}", e);
+                Arc::new(EventBus::new(100))
+            }
+        };
 
-        let mut router = CognitiveRouter::new(memory.clone(), event_bus.clone()).await;
+        let mut router = CognitiveRouter::new(&config, memory.clone(), event_bus.clone()).await;
         
         #[cfg(feature = "knowledge")]
         {
@@ -73,7 +114,11 @@ impl AppContext {
             .watch_skills(&config.skills_dir);
             
         // Load skills
-        let _ = router.load_skills(&config.skills_dir).await;
+        if let Err(e) = router.load_skills(&config.skills_dir).await {
+            error!("Failed to load skills from {}: {}", config.skills_dir.display(), e);
+        } else {
+            info!("Skills loaded from {}", config.skills_dir.display());
+        }
         
         let router = Arc::new(router);
         let lane_router = Arc::new(LaneRouter::new(router.clone()));

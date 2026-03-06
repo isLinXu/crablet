@@ -62,19 +62,24 @@ impl LlmClient for DemoLlmClient {
         
         Ok(Message::new("assistant", "I don't know."))
     }
+
+    fn model_name(&self) -> &str {
+        "mock-react-chain-test"
+    }
 }
 
 #[tokio::test]
 async fn test_demo_a_react_chain() {
     // 1. Setup EventBus
-    let event_bus = Arc::new(EventBus::new());
+    let event_bus = Arc::new(EventBus::new(100));
     
     // 2. Setup System 2 with Demo LLM and Plugins
     let llm: Box<dyn LlmClient> = Box::new(DemoLlmClient);
-    let sys2 = System2::with_client(llm, event_bus.clone());
+    let sys2 = System2::with_client(llm, event_bus.clone()).await;
     
     // 3. Setup Router
-    let router = CognitiveRouter::with_system2_async(None, sys2, event_bus.clone()).await;
+    let config = crablet::config::Config::default();
+    let router = CognitiveRouter::with_system2_async(&config, None, sys2, event_bus.clone()).await;
     
     // 4. Run the query
     let input = "What's the weather in Tokyo? Also calculate 15 * 7 + 3";

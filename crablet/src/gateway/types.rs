@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::fmt;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -24,25 +25,46 @@ impl fmt::Display for GatewayError {
 
 impl std::error::Error for GatewayError {}
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct RpcRequest {
     pub jsonrpc: String,
     pub method: String,
-    pub params: Option<serde_json::Value>,
-    pub id: Option<serde_json::Value>,
+    pub params: Option<Value>,
+    pub id: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct RpcResponse {
     pub jsonrpc: String,
-    pub result: Option<serde_json::Value>,
+    pub id: Option<String>,
+    pub result: Option<Value>,
     pub error: Option<RpcError>,
-    pub id: Option<serde_json::Value>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+impl RpcResponse {
+    pub fn new(id: Option<String>, result: Option<Value>, error: Option<RpcError>) -> Self {
+        Self {
+            jsonrpc: "2.0".to_string(),
+            id,
+            result,
+            error,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct RpcError {
     pub code: i32,
     pub message: String,
-    pub data: Option<serde_json::Value>,
+    pub data: Option<Value>,
+}
+
+impl RpcError {
+    pub fn new(code: i32, message: &str, data: Option<Value>) -> Self {
+        Self {
+            code,
+            message: message.to_string(),
+            data,
+        }
+    }
 }

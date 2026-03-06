@@ -29,13 +29,14 @@ impl DockerSandbox {
         Ok(Self { docker, image_map })
     }
     
-    fn get_image(&self, language: Language) -> &str {
-        match language {
-            Language::Python => self.image_map.get("python").unwrap(),
-            Language::JavaScript => self.image_map.get("node").unwrap(),
-            Language::Shell => self.image_map.get("shell").unwrap(),
-            Language::Lua => self.image_map.get("lua").unwrap(),
-        }
+    fn get_image(&self, language: Language) -> Result<&str> {
+        let key = match language {
+            Language::Python => "python",
+            Language::JavaScript => "node",
+            Language::Shell => "shell",
+            Language::Lua => "lua",
+        };
+        self.image_map.get(key).map(|s| s.as_str()).ok_or_else(|| anyhow::anyhow!("Image not found for language {:?}", language))
     }
     
     fn get_cmd(&self, language: Language, code: &str) -> Vec<String> {
@@ -81,7 +82,7 @@ impl Sandbox for DockerSandbox {
     }
 
     async fn execute(&self, language: Language, code: &str) -> Result<ExecutionResult> {
-        let image = self.get_image(language);
+        let image = self.get_image(language)?;
         let cmd = self.get_cmd(language, code);
         let container_name = format!("crablet-sandbox-{}", Uuid::new_v4());
         

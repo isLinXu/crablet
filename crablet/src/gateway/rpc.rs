@@ -15,6 +15,12 @@ pub struct RpcDispatcher {
     handlers: Arc<RwLock<HashMap<String, RpcHandler>>>,
 }
 
+impl Default for RpcDispatcher {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl RpcDispatcher {
     pub fn new() -> Self {
         Self {
@@ -27,42 +33,19 @@ impl RpcDispatcher {
         F: Fn(Option<Value>) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = Result<Option<Value>, RpcError>> + Send + 'static,
     {
-        let mut handlers = self.handlers.write().await;
-        handlers.insert(
-            method.to_string(),
-            Box::new(move |params| Box::pin(handler(params))),
-        );
+        let mut map = self.handlers.write().await;
+        map.insert(method.to_string(), Box::new(move |params| Box::pin(handler(params))));
     }
 
-    pub async fn dispatch(&self, request: RpcRequest) -> RpcResponse {
-        let handlers = self.handlers.read().await;
-        
-        let result = if let Some(handler) = handlers.get(&request.method) {
-            match handler(request.params).await {
-                Ok(res) => Ok(res),
-                Err(e) => Err(e),
+    pub async fn dispatch(&self, req: RpcRequest) -> RpcResponse {
+        let map = self.handlers.read().await;
+        if let Some(handler) = map.get(&req.method) {
+            match handler(req.params).await {
+                Ok(result) => RpcResponse::new(req.id, result, None),
+                Err(e) => RpcResponse::new(req.id, None, Some(e)),
             }
         } else {
-            Err(RpcError {
-                code: -32601,
-                message: format!("Method not found: {}", request.method),
-                data: None,
-            })
-        };
-
-        match result {
-            Ok(val) => RpcResponse {
-                jsonrpc: "2.0".to_string(),
-                result: val,
-                error: None,
-                id: request.id,
-            },
-            Err(e) => RpcResponse {
-                jsonrpc: "2.0".to_string(),
-                result: None,
-                error: Some(e),
-                id: request.id,
-            },
+            RpcResponse::new(req.id, None, Some(RpcError::new(-32601, "Method not found", None)))
         }
     }
 }

@@ -80,4 +80,12 @@ impl CanvasState {
             }
         }
     }
+    
+    pub fn remove_component(&mut self, section_id: &str, index: usize) {
+        if let Some(section) = self.sections.get_mut(section_id) {
+            if index < section.components.len() {
+                section.components.remove(index);
+            }
+        }
+    }
 }

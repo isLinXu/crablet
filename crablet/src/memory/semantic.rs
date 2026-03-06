@@ -34,6 +34,7 @@ pub trait KnowledgeGraph: Send + Sync {
     async fn add_entity(&self, name: &str, type_: &str) -> Result<String>;
     async fn add_relation(&self, source: &str, target: &str, relation: &str) -> Result<()>;
     async fn find_related(&self, entity_name: &str) -> Result<Vec<(String, String, String)>>;
+    async fn find_entities_batch(&self, names: &[String]) -> Result<Vec<(String, String)>>;
     async fn export_d3_json(&self) -> Result<String>;
 }
 
@@ -157,6 +158,31 @@ impl KnowledgeGraph for SqliteKnowledgeGraph {
         Ok(results)
     }
 
+    async fn find_entities_batch(&self, names: &[String]) -> Result<Vec<(String, String)>> {
+        if names.is_empty() {
+            return Ok(Vec::new());
+        }
+        
+        let placeholders = names.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let query = format!("SELECT name, type FROM entities WHERE name IN ({})", placeholders);
+        
+        let mut query_builder = sqlx::query(&query);
+        for name in names {
+            query_builder = query_builder.bind(name);
+        }
+        
+        let rows = query_builder.fetch_all(&self.pool).await?;
+        
+        let mut results = Vec::new();
+        for row in rows {
+            results.push((
+                row.get("name"),
+                row.get("type"),
+            ));
+        }
+        Ok(results)
+    }
+
     async fn export_d3_json(&self) -> Result<String> {
         let entities = sqlx::query("SELECT name, type FROM entities")
             .fetch_all(&self.pool)
@@ -260,6 +286,20 @@ impl KnowledgeGraph for Neo4jKnowledgeGraph {
             results.push((dir, rel_name, other_name));
         }
         
+        Ok(results)
+    }
+
+    async fn find_entities_batch(&self, names: &[String]) -> Result<Vec<(String, String)>> {
+        let q = query("MATCH (n:Entity) WHERE n.name IN $names RETURN n.name as name, n.type as type")
+            .param("names", names.to_vec());
+        
+        let mut stream = self.graph.execute(q).await?;
+        let mut results = Vec::new();
+        while let Some(row) = stream.next().await? {
+            let name: String = row.get("name").unwrap_or_default();
+            let type_: String = row.get("type").unwrap_or_default();
+            results.push((name, type_));
+        }
         Ok(results)
     }
 

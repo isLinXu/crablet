@@ -1,83 +1,73 @@
-use anyhow::Result;
+use crate::error::{Result, CrabletError};
 use crate::cognitive::CognitiveSystem;
 use crate::types::{Message, TraceStep};
 use async_trait::async_trait;
 use std::sync::Arc;
 use crate::cognitive::llm::LlmClient;
 use crate::agent::researcher::ResearchAgent;
-use crate::agent::swarm::{Swarm, SwarmAgent, AgentId, SwarmMessage};
-use tokio::sync::{RwLock, oneshot};
-use std::collections::HashMap;
+use crate::agent::swarm::{Swarm, SwarmAgent, AgentId, SwarmOrchestrator};
+use crate::agent::coder::CoderAgent;
+use crate::agent::analyst::AnalystAgent;
+use crate::agent::aggregator::AggregatorAgent;
+use crate::agent::coordinator::CoordinatorAgent;
+use crate::agent::factory::AgentFactory;
+use std::time::Duration;
 
 use crate::events::EventBus;
 
+use sqlx::sqlite::SqlitePool;
+
 #[derive(Clone)]
 pub struct System3 {
-    swarm: Arc<Swarm>,
-    // Map task_id -> sender
-    pending_tasks: Arc<RwLock<HashMap<String, oneshot::Sender<String>>>>,
+    pub swarm: Arc<Swarm>,
+    pub orchestrator: Option<Arc<SwarmOrchestrator>>,
+    coordinator: CoordinatorAgent, // Keep for legacy/CLI flow?
     self_id: AgentId,
-    #[allow(dead_code)]
     event_bus: Arc<EventBus>,
-}
-
-struct UserProxyAgent {
-    id: AgentId,
-    pending_tasks: Arc<RwLock<HashMap<String, oneshot::Sender<String>>>>,
-}
-
-#[async_trait]
-impl SwarmAgent for UserProxyAgent {
-    fn id(&self) -> &AgentId {
-        &self.id
-    }
-    
-    fn name(&self) -> &str {
-        "user_proxy"
-    }
-
-    async fn receive(&mut self, message: SwarmMessage, _sender: AgentId) -> Option<SwarmMessage> {
-        match message {
-            SwarmMessage::Result { task_id, content } => {
-                let mut tasks = self.pending_tasks.write().await;
-                if let Some(tx) = tasks.remove(&task_id) {
-                    let _ = tx.send(content);
-                }
-            }
-            SwarmMessage::StatusUpdate { task_id, status } => {
-                 let mut tasks = self.pending_tasks.write().await;
-                 if let Some(tx) = tasks.remove(&task_id) {
-                     let _ = tx.send(format!("Task failed with status: {}", status));
-                 }
-            }
-            _ => {}
-        }
-        None
-    }
+    timeout: Duration,
 }
 
 impl System3 {
-    pub async fn new(llm: Arc<Box<dyn LlmClient>>, event_bus: Arc<EventBus>) -> Self {
-        let swarm = Arc::new(Swarm::new());
-        let pending_tasks = Arc::new(RwLock::new(HashMap::new()));
-        let self_id = AgentId::from_name("user_proxy");
+    pub async fn new(llm: Arc<Box<dyn LlmClient>>, event_bus: Arc<EventBus>, pool: Option<SqlitePool>) -> Self {
+        let swarm = Arc::new(Swarm::new().with_event_bus(event_bus.clone()));
+        
+        let agent_factory = Arc::new(AgentFactory::new(llm.clone(), event_bus.clone()));
+        
+        let orchestrator = Arc::new(SwarmOrchestrator::new(llm.clone(), swarm.clone(), pool, agent_factory));
+        
+        // Initialize orchestrator (load active graphs)
+        orchestrator.init().await;
+        
+        let coordinator = CoordinatorAgent::new(llm.clone(), swarm.clone());
+        let coordinator_id = coordinator.id().clone();
         
         // Register Researcher
         let researcher = Box::new(ResearchAgent::new(llm.clone(), event_bus.clone()));
         swarm.register_agent(researcher).await;
         
-        // Register UserProxy (System3 itself)
-        let proxy = Box::new(UserProxyAgent {
-            id: self_id.clone(),
-            pending_tasks: pending_tasks.clone(),
-        });
-        swarm.register_agent(proxy).await;
+        // Register Coder
+        let coder = Box::new(CoderAgent::new(llm.clone()));
+        swarm.register_agent(coder).await;
+        
+        // Register Analyst
+        let analyst = Box::new(AnalystAgent::new(llm.clone()));
+        swarm.register_agent(analyst).await;
+        
+        // Register Aggregator
+        let aggregator = Box::new(AggregatorAgent::new(llm.clone()));
+        swarm.register_agent(aggregator).await;
+        
+        // Register Coordinator (System3 delegate)
+        let coord_clone = coordinator.clone();
+        swarm.register_agent(Box::new(coord_clone)).await;
 
         Self {
             swarm,
-            pending_tasks,
-            self_id,
+            orchestrator: Some(orchestrator),
+            coordinator,
+            self_id: coordinator_id,
             event_bus,
+            timeout: Duration::from_secs(120), // Default 2 minutes timeout
         }
     }
 }
@@ -88,48 +78,45 @@ impl CognitiveSystem for System3 {
         "System 3 (Swarm)"
     }
 
-    async fn process(&self, input: &str, context: &[Message]) -> Result<(String, Vec<TraceStep>)> {
+    async fn process(&self, input: &str, _context: &[Message]) -> Result<(String, Vec<TraceStep>)> {
         // Extract topic (flexible matching)
-        let topic = if input.to_lowercase().starts_with("research ") {
-            input[9..].trim()
-        } else if input.contains("deep research") {
-            input.trim()
+        // Fix P0: Safe string slicing
+        let lower = input.to_lowercase();
+        let topic = if lower.starts_with("research ") {
+            // Find where "research " ends in char indices
+            // "research " is 9 chars.
+            // We want to skip 9 chars.
+            input.chars().skip(9).collect::<String>().trim().to_string()
         } else {
-            input.trim()
+            input.trim().to_string()
         };
         
-        let task_id = uuid::Uuid::new_v4().to_string();
-        let (tx, rx) = oneshot::channel();
+        // Submit task to coordinator
+        let task_id = self.coordinator.submit_task(topic.to_string()).await;
+        tracing::info!("System 3 submitted task '{}' (id: {})", topic, task_id);
+
+        // Execute via Coordinator (this will block until all subtasks are done)
+        // We use a timeout to prevent hanging forever
+        let execution_future = self.coordinator.execute_task(&task_id);
         
-        {
-            let mut tasks = self.pending_tasks.write().await;
-            tasks.insert(task_id.clone(), tx);
-        }
-        
-        let msg = SwarmMessage::Task {
-            task_id: task_id.clone(),
-            description: topic.to_string(),
-            context: context.to_vec(),
-        };
-        
-        // Send to researcher
-        // Note: researcher ID is fixed "researcher" in ResearchAgent
-        self.swarm.send(&AgentId::from_name("researcher"), msg, &self.self_id).await?;
-        
-        // Wait for result
-        // TODO: Add timeout
-        let response = rx.await?;
-        
-        let traces = vec![
-            TraceStep {
-                step: 1,
-                thought: format!("Dispatched task {} to Swarm (Researcher)", task_id),
-                action: Some("swarm_dispatch".to_string()),
-                action_input: Some(topic.to_string()),
-                observation: Some("Received result from Swarm".to_string()),
+        match tokio::time::timeout(self.timeout, execution_future).await {
+            Ok(Ok(response)) => {
+                let traces = vec![
+                    TraceStep {
+                        step: 1,
+                        thought: format!("Swarm execution completed for task {}", task_id),
+                        action: Some("swarm_execution".to_string()),
+                        action_input: Some(topic.to_string()),
+                        observation: Some("Received aggregated result".to_string()),
+                    }
+                ];
+                Ok((response, traces))
+            },
+            Ok(Err(e)) => Err(CrabletError::Swarm(format!("Swarm execution failed: {}", e))),
+            Err(_) => {
+                tracing::warn!("Swarm task {} timed out after {:?}", task_id, self.timeout);
+                Ok(("Task timed out. The agents are taking longer than expected.".to_string(), vec![]))
             }
-        ];
-        
-        Ok((response, traces))
+        }
     }
 }

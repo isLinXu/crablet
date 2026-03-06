@@ -16,3 +16,6 @@ pub mod skill;
 #[cfg(feature = "web")]
 pub mod gateway;
 pub mod research;
+pub mod debug;
+pub mod audit;
+pub mod analyze;

@@ -1,76 +1,71 @@
 # syntax=docker/dockerfile:1
 
-# Stage 1: Builder
-FROM rust:1.80-slim-bookworm as builder
+# Stage: Frontend Builder
+FROM node:20-alpine AS frontend-builder
+WORKDIR /app/frontend
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
+COPY frontend/ .
+RUN npm run build
 
-# Install build dependencies
-RUN apt-get update && apt-get install -y \
-    pkg-config \
-    libssl-dev \
-    git \
-    build-essential \
-    && rm -rf /var/lib/apt/lists/*
-
+# Stage 1: Chef (Pre-computation)
+FROM lukemathwalker/cargo-chef:latest-rust-1.80 AS chef
 WORKDIR /app
 
-# Copy manifests first to cache dependencies
+# Stage 2: Planner
+FROM chef AS planner
 COPY Cargo.toml Cargo.lock ./
 COPY crablet/Cargo.toml crablet/
+COPY crablet/src/ crablet/src/
+# Only copy necessary files for recipe generation
+RUN cargo chef prepare --recipe-path recipe.json
 
-# Create dummy source to build dependencies
-RUN mkdir -p crablet/src && \
-    echo "fn main() {println!(\"dummy\")}" > crablet/src/main.rs && \
-    cargo build --release --package crablet
+# Stage 3: Builder
+FROM chef AS builder
+COPY --from=planner /app/recipe.json recipe.json
+# Build dependencies - this is the caching layer!
+RUN cargo chef cook --release --recipe-path recipe.json
 
-# Remove dummy source
-RUN rm -rf crablet/src
+# Build application
+COPY Cargo.toml Cargo.lock ./
+COPY crablet/ crablet/
+RUN cargo build --release
 
-# Copy actual source code
-COPY . .
+# Stage 4: Runtime
+FROM debian:bookworm-slim AS runtime
 
-# Build the actual application
-# Need to touch main.rs to force rebuild of the binary (dependencies are cached)
-RUN touch crablet/src/main.rs && \
-    cargo build --release --package crablet
-
-# Stage 2: Runtime
-FROM debian:bookworm-slim
+# Create non-root user
+RUN groupadd -r crablet && useradd -r -g crablet crablet
 
 # Install runtime dependencies
-# - ca-certificates: HTTPS
-# - openssl: TLS
-# - ffmpeg: Audio processing (Whisper/TTS)
-# - sqlite3: DB debugging
-# - curl: Healthchecks
-RUN apt-get update && apt-get install -y \
+# ffmpeg for audio, ca-certificates for https, curl for healthcheck
+RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
-    openssl \
+    libssl3 \
     ffmpeg \
-    sqlite3 \
     curl \
+    python3 \
+    python3-pip \
     && rm -rf /var/lib/apt/lists/*
-
-# Create a non-root user
-RUN useradd -ms /bin/bash crablet
 
 WORKDIR /app
 
 # Copy binary from builder
-COPY --from=builder /app/target/release/crablet /usr/local/bin/crablet
+COPY --from=builder /app/target/release/crablet /usr/local/bin/
 
-# Create directory structure
-RUN mkdir -p /app/skills /app/data /app/config /app/assets /app/templates
-RUN chown -R crablet:crablet /app
+# Copy frontend build to static directory
+COPY --from=frontend-builder /app/frontend/dist /app/static
 
-# Copy static assets and templates if they exist in source
-COPY --from=builder /app/crablet/templates /app/templates
-# COPY --from=builder /app/crablet/assets /app/assets
+# Copy default skills
+COPY skills/ /app/skills/
+
+# Create directory structure and set permissions
+# skills, data, config, uploads
+RUN mkdir -p /app/data /app/config /app/uploads && \
+    chown -R crablet:crablet /app
 
 # Switch to user
-# Note: For Docker socket access, we might need to run as root or add user to docker group dynamically.
-# For simplicity in this template, we default to root to ensure docker socket access works out of the box,
-# but in production, one should use group mapping.
-# USER crablet 
+USER crablet
 
 # Set environment variables
 ENV RUST_LOG=info
@@ -79,13 +74,11 @@ ENV XDG_DATA_HOME=/app/data
 ENV CRABLET_HOST=0.0.0.0
 
 # Expose ports
-# 3000: Web UI
-# 18789: Gateway RPC
-EXPOSE 3000 18789
+EXPOSE 3000
 
 # Healthcheck
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD curl -f http://localhost:18789/ || exit 1
+  CMD curl -f http://localhost:3000/health || exit 1
 
 # Default command
 CMD ["crablet", "serve-web", "--port", "3000"]

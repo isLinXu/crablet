@@ -1,5 +1,6 @@
-use anyhow::Result;
+use crate::error::CrabletError;
 use serde::{Deserialize, Serialize};
+use regex::Regex;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Chunk {
@@ -8,7 +9,89 @@ pub struct Chunk {
 }
 
 pub trait Chunker: Send + Sync {
-    fn chunk(&self, text: &str) -> Result<Vec<Chunk>>;
+    fn chunk(&self, text: &str) -> Result<Vec<Chunk>, CrabletError>;
+}
+
+pub struct MarkdownChunker {
+    chunk_size: usize,
+}
+
+impl MarkdownChunker {
+    pub fn new(chunk_size: usize) -> Self {
+        Self { chunk_size }
+    }
+
+    fn is_header(line: &str) -> Option<(usize, String)> {
+        let re = Regex::new(r"^(#{1,6})\s+(.*)").expect("Invalid regex in MarkdownChunker");
+        if let Some(cap) = re.captures(line) {
+            let level = cap[1].len();
+            let text = cap[2].to_string();
+            return Some((level, text));
+        }
+        None
+    }
+}
+
+impl Chunker for MarkdownChunker {
+    fn chunk(&self, text: &str) -> Result<Vec<Chunk>, CrabletError> {
+        let mut chunks = Vec::new();
+        let mut current_chunk = String::new();
+        let mut current_headers: Vec<String> = Vec::new(); // Stack of headers
+        
+        for line in text.lines() {
+            if let Some((level, title)) = Self::is_header(line) {
+                // If we have content, push it
+                if !current_chunk.trim().is_empty() {
+                    let mut meta = std::collections::HashMap::new();
+                    meta.insert("headers".to_string(), current_headers.join(" > "));
+                    chunks.push(Chunk {
+                        content: current_chunk.clone(),
+                        metadata: meta,
+                    });
+                    current_chunk.clear();
+                }
+                
+                // Update header stack
+                // If level is <= current stack depth, pop until we are at right level
+                // e.g. H1 -> H2 -> H3. New H2. Stack becomes H1 -> H2(new).
+                // But markdown levels can jump.
+                // Simple logic: maintain headers up to current level.
+                if level <= current_headers.len() {
+                    current_headers.truncate(level - 1);
+                }
+                current_headers.push(title);
+                
+                // Add header to chunk content for context?
+                // Usually good to keep header in content too.
+                current_chunk.push_str(line);
+                current_chunk.push('\n');
+            } else {
+                // Check size limit
+                if current_chunk.len() + line.len() > self.chunk_size && !current_chunk.trim().is_empty() {
+                     let mut meta = std::collections::HashMap::new();
+                     meta.insert("headers".to_string(), current_headers.join(" > "));
+                     chunks.push(Chunk {
+                        content: current_chunk.clone(),
+                        metadata: meta,
+                     });
+                     current_chunk.clear();
+                }
+                current_chunk.push_str(line);
+                current_chunk.push('\n');
+            }
+        }
+        
+        if !current_chunk.trim().is_empty() {
+             let mut meta = std::collections::HashMap::new();
+             meta.insert("headers".to_string(), current_headers.join(" > "));
+             chunks.push(Chunk {
+                content: current_chunk,
+                metadata: meta,
+             });
+        }
+        
+        Ok(chunks)
+    }
 }
 
 pub struct RecursiveCharacterChunker {
@@ -41,8 +124,8 @@ impl RecursiveCharacterChunker {
 
         for split in splits {
             let len = split.len();
-            if total + len + (if !current_doc.is_empty() { separator_len } else { 0 }) > self.chunk_size {
-                if !current_doc.is_empty() {
+            if total + len + (if !current_doc.is_empty() { separator_len } else { 0 }) > self.chunk_size
+                && !current_doc.is_empty() {
                     let doc = current_doc.join(separator);
                     if !doc.trim().is_empty() {
                         docs.push(doc);
@@ -58,7 +141,6 @@ impl RecursiveCharacterChunker {
                         }
                     }
                 }
-            }
             
             current_doc.push(split.clone());
             total += len + (if current_doc.len() > 1 { separator_len } else { 0 });
@@ -115,7 +197,7 @@ impl RecursiveCharacterChunker {
 }
 
 impl Chunker for RecursiveCharacterChunker {
-    fn chunk(&self, text: &str) -> Result<Vec<Chunk>> {
+    fn chunk(&self, text: &str) -> Result<Vec<Chunk>, CrabletError> {
         let texts = self._chunk(text, &self.separators);
         Ok(texts.into_iter().map(|t| Chunk {
             content: t,

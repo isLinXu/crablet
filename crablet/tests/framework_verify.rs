@@ -1,3 +1,4 @@
+#[cfg(feature = "knowledge")]
 use crablet::knowledge::chunking::{Chunker, RecursiveCharacterChunker};
 use crablet::gateway::events::{EventBus, GatewayEvent};
 use crablet::agent::swarm::SwarmMessage;
@@ -6,6 +7,7 @@ use serde_json::json;
 use std::path::PathBuf;
 use tokio::fs;
 
+#[cfg(feature = "knowledge")]
 #[tokio::test]
 async fn verify_chunking_logic() {
     let chunker = RecursiveCharacterChunker::new(50, 10);
@@ -45,6 +47,7 @@ fn verify_swarm_message_serialization() {
         task_id: "task-1".to_string(),
         description: "Hello".to_string(),
         context: vec![],
+        payload: None,
     };
     
     let json = serde_json::to_string(&msg).unwrap();
