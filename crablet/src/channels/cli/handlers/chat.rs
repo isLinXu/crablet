@@ -13,13 +13,13 @@ pub async fn handle_chat(lane_router: &LaneRouter, router: &CognitiveRouter, ses
     println!("║  Type 'exit' to quit                       ║");
     println!("║  Type '/help' for commands                 ║");
     println!("╚════════════════════════════════════════════╝");
-    
+
     start_chat_loop(lane_router, router, &session_id).await
 }
 
 pub async fn handle_run(lane_router: &LaneRouter, prompt: &str, session: Option<&str>) -> Result<()> {
     let session_id = session.map(|s| s.to_string()).unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-    
+
     let spinner = indicatif::ProgressBar::new_spinner();
     spinner.set_style(
         indicatif::ProgressStyle::default_spinner()
@@ -32,7 +32,7 @@ pub async fn handle_run(lane_router: &LaneRouter, prompt: &str, session: Option<
     info!("Running prompt: {} (Session: {})", prompt, session_id);
     // Use Lane Router for dispatch
     let (response, _traces) = lane_router.dispatch(&session_id, prompt.to_string()).await?;
-    
+
     spinner.finish_and_clear();
     println!("🦀 Crablet: {}", response);
     Ok(())
@@ -41,23 +41,23 @@ pub async fn handle_run(lane_router: &LaneRouter, prompt: &str, session: Option<
 async fn start_chat_loop(lane_router: &LaneRouter, router: &CognitiveRouter, session_id: &str) -> Result<()> {
     let mut input = String::new();
     let stdin = io::stdin(); // Create stdin handle outside loop
-    
+
     loop {
         print!("\n💬 You: ");
         io::stdout().flush()?;
-        
+
         input.clear();
         stdin.read_line(&mut input)?; // Use handle
-        
+
         let trimmed = input.trim();
         if trimmed == "exit" || trimmed == "/exit" {
             break;
         }
-        
+
         if trimmed.is_empty() {
             continue;
         }
-        
+
         let spinner = indicatif::ProgressBar::new_spinner();
         spinner.set_style(
             indicatif::ProgressStyle::default_spinner()
@@ -68,12 +68,32 @@ async fn start_chat_loop(lane_router: &LaneRouter, router: &CognitiveRouter, ses
         spinner.enable_steady_tick(std::time::Duration::from_millis(100));
 
         // Process with Lane Router (which wraps Cognitive Router)
-        let (response, _traces) = lane_router.dispatch(session_id, trimmed.to_string()).await?;
-        
-        spinner.finish_and_clear();
-        println!("🦀 Crablet: {}", response);
+        match lane_router.dispatch(session_id, trimmed.to_string()).await {
+            Ok((response, _traces)) => {
+                spinner.finish_and_clear();
+                println!("🦀 Crablet: {}", response);
+            },
+            Err(e) => {
+                spinner.finish_and_clear();
+                tracing::error!("Error: {}", e);
+                println!("❌ Error: {}", e);
+
+                // Interactive Configuration Prompt
+                if e.to_string().contains("Ollama API returned error") || e.to_string().contains("LLM Initial Failure") {
+                    println!("\n⚠️ It seems the local LLM service (Ollama) is not available or returned an error.");
+                    println!("Would you like to switch to Cloud Model configuration? [y/N]");
+
+                    let mut confirm = String::new();
+                    io::stdin().read_line(&mut confirm)?;
+                    if confirm.trim().to_lowercase() == "y" {
+                        println!("Redirecting to configuration mode... (Please use 'crablet config' command manually for now)");
+                        // Ideally we would call handle_config here, but we need Config struct
+                    }
+                }
+            }
+        }
     }
-    
+
     // Trigger Memory Consolidation
     #[cfg(feature = "knowledge")]
     {
@@ -84,6 +104,6 @@ async fn start_chat_loop(lane_router: &LaneRouter, router: &CognitiveRouter, ses
              println!("Memory consolidated.");
         }
     }
-    
+
     Ok(())
 }
