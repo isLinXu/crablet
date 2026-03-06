@@ -8,6 +8,7 @@ import { format } from 'date-fns';
 
 interface SessionListProps {
   className?: string;
+  onSelect?: () => void;
 }
 
 const sanitizeFileName = (name: string) => name.replace(/[\\/:*?"<>|]/g, '-').trim() || 'chat';
@@ -55,7 +56,7 @@ const buildSessionMarkdown = (session: { id: string; title: string; created_at: 
   return `${header}${body}`.trim() + '\n';
 };
 
-export const SessionList: React.FC<SessionListProps> = ({ className }) => {
+export const SessionList: React.FC<SessionListProps> = ({ className, onSelect }) => {
   const {
     sessionId,
     sessions,
@@ -71,8 +72,12 @@ export const SessionList: React.FC<SessionListProps> = ({ className }) => {
   const [renameText, setRenameText] = React.useState('');
 
   const handleSelectSession = (id: string) => {
-    if (id === sessionId) return;
+    if (id === sessionId) {
+        onSelect?.();
+        return;
+    }
     setSessionId(id);
+    onSelect?.();
   };
 
   const handleNewSession = () => {
