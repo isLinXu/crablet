@@ -1,7 +1,6 @@
 pub mod cli;
 #[cfg(feature = "discord")]
 pub mod discord;
-// pub mod cli_legacy; // Kept for reference
 #[cfg(feature = "web")]
 pub mod web;
 pub mod domestic;
@@ -26,4 +25,5 @@ pub trait Channel: Send + Sync {
 }
 
 // Re-export specific implementations
+#[cfg(feature = "telegram")]
 pub use international::telegram;

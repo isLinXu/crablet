@@ -59,17 +59,26 @@ pub async fn run(config: Config) -> Result<()> {
         }
         #[cfg(feature = "web")]
         Some(Commands::ServeWeb { port }) => {
-            handlers::web::handle_serve_web(router, *port).await
+            handlers::web::handle_serve_web(router, *port, &config).await
         }
         Some(Commands::Skill { subcmd }) => {
             handlers::skill::handle_skill(subcmd, &config, &router).await
         }
         #[cfg(feature = "web")]
         Some(Commands::Gateway { host, port }) => {
-            handlers::gateway::handle_gateway(host, *port).await
+            handlers::gateway::handle_gateway(host, *port, router.clone()).await
         }
         Some(Commands::Research { topic, depth }) => {
-            handlers::research::handle_research(topic, *depth).await
+            handlers::research::handle_research(topic.clone(), *depth).await
+        }
+        Some(Commands::Debug { session_id }) => {
+            handlers::debug::handle_debug(session_id, app.event_bus.clone()).await
+        }
+        Some(Commands::Audit { path, format }) => {
+            handlers::audit::handle_audit(&router, path.clone(), format.clone()).await
+        }
+        Some(Commands::Analyze { path, goal }) => {
+            handlers::analyze::handle_analyze(&router, path.clone(), goal.clone()).await
         }
         None => {
             use clap::CommandFactory;

@@ -45,6 +45,12 @@ pub struct FunctionCall {
     pub arguments: String,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ChatChunk {
+    pub delta: String,
+    pub finish_reason: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TraceStep {
     pub step: usize,
@@ -73,6 +79,24 @@ impl Message {
         }
     }
 
+    pub fn user(content: impl Into<String>) -> Self {
+        Self {
+            role: "user".to_string(),
+            content: Some(vec![ContentPart::Text { text: content.into() }]),
+            tool_calls: None,
+            tool_call_id: None,
+        }
+    }
+    
+    pub fn system(content: impl Into<String>) -> Self {
+        Self {
+            role: "system".to_string(),
+            content: Some(vec![ContentPart::Text { text: content.into() }]),
+            tool_calls: None,
+            tool_call_id: None,
+        }
+    }
+
     pub fn text(&self) -> Option<String> {
         self.content.as_ref().map(|parts| {
             parts.iter().map(|p| match p {
@@ -80,6 +104,18 @@ impl Message {
                 _ => "".to_string(),
             }).collect::<Vec<_>>().join("")
         })
+    }
+}
+
+impl TraceStep {
+    pub fn cache_hit(score: f32) -> Self {
+        Self {
+            step: 0,
+            thought: format!("Semantic Cache Hit (score: {:.2})", score),
+            action: None,
+            action_input: None,
+            observation: Some("Returned cached response".to_string()),
+        }
     }
 }
 

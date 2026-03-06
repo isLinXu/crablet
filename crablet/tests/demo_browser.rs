@@ -1,6 +1,10 @@
+#[allow(unused_imports)]
 use anyhow::Result;
+#[allow(unused_imports)]
 use crablet::tools::browser::BrowserPlugin;
+#[allow(unused_imports)]
 use crablet::plugins::Plugin;
+#[allow(unused_imports)]
 use serde_json::json;
 
 #[tokio::test]

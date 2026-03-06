@@ -24,6 +24,12 @@ pub struct PluginManager {
     plugins: std::collections::HashMap<String, Box<dyn Plugin>>,
 }
 
+impl Default for PluginManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PluginManager {
     pub fn new() -> Self {
         Self {
@@ -35,7 +41,7 @@ impl PluginManager {
         self.plugins.insert(plugin.name().to_string(), plugin);
     }
 
-    pub fn get(&self, name: &str) -> Option<&Box<dyn Plugin>> {
-        self.plugins.get(name)
+    pub fn get(&self, name: &str) -> Option<&dyn Plugin> {
+        self.plugins.get(name).map(|b| b.as_ref())
     }
 }

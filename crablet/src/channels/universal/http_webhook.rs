@@ -11,6 +11,12 @@ pub struct HttpWebhookChannel {
     client: Client,
 }
 
+impl Default for HttpWebhookChannel {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl HttpWebhookChannel {
     pub fn new() -> Self {
         Self {

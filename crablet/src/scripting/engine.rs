@@ -10,6 +10,18 @@ pub struct LuaEngine {
 impl LuaEngine {
     pub fn new() -> Result<Self> {
         let lua = Lua::new();
+        
+        // --- Security Sandbox ---
+        let globals = lua.globals();
+        
+        // Remove dangerous global functions/tables
+        globals.set("os", mlua::Value::Nil)?;
+        globals.set("io", mlua::Value::Nil)?;
+        globals.set("dofile", mlua::Value::Nil)?;
+        globals.set("loadfile", mlua::Value::Nil)?;
+        globals.set("require", mlua::Value::Nil)?;
+        globals.set("package", mlua::Value::Nil)?;
+        
         // Register core bindings
         register_bindings(&lua)?;
         

@@ -1,1 +1,7 @@
 /target
+.env
+.fastembed_cache/
+.DS_Store
+*.db
+*.sqlite
+*.sqlite3

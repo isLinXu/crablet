@@ -11,12 +11,18 @@ pub struct Session {
     pub user_id: String,
     pub connected_at: chrono::DateTime<chrono::Utc>,
     #[serde(skip)]
-    pub sender: Option<mpsc::UnboundedSender<super::types::RpcResponse>>,
+    pub sender: Option<mpsc::Sender<super::types::RpcResponse>>,
 }
 
 #[derive(Clone)]
 pub struct SessionManager {
     sessions: Arc<DashMap<String, Session>>,
+}
+
+impl Default for SessionManager {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl SessionManager {
@@ -26,7 +32,7 @@ impl SessionManager {
         }
     }
 
-    pub fn create_session(&self, user_id: String, sender: mpsc::UnboundedSender<super::types::RpcResponse>) -> String {
+    pub fn create_session(&self, user_id: String, sender: mpsc::Sender<super::types::RpcResponse>) -> String {
         let session_id = Uuid::new_v4().to_string();
         let session = Session {
             id: session_id.clone(),
@@ -46,21 +52,38 @@ impl SessionManager {
         self.sessions.get(session_id).map(|s| s.value().clone())
     }
 
-    pub fn send_to_session(&self, session_id: &str, response: super::types::RpcResponse) -> Result<(), GatewayError> {
+    pub async fn send_to_session(&self, session_id: &str, response: super::types::RpcResponse) -> Result<(), GatewayError> {
         if let Some(session) = self.sessions.get(session_id) {
             if let Some(sender) = &session.sender {
-                sender.send(response).map_err(|e| GatewayError::InternalError(e.to_string()))?;
+                sender.send(response).await.map_err(|e| GatewayError::InternalError(e.to_string()))?;
                 return Ok(());
             }
         }
         Err(GatewayError::NotFound(format!("Session {} not found", session_id)))
     }
 
-    pub fn broadcast(&self, response: super::types::RpcResponse) {
+    pub async fn broadcast(&self, response: super::types::RpcResponse) {
         for session in self.sessions.iter() {
             if let Some(sender) = &session.sender {
-                let _ = sender.send(response.clone());
+                let _ = sender.send(response.clone()).await;
             }
         }
+    }
+
+    pub fn count(&self) -> usize {
+        self.sessions.len()
+    }
+
+    pub fn list_sessions(&self) -> Vec<Session> {
+        // Collect sessions into a Vec
+        // DashMap iterator might deadlock if not careful, but map+collect is usually safe
+        // We clone the sessions to avoid holding locks
+        self.sessions.iter().map(|s| s.value().clone()).collect()
+    }
+
+    pub fn get_history(&self, _session_id: &str) -> Option<Vec<serde_json::Value>> {
+        // Placeholder for session history
+        // In a real implementation, this would query the episodic memory or a separate history store
+        Some(vec![])
     }
 }

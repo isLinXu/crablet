@@ -8,6 +8,8 @@ pub mod types;
 pub mod canvas;
 pub mod canvas_manager;
 pub mod web_handlers;
+pub mod feishu_handler;
+pub mod ratelimit;
 
 pub use server::CrabletGateway;
 pub use canvas_manager::CanvasManager;

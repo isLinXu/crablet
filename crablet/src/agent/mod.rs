@@ -1,14 +1,28 @@
-use anyhow::Result;
-use async_trait::async_trait;
-use crate::types::Message;
-use std::sync::Arc;
-use serde::{Serialize, Deserialize};
-
 pub mod researcher;
 pub mod coordinator;
 pub mod task;
 pub mod factory;
 pub mod swarm;
+pub mod coder;
+pub mod analyst;
+pub mod planning;
+pub mod aggregator;
+pub mod debate;
+pub mod voting;
+pub mod reviewer;
+pub mod security;
+pub mod analyst_v2;
+pub mod generic;
+pub mod capability;
+pub mod smart_allocator;
+pub mod hitl;
+pub mod handoff;
+
+use anyhow::Result;
+use async_trait::async_trait;
+use crate::types::Message;
+use std::sync::Arc;
+use serde::{Serialize, Deserialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum AgentRole {
@@ -18,6 +32,7 @@ pub enum AgentRole {
     Executor,
     Reviewer,
     Planner,
+    Moderator,
     Custom(String),
 }
 

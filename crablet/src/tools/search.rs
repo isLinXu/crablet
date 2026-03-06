@@ -3,6 +3,7 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::env;
 use crate::plugins::Plugin;
+use crate::error::CrabletError;
 use async_trait::async_trait;
 use serde_json::Value;
 use scraper::{Html, Selector};
@@ -16,6 +17,12 @@ pub struct SearchResult {
 
 pub struct WebSearchPlugin {
     tool: WebSearchTool,
+}
+
+impl Default for WebSearchPlugin {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl WebSearchPlugin {
@@ -66,26 +73,36 @@ impl Plugin for WebSearchPlugin {
 
 #[derive(Clone)]
 pub struct WebSearchTool {
-    client: Client,
+    client: Result<Client, String>,
     api_key: Option<String>,
+}
+
+impl Default for WebSearchTool {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl WebSearchTool {
     pub fn new() -> Self {
+        let client = Client::builder()
+            .user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+            .cookie_store(true)
+            .build()
+            .map_err(|e| e.to_string());
+
         Self {
-            client: Client::builder()
-                .user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-                .cookie_store(true)
-                .build()
-                .unwrap(),
+            client,
             api_key: env::var("SERPER_API_KEY").ok(),
         }
     }
 
-    pub async fn search(&self, query: &str) -> Result<Vec<SearchResult>> {
+    pub async fn search(&self, query: &str) -> std::result::Result<Vec<SearchResult>, CrabletError> {
+        let client = self.client.as_ref().map_err(|e| CrabletError::SearchError(format!("HTTP Client init failed: {}", e)))?;
+
         // 1. Try Serper (Google API) if key is present
         if let Some(api_key) = &self.api_key {
-            match self.search_serper(query, api_key).await {
+            match self.search_serper(client, query, api_key).await {
                 Ok(results) if !results.is_empty() => return Ok(results),
                 Ok(_) => { /* Empty results, fall through to fallback */ },
                 Err(e) => {
@@ -95,29 +112,30 @@ impl WebSearchTool {
         }
 
         // 2. Fallback to DuckDuckGo HTML scraping
-        self.search_duckduckgo_html(query).await
+        self.search_duckduckgo_html(client, query).await
     }
 
-    async fn search_serper(&self, query: &str, api_key: &str) -> Result<Vec<SearchResult>> {
+    async fn search_serper(&self, client: &Client, query: &str, api_key: &str) -> std::result::Result<Vec<SearchResult>, CrabletError> {
         let url = "https://google.serper.dev/search";
         let payload = serde_json::json!({
             "q": query,
             "num": 5
         });
 
-        let response = self.client
+        let response = client
             .post(url)
             .header("X-API-KEY", api_key)
             .header("Content-Type", "application/json")
             .json(&payload)
             .send()
-            .await?;
+            .await
+            .map_err(|e| CrabletError::SearchError(format!("Serper API request failed: {}", e)))?;
 
         if !response.status().is_success() {
-            return Err(anyhow::anyhow!("Serper API failed: {}", response.status()));
+            return Err(CrabletError::SearchError(format!("Serper API failed: {}", response.status())));
         }
 
-        let json: serde_json::Value = response.json().await?;
+        let json: serde_json::Value = response.json().await.map_err(|e| CrabletError::SearchError(format!("Failed to parse Serper JSON: {}", e)))?;
         let mut results = Vec::new();
         
         if let Some(organic) = json.get("organic").and_then(|v| v.as_array()) {
@@ -134,20 +152,21 @@ impl WebSearchTool {
         Ok(results)
     }
 
-    async fn search_duckduckgo_html(&self, query: &str) -> Result<Vec<SearchResult>> {
+    async fn search_duckduckgo_html(&self, client: &Client, query: &str) -> std::result::Result<Vec<SearchResult>, CrabletError> {
         // Use html.duckduckgo.com which is easier to scrape than the JS version
         let url = format!("https://html.duckduckgo.com/html/?q={}", urlencoding::encode(query));
         
-        let response = self.client.get(&url).send().await?;
-        let html_content = response.text().await?;
+        let response = client.get(&url).send().await.map_err(|e| CrabletError::SearchError(format!("DuckDuckGo request failed: {}", e)))?;
+        let html_content = response.text().await.map_err(|e| CrabletError::SearchError(format!("Failed to read DuckDuckGo body: {}", e)))?;
         
         let document = Html::parse_document(&html_content);
         
         // DuckDuckGo HTML structure selectors
-        let result_selector = Selector::parse(".result").unwrap();
-        let title_selector = Selector::parse(".result__a").unwrap();
-        let snippet_selector = Selector::parse(".result__snippet").unwrap();
-        let _link_selector = Selector::parse(".result__url").unwrap();
+        // Safe to unwrap here as these are hardcoded valid selectors
+        let result_selector = Selector::parse(".result").expect("Invalid result selector");
+        let title_selector = Selector::parse(".result__a").expect("Invalid title selector");
+        let snippet_selector = Selector::parse(".result__snippet").expect("Invalid snippet selector");
+        let _link_selector = Selector::parse(".result__url").expect("Invalid link selector");
 
         let mut results = Vec::new();
 

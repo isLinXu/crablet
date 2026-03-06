@@ -8,6 +8,12 @@ pub struct ChannelManager {
     channels: HashMap<String, Arc<dyn Channel>>,
 }
 
+impl Default for ChannelManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ChannelManager {
     pub fn new() -> Self {
         Self {
@@ -15,13 +21,13 @@ impl ChannelManager {
         }
     }
 
-    pub fn load_from_config(&mut self, config: &Config, router: Arc<CognitiveRouter>) {
+    pub fn load_from_config(&mut self, config: &Config, _router: Arc<CognitiveRouter>) {
         // If config.channels is empty, we might want defaults or just nothing.
         // For now, only load what's in config.
         for name in &config.channels {
             match name.as_str() {
                 "feishu" => {
-                    let channel = crate::channels::domestic::feishu::FeishuChannel::new();
+                    let channel = crate::channels::domestic::feishu::FeishuChannel::new(config);
                     self.register(Arc::new(channel));
                 }
                 "dingtalk" => {
@@ -29,8 +35,11 @@ impl ChannelManager {
                     self.register(Arc::new(channel));
                 }
                 "telegram" => {
-                     let channel = crate::channels::international::telegram::TelegramChannel::new(router.clone());
-                     self.register(Arc::new(channel));
+                    #[cfg(feature = "telegram")]
+                    {
+                        let channel = crate::channels::international::telegram::TelegramChannel::new(_router.clone());
+                        self.channels.insert(name.to_string(), Arc::new(channel));
+                    }
                 }
                 "webhook" => {
                     let channel = crate::channels::universal::http_webhook::HttpWebhookChannel::new();

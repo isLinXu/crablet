@@ -35,4 +35,8 @@ impl LlmClient for ZhipuClient {
     async fn chat_complete_with_tools(&self, messages: &[Message], tools: &[serde_json::Value]) -> Result<Message> {
         self.client.chat_complete_with_tools(messages, tools).await
     }
+
+    fn model_name(&self) -> &str {
+        &self.client.model
+    }
 }

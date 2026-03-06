@@ -21,7 +21,7 @@ impl SkillManagerTool {
         let dir_name = if let Some(n) = name {
             n.to_string()
         } else {
-            url.split('/').last()
+            url.split('/').next_back()
                 .ok_or_else(|| anyhow!("Invalid URL"))?
                 .trim_end_matches(".git")
                 .to_string()

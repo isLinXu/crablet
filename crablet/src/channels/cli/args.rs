@@ -91,6 +91,31 @@ pub enum Commands {
         #[arg(short, long, default_value = "3")]
         depth: usize,
     },
+    
+    /// Debug a session
+    Debug {
+        /// Session ID to replay
+        #[arg(index = 1)]
+        session_id: String,
+    },
+    
+    /// Perform a security audit on a codebase
+    Audit {
+        /// Path to the codebase
+        path: String,
+        /// Report format (text, json)
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
+
+    /// Analyze a data file (CSV/JSON) using DataAnalystAgent
+    Analyze {
+        /// Path to the data file
+        path: String,
+        /// Goal of the analysis
+        #[arg(short, long, default_value = "Analyze the data distribution and summary statistics")]
+        goal: String,
+    },
 }
 
 #[derive(Subcommand, Clone)]
@@ -105,8 +130,8 @@ pub enum SkillSubcommands {
     },
     /// Install a skill from a git repository or ClawHub URL
     Install {
-        /// Git URL or ClawHub URL (https://clawhub.dev/s/...)
-        url: String,
+        /// Skill name or Git URL
+        name_or_url: String,
         /// Optional name override
         name: Option<String>,
     },
@@ -114,6 +139,11 @@ pub enum SkillSubcommands {
     Uninstall {
         /// Name of the skill to uninstall
         name: String,
+    },
+    /// Search for skills in the registry
+    Search {
+        /// Query string
+        query: String,
     },
     /// List installed skills
     List,

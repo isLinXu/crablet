@@ -1,6 +1,7 @@
 use anyhow::Result;
 use crablet::memory::semantic::{SqliteKnowledgeGraph, KnowledgeGraph};
 use sqlx::sqlite::SqlitePoolOptions;
+#[allow(unused_imports)]
 use std::sync::Arc;
 
 #[tokio::test]

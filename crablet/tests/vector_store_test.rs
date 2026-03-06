@@ -1,5 +1,7 @@
+#[cfg(feature = "knowledge")]
 use crablet::knowledge::chunking::{Chunker, RecursiveCharacterChunker};
 
+#[cfg(feature = "knowledge")]
 #[tokio::test]
 async fn test_chunk_text() {
     let chunker = RecursiveCharacterChunker::new(20, 5);
@@ -16,6 +18,7 @@ async fn test_chunk_text() {
     assert!(reassembled.len() >= text.len());
 }
 
+#[cfg(feature = "knowledge")]
 #[tokio::test]
 async fn test_chunk_text_overlap() {
     let chunker = RecursiveCharacterChunker::new(5, 2);

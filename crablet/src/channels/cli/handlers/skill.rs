@@ -8,41 +8,82 @@ use crate::skills::SkillRegistry;
 
 pub async fn handle_skill(subcmd: &SkillSubcommands, config: &Config, _router: &CognitiveRouter) -> Result<()> {
     match subcmd {
-        SkillSubcommands::Install { url, name } => {
-            // Check if it's a ClawHub URL
-            if url.contains("clawhub.dev") {
-                return handle_clawhub_import(url, config).await;
-            }
+        SkillSubcommands::Install { name_or_url, name } => {
+            let mut registry = SkillRegistry::new();
             
-            let skills_dir = &config.skills_dir;
-            info!("Installing skill from {} into {:?}", url, skills_dir);
-            
-            let repo_name = name.clone().unwrap_or_else(|| {
-                url.split('/').last().unwrap_or("unknown").trim_end_matches(".git").to_string()
-            });
-            
-            let target_dir = skills_dir.join(&repo_name);
-            if target_dir.exists() {
-                return Err(anyhow::anyhow!("Skill '{}' already exists at {:?}", repo_name, target_dir));
-            }
-            
-            // Use git command
-            let status = std::process::Command::new("git")
-                .arg("clone")
-                .arg(url)
-                .arg(&target_dir)
-                .status()
-                .map_err(|e| anyhow::anyhow!("Failed to execute git: {}", e))?;
+            // If it looks like a URL (starts with http/https/git), treat as direct install
+            if name_or_url.starts_with("http") || name_or_url.starts_with("git@") {
+                 let url = name_or_url;
+                 // Check if it's a ClawHub URL
+                if url.contains("clawhub.dev") {
+                    return handle_clawhub_import(url, config).await;
+                }
                 
-            if !status.success() {
-                return Err(anyhow::anyhow!("Git clone failed"));
+                let skills_dir = &config.skills_dir;
+                info!("Installing skill from {} into {:?}", url, skills_dir);
+                
+                let repo_name = name.clone().unwrap_or_else(|| {
+                    url.split('/').next_back().unwrap_or("unknown").trim_end_matches(".git").to_string()
+                });
+                
+                let target_dir = skills_dir.join(&repo_name);
+                if target_dir.exists() {
+                    return Err(anyhow::anyhow!("Skill '{}' already exists at {:?}", repo_name, target_dir));
+                }
+                
+                // Use git command
+                let status = std::process::Command::new("git")
+                    .arg("clone")
+                    .arg(url)
+                    .arg(&target_dir)
+                    .status()
+                    .map_err(|e| anyhow::anyhow!("Failed to execute git: {}", e))?;
+                    
+                if !status.success() {
+                    return Err(anyhow::anyhow!("Git clone failed"));
+                }
+                
+                println!("Skill '{}' installed successfully!", repo_name);
+                
+                // Verify OpenClaw compatibility
+                if target_dir.join("SKILL.md").exists() {
+                     println!("Detected OpenClaw skill format (SKILL.md found).");
+                }
+            } else {
+                // Treat as registry name
+                let name = name_or_url;
+                info!("Searching registry for skill '{}'...", name);
+                
+                let target_dir = config.skills_dir.clone();
+                registry.install(name, target_dir).await?;
+                println!("Skill '{}' installed successfully from registry!", name);
             }
-            
-            println!("Skill '{}' installed successfully!", repo_name);
-            
-            // Verify OpenClaw compatibility
-            if target_dir.join("SKILL.md").exists() {
-                 println!("Detected OpenClaw skill format (SKILL.md found).");
+        }
+        SkillSubcommands::Search { query } => {
+            let registry = SkillRegistry::new();
+            println!("Searching registry for '{}'...", query);
+            match registry.search(query).await {
+                Ok(results) => {
+                    if results.is_empty() {
+                        println!("No skills found matching '{}'.", query);
+                    } else {
+                        println!("Found {} skills:", results.len());
+                        for skill in results {
+                            println!("- {} (v{}): {}", skill.name, skill.version, skill.description);
+                            if let Some(author) = skill.author {
+                                println!("  Author: {}", author);
+                            }
+                            if let Some(rating) = skill.rating {
+                                println!("  Rating: {:.1}/5.0", rating);
+                            }
+                            println!("  URL: {}", skill.url);
+                            println!();
+                        }
+                    }
+                }
+                Err(e) => {
+                    println!("Failed to search registry: {}", e);
+                }
             }
         }
         SkillSubcommands::Import { url } => {
@@ -50,7 +91,7 @@ pub async fn handle_skill(subcmd: &SkillSubcommands, config: &Config, _router: &
         }
         SkillSubcommands::Uninstall { name } => {
             let skills_dir = &config.skills_dir;
-            let target_dir = skills_dir.join(&name);
+            let target_dir = skills_dir.join(name);
             
             if !target_dir.exists() {
                 return Err(anyhow::anyhow!("Skill '{}' not found at {:?}", name, target_dir));
@@ -136,7 +177,7 @@ async fn handle_clawhub_import(url: &str, config: &Config) -> Result<()> {
     };
     
     let skills_dir = &config.skills_dir;
-    let repo_name = git_url.split('/').last().unwrap_or("unknown").trim_end_matches(".git").to_string();
+    let repo_name = git_url.split('/').next_back().unwrap_or("unknown").trim_end_matches(".git").to_string();
     let target_dir = skills_dir.join(&repo_name);
     
     if target_dir.exists() {

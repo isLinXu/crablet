@@ -23,7 +23,7 @@ impl ResearchAgent {
     pub fn new(llm: Arc<Box<dyn LlmClient>>, event_bus: Arc<EventBus>) -> Self {
         Self {
             id: AgentId::from_name("researcher"),
-            llm: llm,
+            llm,
             search: Arc::new(WebSearchTool::new()),
             event_bus,
         }
@@ -42,18 +42,22 @@ impl SwarmAgent for ResearchAgent {
 
     async fn receive(&mut self, message: SwarmMessage, sender: AgentId) -> Option<SwarmMessage> {
         match message {
-            SwarmMessage::Task { task_id, description, context } => {
+            SwarmMessage::Task { task_id, description, context, .. } => {
                 info!("ResearchAgent received task {} from {}", task_id, sender.0);
-                if let Ok(result) = self.execute(&description, &context).await {
-                    return Some(SwarmMessage::Result {
-                        task_id,
-                        content: result,
-                    });
-                } else {
-                    return Some(SwarmMessage::StatusUpdate {
-                        task_id,
-                        status: "Failed".to_string(),
-                    });
+                match self.execute(&description, &context).await {
+                    Ok(result) => {
+                        Some(SwarmMessage::Result {
+                            task_id,
+                            content: result,
+                            payload: None,
+                        })
+                    },
+                    Err(e) => {
+                         Some(SwarmMessage::Error {
+                            task_id,
+                            error: e.to_string(),
+                        })
+                    }
                 }
             }
             _ => None,
@@ -144,7 +148,7 @@ impl Agent for ResearchAgent {
         
         // Auto-save the report to a file
         let filename = format!("research_report_{}.md", chrono::Utc::now().format("%Y%m%d_%H%M%S"));
-        if let Ok(_) = std::fs::write(&filename, &report) {
+        if std::fs::write(&filename, &report).is_ok() {
             self.event_bus.publish(AgentEvent::SystemLog(format!("Report saved to {}", filename)));
         }
         

@@ -7,6 +7,11 @@ use crate::channels::manager::ChannelManager;
 
 pub async fn handle_serve(router: Arc<CognitiveRouter>, config: &Config) -> Result<()> {
     println!("Starting Crablet Server (Channels)...");
+
+    // Check if docker is running
+    if let Err(_e) = std::process::Command::new("docker").arg("info").output() {
+        eprintln!("Warning: Docker is not running or not installed. Some features may not work.");
+    }
     
     let mut manager = ChannelManager::new();
     

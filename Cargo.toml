@@ -1,4 +1,0 @@
-[workspace]
-members = ["crablet"]
-default-members = ["crablet"]
-resolver = "2"
