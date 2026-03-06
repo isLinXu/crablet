@@ -9,12 +9,18 @@ export const LOCAL_STORAGE_KEYS = {
 };
 
 export const getApiBaseUrl = () => {
-  const fallback = '/api';
+  const fallback = 'http://127.0.0.1:18789/api';
   let url = (localStorage.getItem(LOCAL_STORAGE_KEYS.API_BASE_URL) || import.meta.env.VITE_API_URL || fallback).trim();
 
   if (!url) {
     localStorage.setItem(LOCAL_STORAGE_KEYS.API_BASE_URL, fallback);
     return fallback;
+  }
+
+  // Auto-fix if pointing to serve-web (3000)
+  if (url === '/api' || url.includes(':3000')) {
+      localStorage.setItem(LOCAL_STORAGE_KEYS.API_BASE_URL, fallback);
+      return fallback;
   }
 
   if (url.includes('dashscope.aliyuncs.com') || url.includes('api.openai.com') || url.includes('anthropic.com')) {
