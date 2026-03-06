@@ -95,13 +95,11 @@ export function useStreamingChat() {
         },
       };
       const baseUrl = getApiBaseUrl().replace(/\/+$/, '');
-      const candidates = [`${baseUrl}/v1/chat/stream`];
-      if (!baseUrl.endsWith('/api')) {
-        candidates.push(`${baseUrl}/api/v1/chat/stream`);
+      const candidates = [`http://127.0.0.1:18789/api/v1/chat/stream`]; // Force Gateway
+      if (baseUrl !== 'http://127.0.0.1:18789/api') {
+        candidates.push(`${baseUrl}/v1/chat/stream`);
       }
-      if (baseUrl === '/api' || /:\/\/(?:localhost|127\.0\.0\.1):3000\/api$/i.test(baseUrl)) {
-        candidates.push('http://127.0.0.1:18789/api/v1/chat/stream');
-      }
+      
       let response: Response | null = null;
       let lastError: any = null;
       const candidatesList = [...new Set(candidates)];
