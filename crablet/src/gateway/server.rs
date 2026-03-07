@@ -23,7 +23,7 @@ use crate::gateway::web_handlers::{
     get_swarm_state, list_agents, cancel_task, delete_session, get_session_history,
     get_dashboard_stats, get_swarm_stats, get_swarm_tasks, toggle_skill,
     search_registry_skills, install_skill, batch_test_skills, get_mcp_overview, list_swarm_reviews, decide_swarm_review,
-    get_skills_sh_top
+    get_skills_sh_top, get_system_config, update_system_config
 };
 use crate::gateway::ratelimit::{create_limiter, GlobalRateLimiter};
 use tokio_stream::wrappers::BroadcastStream;
@@ -206,6 +206,7 @@ impl CrabletGateway {
                 .route("/settings/keys/:id", delete(revoke_api_key))
                 .route("/settings/routing", get(get_routing_settings).put(update_routing_settings))
                 .route("/settings/routing/report", get(get_routing_report))
+                .route("/settings/system/config", get(get_system_config).post(update_system_config))
                 .route("/logs", get(list_audit_logs))
             )
             .route("/api/sessions", get(list_sessions))

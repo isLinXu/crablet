@@ -216,29 +216,34 @@ impl LlmClient for OpenAiClient {
         let stream = response.bytes_stream();
         
         let chunk_stream = async_stream::try_stream! {
-            let mut buffer = String::new();
+            let mut buffer = Vec::new();
             
             for await chunk in stream {
                 let chunk = chunk?;
-                let chunk_str = String::from_utf8_lossy(&chunk);
-                buffer.push_str(&chunk_str);
+                buffer.extend_from_slice(&chunk);
                 
-                while let Some(pos) = buffer.find("\n\n") {
-                    let line = buffer.drain(..pos+2).collect::<String>();
-                    let line = line.trim();
+                // Find double newline which separates SSE events
+                while let Some(pos) = buffer.windows(2).position(|w| w == b"\n\n") {
+                    // Extract the event including the double newline
+                    let event_bytes: Vec<u8> = buffer.drain(..pos+2).collect();
                     
-                    if let Some(data) = line.strip_prefix("data: ") {
-                        if data == "[DONE]" {
-                            break;
-                        }
-                        
-                        if let Ok(response) = serde_json::from_str::<OpenAiStreamResponse>(data) {
-                            if let Some(choice) = response.choices.first() {
-                                if let Some(content) = &choice.delta.content {
-                                    yield ChatChunk {
-                                        delta: content.clone(),
-                                        finish_reason: choice.finish_reason.clone(),
-                                    };
+                    if let Ok(event_str) = String::from_utf8(event_bytes) {
+                        for line in event_str.lines() {
+                            let line = line.trim();
+                            if let Some(data) = line.strip_prefix("data: ") {
+                                if data == "[DONE]" {
+                                    break;
+                                }
+                                
+                                if let Ok(response) = serde_json::from_str::<OpenAiStreamResponse>(data) {
+                                    if let Some(choice) = response.choices.first() {
+                                        if let Some(content) = &choice.delta.content {
+                                            yield ChatChunk {
+                                                delta: content.clone(),
+                                                finish_reason: choice.finish_reason.clone(),
+                                            };
+                                        }
+                                    }
                                 }
                             }
                         }

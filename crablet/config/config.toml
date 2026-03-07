@@ -1,4 +1,4 @@
 [mcp_servers]
-math_server = { command = "python3", args = ["mcp_servers/math_server.py"] }
-test_server = { command = "python3", args = ["mcp_servers/mcp_test_server.py"] }
+math_server = { command = "python3", args = ["-u", "mcp_servers/math_server.py"] }
+test_server = { command = "python3", args = ["-u", "mcp_servers/mcp_test_server.py"] }
 
