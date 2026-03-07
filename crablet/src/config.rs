@@ -289,6 +289,38 @@ impl Config {
             }
         }
 
+        // 1.5. Try to load from local config (overrides XDG)
+        let local_config_path = PathBuf::from("config/config.toml");
+        if local_config_path.exists() {
+            info!("Loading local config from {:?}", local_config_path);
+            let content = std::fs::read_to_string(&local_config_path)?;
+            let toml_config: ConfigFile = toml::from_str(&content)?;
+            
+            if let Some(db) = toml_config.database_url { database_url = db; }
+            if let Some(skills) = toml_config.skills_dir { skills_dir = skills; }
+            if let Some(model) = toml_config.model_name { model_name = model; }
+            if let Some(log) = toml_config.log_level { log_level = log; }
+            if let Some(mcp) = toml_config.mcp_servers { mcp_servers = mcp; }
+            if let Some(chans) = toml_config.channels { channels = chans; }
+            if let Some(thresh) = toml_config.semantic_cache_threshold { semantic_cache_threshold = thresh; }
+            if let Some(val) = toml_config.system2_threshold { system2_threshold = val; }
+            if let Some(val) = toml_config.system3_threshold { system3_threshold = val; }
+            if let Some(val) = toml_config.enable_adaptive_routing { enable_adaptive_routing = val; }
+            if let Some(val) = toml_config.bandit_exploration { bandit_exploration = val; }
+            if let Some(val) = toml_config.enable_hierarchical_reasoning { enable_hierarchical_reasoning = val; }
+            if let Some(val) = toml_config.deliberate_threshold { deliberate_threshold = val; }
+            if let Some(val) = toml_config.meta_reasoning_threshold { meta_reasoning_threshold = val; }
+            if let Some(val) = toml_config.mcts_simulations { mcts_simulations = val; }
+            if let Some(val) = toml_config.mcts_exploration_weight { mcts_exploration_weight = val; }
+            if let Some(val) = toml_config.graph_rag_entity_mode { graph_rag_entity_mode = val; }
+            if let Some(provs) = toml_config.providers { providers = provs; }
+            if let Some(p) = toml_config.port { port = p; }
+            if let Some(val) = toml_config.oidc_issuer { oidc_issuer = Some(val); }
+            if let Some(val) = toml_config.oidc_client_id { oidc_client_id = Some(val); }
+            if let Some(val) = toml_config.oidc_client_secret { oidc_client_secret = Some(val); }
+            if let Some(val) = toml_config.jwt_secret { jwt_secret = Some(val); }
+        }
+
         // 2. Override with Env Vars
         if let Ok(env_db) = std::env::var("DATABASE_URL") { database_url = env_db; }
         if let Ok(env_skills) = std::env::var("CRABLET_SKILLS_DIR") { skills_dir = PathBuf::from(env_skills); }

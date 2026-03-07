@@ -31,6 +31,8 @@ impl LlmClient for CachedLlmClient {
         let mut hasher = Sha256::new();
         let json = serde_json::to_vec(messages).unwrap_or_default();
         hasher.update(&json);
+        // Include model name in cache key to avoid collisions between models
+        hasher.update(self.inner.model_name().as_bytes());
         let result = hasher.finalize();
         let cache_key = format!("{:x}", result);
         

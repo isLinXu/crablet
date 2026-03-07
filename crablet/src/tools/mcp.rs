@@ -7,7 +7,7 @@ use dashmap::DashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use anyhow::{Result, anyhow};
-use tracing::{info, warn, error};
+use tracing::{info, warn, error, debug};
 use std::time::Duration;
 
 // --- JSON-RPC Types ---
@@ -136,6 +136,7 @@ impl McpClient {
             let mut lines = reader.lines();
             
             while let Ok(Some(line)) = lines.next_line().await {
+                debug!("MCP Client received: {}", line);
                 if let Ok(response) = serde_json::from_str::<JsonRpcResponse>(&line) {
                     if let Some(id) = response.id {
                         if let Some((_, sender)) = pending_clone.remove(&id) {
@@ -183,6 +184,7 @@ impl McpClient {
         };
 
         let json_str = serde_json::to_string(&request)?;
+        debug!("MCP Client sending request: {}", json_str);
         
         {
             let mut writer = self.writer.lock().await;
@@ -192,13 +194,13 @@ impl McpClient {
         }
 
         // Wait for response with timeout
-        let response = tokio::time::timeout(Duration::from_secs(30), rx)
+        let response = tokio::time::timeout(Duration::from_secs(60), rx)
             .await
             .map_err(|_| {
                 self.pending.remove(&id); // Cleanup on timeout
-                anyhow!("MCP Request '{}' timed out", method)
+                anyhow!("MCP Request '{}' timed out (ID: {})", method, id)
             })?
-            .map_err(|_| anyhow!("MCP Response channel closed"))?;
+            .map_err(|_| anyhow!("MCP Response channel closed (ID: {})", id))?;
             
         if let Some(error) = response.error {
             return Err(anyhow!("MCP Error {}: {}", error.code, error.message));
