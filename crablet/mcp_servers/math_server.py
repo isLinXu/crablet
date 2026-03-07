@@ -1,122 +1,161 @@
 import sys
 import json
+import traceback
+
+def log(msg):
+    sys.stderr.write(f"[MathMCP] {msg}\n")
+    sys.stderr.flush()
 
 def main():
+    log("Starting Math MCP Server...")
     try:
-        # Read from stdin line by line
-        for line in sys.stdin:
-            line = line.strip()
-            if not line:
-                continue
-
+        while True:
             try:
-                request = json.loads(line)
-            except json.JSONDecodeError:
-                continue
+                line = sys.stdin.readline()
+                if not line:
+                    log("Stdin closed, exiting.")
+                    break
+                
+                line = line.strip()
+                if not line:
+                    continue
 
-            msg_type = "request" if "id" in request else "notification"
-            method = request.get("method")
-            msg_id = request.get("id")
+                try:
+                    request = json.loads(line)
+                except json.JSONDecodeError:
+                    log(f"JSON Decode Error: {line}")
+                    continue
 
-            # 1. Initialize Handshake
-            if method == "initialize":
-                response = {
-                    "jsonrpc": "2.0",
-                    "id": msg_id,
-                    "result": {
-                        "protocolVersion": "2024-11-05",
-                        "capabilities": {
-                            "tools": {}
-                        },
-                        "serverInfo": {
-                            "name": "PythonMathMCP",
-                            "version": "0.1.0"
-                        }
-                    }
-                }
-                print(json.dumps(response))
-                sys.stdout.flush()
+                msg_type = "request" if "id" in request else "notification"
+                method = request.get("method")
+                msg_id = request.get("id")
+                
+                # log(f"Received {msg_type}: {method} (ID: {msg_id})")
 
-            # 2. Tools List
-            elif method == "tools/list":
-                response = {
-                    "jsonrpc": "2.0",
-                    "id": msg_id,
-                    "result": {
-                        "tools": [
-                            {
-                                "name": "add_numbers",
-                                "description": "Add two numbers together via MCP",
-                                "inputSchema": {
-                                    "type": "object",
-                                    "properties": {
-                                        "a": {"type": "number", "description": "First number"},
-                                        "b": {"type": "number", "description": "Second number"}
-                                    },
-                                    "required": ["a", "b"]
-                                }
-                            }
-                        ]
-                    }
-                }
-                print(json.dumps(response))
-                sys.stdout.flush()
+                response = None
 
-            # 3. Call Tool
-            elif method == "tools/call":
-                params = request.get("params", {})
-                name = params.get("name")
-                args = params.get("arguments", {})
-
-                if name == "add_numbers":
-                    try:
-                        a = float(args.get("a", 0))
-                        b = float(args.get("b", 0))
-                        result = a + b
-
-                        response = {
-                            "jsonrpc": "2.0",
-                            "id": msg_id,
-                            "result": {
-                                "content": [
-                                    {
-                                        "type": "text",
-                                        "text": str(result)
-                                    }
-                                ],
-                                "isError": False
-                            }
-                        }
-                    except Exception as e:
-                        response = {
-                            "jsonrpc": "2.0",
-                            "id": msg_id,
-                            "result": {
-                                "content": [
-                                    {
-                                        "type": "text",
-                                        "text": f"Error: {str(e)}"
-                                    }
-                                ],
-                                "isError": True
-                            }
-                        }
-                else:
+                # 1. Initialize
+                if method == "initialize":
+                    # log("Handling initialize")
                     response = {
                         "jsonrpc": "2.0",
                         "id": msg_id,
-                        "error": {
-                            "code": -32601,
-                            "message": f"Method not found: {name}"
+                        "result": {
+                            "protocolVersion": "2024-11-05",
+                            "capabilities": {
+                                "tools": {},
+                                "resources": {},
+                                "prompts": {}
+                            },
+                            "serverInfo": {
+                                "name": "PythonMathMCP",
+                                "version": "0.1.0"
+                            }
                         }
                     }
 
-                print(json.dumps(response))
-                sys.stdout.flush()
+                # 2. Tools List
+                elif method == "tools/list":
+                    response = {
+                        "jsonrpc": "2.0",
+                        "id": msg_id,
+                        "result": {
+                            "tools": [
+                                {
+                                    "name": "add_numbers",
+                                    "description": "Add two numbers together via MCP",
+                                    "inputSchema": {
+                                        "type": "object",
+                                        "properties": {
+                                            "a": {"type": "number", "description": "First number"},
+                                            "b": {"type": "number", "description": "Second number"}
+                                        },
+                                        "required": ["a", "b"]
+                                    }
+                                }
+                            ]
+                        }
+                    }
 
-            # Ignore notifications like 'notifications/initialized'
-            elif msg_type == "notification":
-                pass
+                # 3. Call Tool
+                elif method == "tools/call":
+                    params = request.get("params", {})
+                    name = params.get("name")
+                    args = params.get("arguments", {})
+
+                    if name == "add_numbers":
+                        try:
+                            a = float(args.get("a", 0))
+                            b = float(args.get("b", 0))
+                            result = a + b
+                            response = {
+                                "jsonrpc": "2.0",
+                                "id": msg_id,
+                                "result": {
+                                    "content": [{"type": "text", "text": str(result)}],
+                                    "isError": False
+                                }
+                            }
+                        except Exception as e:
+                            response = {
+                                "jsonrpc": "2.0",
+                                "id": msg_id,
+                                "result": {
+                                    "content": [{"type": "text", "text": f"Error: {str(e)}"}],
+                                    "isError": True
+                                }
+                            }
+                    else:
+                        response = {
+                            "jsonrpc": "2.0",
+                            "id": msg_id,
+                            "error": {"code": -32601, "message": f"Method not found: {name}"}
+                        }
+
+                # 4. Resources List
+                elif method == "resources/list":
+                    response = {
+                        "jsonrpc": "2.0",
+                        "id": msg_id,
+                        "result": {
+                            "resources": []
+                        }
+                    }
+
+                # 5. Prompts List
+                elif method == "prompts/list":
+                    response = {
+                        "jsonrpc": "2.0",
+                        "id": msg_id,
+                        "result": {
+                            "prompts": []
+                        }
+                    }
+                
+                # 6. Notifications
+                elif msg_type == "notification":
+                    # Ignore notifications
+                    continue
+
+                # 7. Unknown Method (Request)
+                else:
+                    if msg_type == "request":
+                        log(f"Unknown method: {method}")
+                        response = {
+                            "jsonrpc": "2.0",
+                            "id": msg_id,
+                            "error": {"code": -32601, "message": f"Method not found: {method}"}
+                        }
+
+                # Send Response
+                if response:
+                    print(json.dumps(response))
+                    sys.stdout.flush()
+                    # log(f"Sent response for {method}")
+
+            except Exception as e:
+                log(f"Error processing line: {e}")
+                traceback.print_exc(file=sys.stderr)
 
     except KeyboardInterrupt:
         sys.exit(0)
