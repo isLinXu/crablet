@@ -8,5 +8,7 @@ export const settingsService = {
   getRoutingSettings: () => api.get<RoutingSettings>('/v1/settings/routing'),
   updateRoutingSettings: (payload: RoutingSettings) => api.put<RoutingSettings>('/v1/settings/routing', payload),
   getRoutingReport: (window = 200) => api.get<RoutingEvaluationReport>(`/v1/settings/routing/report?window=${window}`),
+  getSystemConfig: () => api.get<any>('/v1/settings/system/config'),
+  updateSystemConfig: (payload: any) => api.post<any>('/v1/settings/system/config', payload),
   getMcpOverview: () => api.get<McpOverview>('/v1/mcp/overview'),
 };

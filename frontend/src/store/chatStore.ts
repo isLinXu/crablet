@@ -63,10 +63,14 @@ interface ChatState {
   appendSwarmEvent: (event: SwarmEvent) => void;
   updateLastMessage: (content: string) => void;
   clearMessages: () => void;
+  deleteMessage: (messageId: string) => void;
+  editMessage: (messageId: string, newContent: string) => void;
 }
 
 const nowIso = () => new Date().toISOString();
 const genSessionId = () => `session-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+const genMessageId = () => `msg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
 const inferSessionTitle = (msgs: ExtendedMessage[]) => {
   const userMsg = msgs.find((m) => m.role === 'user');
   if (!userMsg) return 'New Chat';
@@ -136,7 +140,8 @@ export const useChatStore = create<ChatState>()(
       sessionMessages: {},
       
       addMessage: (msg) => set((state) => {
-        const msgs = [...state.messages, msg];
+        const messageWithId = { ...msg, id: msg.id || genMessageId() };
+        const msgs = [...state.messages, messageWithId];
         const synced = syncSessionSnapshot(state.sessionId, msgs, state.sessions, state.sessionMessages);
         return { messages: msgs, sessions: synced.sessions, sessionMessages: synced.sessionMessages };
       }),
@@ -311,6 +316,20 @@ export const useChatStore = create<ChatState>()(
           return { messages: msgs, sessions: synced.sessions, sessionMessages: synced.sessionMessages };
         }
         return {};
+      }),
+      
+      deleteMessage: (messageId) => set((state) => {
+        const msgs = state.messages.filter((m) => m.id !== messageId);
+        const synced = syncSessionSnapshot(state.sessionId, msgs, state.sessions, state.sessionMessages);
+        return { messages: msgs, sessions: synced.sessions, sessionMessages: synced.sessionMessages };
+      }),
+
+      editMessage: (messageId, newContent) => set((state) => {
+        const msgs = state.messages.map((m) => 
+            m.id === messageId ? { ...m, content: newContent } : m
+        );
+        const synced = syncSessionSnapshot(state.sessionId, msgs, state.sessions, state.sessionMessages);
+        return { messages: msgs, sessions: synced.sessions, sessionMessages: synced.sessionMessages };
       }),
       
       clearMessages: () => set((state) => {

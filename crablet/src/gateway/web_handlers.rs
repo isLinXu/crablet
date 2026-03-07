@@ -352,10 +352,10 @@ pub async fn get_dashboard_stats(
     tracing::info!("Dashboard stats request received");
     let start = std::time::Instant::now();
     
-    let skills_count = {
+    let (skills_count, skills_list) = {
         let lock = gateway.router.shared_skills.read().await;
         tracing::info!("Dashboard stats: Got skills lock in {:?}", start.elapsed());
-        lock.len()
+        (lock.len(), lock.list_skills())
     };
     
     // active_swarms: access via sys3 or mock for now as direct access is tricky
@@ -371,6 +371,12 @@ pub async fn get_dashboard_stats(
     };
 
     let stats = serde_json::json!({
+        "status": "healthy",
+        "skills_count": skills_count,
+        "active_tasks": active_swarms,
+        "system_load": "Low",
+        "skills": skills_list,
+        // Backward compatibility / Extra info
         "active_swarms": active_swarms,
         "knowledge_nodes": knowledge_nodes,
         "skills_loaded": skills_count,
@@ -1374,5 +1380,95 @@ pub async fn get_routing_report(
             "mcts_exploration_weight": cfg.mcts_exploration_weight
         },
         "hierarchical_stats": hierarchical_stats
+    })))
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct SystemConfigPayload {
+    pub openai_api_key: Option<String>,
+    pub openai_api_base: Option<String>,
+    pub openai_model_name: Option<String>,
+    pub ollama_model: Option<String>,
+}
+
+pub async fn get_system_config(
+    State(_gateway): State<Arc<CrabletGateway>>,
+) -> Result<Json<SystemConfigPayload>, StatusCode> {
+    let content = fs::read_to_string(".env").unwrap_or_default();
+    let mut config = SystemConfigPayload {
+        openai_api_key: None,
+        openai_api_base: None,
+        openai_model_name: None,
+        ollama_model: None,
+    };
+    
+    for line in content.lines() {
+        if let Some((key, value)) = line.split_once('=') {
+            let val = value.trim().to_string();
+            match key.trim() {
+                "DASHSCOPE_API_KEY" => config.openai_api_key = Some(val),
+                "OPENAI_API_KEY" => {
+                    if config.openai_api_key.is_none() {
+                        config.openai_api_key = Some(val);
+                    }
+                },
+                "OPENAI_API_BASE" => config.openai_api_base = Some(val),
+                "OPENAI_MODEL_NAME" => config.openai_model_name = Some(val),
+                "OLLAMA_MODEL" => config.ollama_model = Some(val),
+                _ => {}
+            }
+        }
+    }
+    
+    Ok(Json(config))
+}
+
+pub async fn update_system_config(
+    State(_gateway): State<Arc<CrabletGateway>>,
+    Json(payload): Json<SystemConfigPayload>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let path = PathBuf::from(".env");
+    let content = fs::read_to_string(&path).unwrap_or_default();
+    let mut lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
+    
+    let mut upsert = |key: &str, value: &str| {
+        let mut found = false;
+        for line in lines.iter_mut() {
+            if line.starts_with(&format!("{}=", key)) {
+                *line = format!("{}={}", key, value);
+                found = true;
+                break;
+            }
+        }
+        if !found {
+            lines.push(format!("{}={}", key, value));
+        }
+    };
+
+    if let Some(v) = payload.openai_api_key {
+        upsert("DASHSCOPE_API_KEY", &v);
+        upsert("OPENAI_API_KEY", &v);
+    }
+    if let Some(v) = payload.openai_api_base {
+        upsert("OPENAI_API_BASE", &v);
+    }
+    if let Some(v) = payload.openai_model_name {
+        upsert("OPENAI_MODEL_NAME", &v);
+    }
+    if let Some(v) = payload.ollama_model {
+        upsert("OLLAMA_MODEL", &v);
+    }
+
+    let new_content = lines.join("\n");
+    let final_content = if new_content.ends_with('\n') { new_content } else { new_content + "\n" };
+    
+    fs::write(&path, final_content).map_err(|e| {
+        tracing::error!("Failed to write .env: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    Ok(Json(serde_json::json!({
+        "status": "success",
+        "message": "Configuration saved. Please restart the service to apply changes."
     })))
 }
