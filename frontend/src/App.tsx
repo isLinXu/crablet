@@ -1,5 +1,7 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
+import { useEffect } from 'react';
+import { useModelStore } from '@/store/modelStore';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Sidebar } from './components/sidebar/Sidebar';
 import { Dashboard } from './components/dashboard/Dashboard';
@@ -13,6 +15,11 @@ import { McpCenter } from './components/mcp/McpCenter';
 import { MemoryCenter } from './components/memory/MemoryCenter';
 
 function App() {
+  const syncModels = useModelStore((s) => s.syncFromBackend);
+  useEffect(() => {
+    syncModels();
+  }, [syncModels]);
+
   return (
     <ErrorBoundary>
         <div className="flex h-screen w-full bg-zinc-50 dark:bg-zinc-950 transition-colors duration-200">

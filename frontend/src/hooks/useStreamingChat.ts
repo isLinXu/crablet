@@ -95,8 +95,11 @@ export function useStreamingChat() {
         },
       };
       const baseUrl = getApiBaseUrl().replace(/\/+$/, '');
-      const candidates = [`http://127.0.0.1:18789/api/v1/chat/stream`]; // Force Gateway
-      if (baseUrl !== 'http://127.0.0.1:18789/api') {
+      const candidates = [
+        `http://localhost:18789/api/v1/chat/stream`,
+        `http://127.0.0.1:18789/api/v1/chat/stream`
+      ]; // Force Gateway
+      if (baseUrl !== 'http://127.0.0.1:18789/api' && baseUrl !== 'http://localhost:18789/api') {
         candidates.push(`${baseUrl}/v1/chat/stream`);
       }
       

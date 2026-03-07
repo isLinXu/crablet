@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { settingsService } from '@/services/settingsService';
 
 export interface ModelProvider {
   id: string;
@@ -31,6 +32,7 @@ interface ModelState {
   removeProvider: (providerId: string) => void;
   setSessionManualProvider: (sessionId: string, providerId: string | null) => void;
   resolveForPrompt: (sessionId: string | null, prompt: string, priority?: 'speed' | 'quality' | 'balanced') => ModelResolution;
+  syncFromBackend: () => Promise<void>;
 }
 
 const defaultProviders: ModelProvider[] = [
@@ -170,6 +172,31 @@ export const useModelStore = create<ModelState>()(
           version: selected.version,
           reason: `auto-${q}-${priority}`,
         };
+      },
+      syncFromBackend: async () => {
+        try {
+          const config: any = await settingsService.getSystemConfig();
+          const modelName = config?.openai_model_name;
+          if (modelName) {
+            const { providers, upsertProvider } = get();
+            const exists = providers.some((p: ModelProvider) => p.model === modelName);
+            if (!exists) {
+               upsertProvider({
+                 id: `backend-${modelName}`,
+                 vendor: 'Backend',
+                 model: modelName,
+                 modelType: 'chat',
+                 version: 'latest',
+                 apiBaseUrl: 'http://127.0.0.1:18789/api',
+                 apiKey: '',
+                 enabled: true,
+                 priority: 0,
+               });
+            }
+          }
+        } catch (e) {
+          console.warn('Failed to sync model from backend', e);
+        }
       },
     }),
     {

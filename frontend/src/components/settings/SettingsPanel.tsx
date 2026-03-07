@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useThemeStore } from '../../store/themeStore';
 import { Card, CardHeader, CardTitle, CardContent } from '../ui/Card';
-import { Settings, Moon, Sun, Monitor, KeyRound, Link, User, Trash2, Server } from 'lucide-react';
+import { Settings, Moon, Sun, Monitor, KeyRound, Link, User, Trash2, Server, Save } from 'lucide-react';
 import clsx from 'clsx';
 import { Input } from '../ui/Input';
 import { Button } from '../ui/Button';
@@ -44,6 +44,14 @@ export const SettingsPanel: React.FC = () => {
   const [routingReport, setRoutingReport] = useState<RoutingEvaluationReport | null>(null);
   const [routingReportWindow, setRoutingReportWindow] = useState(200);
   const [loadingRoutingReport, setLoadingRoutingReport] = useState(false);
+  const [systemConfig, setSystemConfig] = useState<{
+    openai_api_key?: string;
+    openai_api_base?: string;
+    openai_model_name?: string;
+    ollama_model?: string;
+  }>({});
+  const [loadingSystemConfig, setLoadingSystemConfig] = useState(false);
+  const [savingSystemConfig, setSavingSystemConfig] = useState(false);
   const apiPresets = [
     { label: 'Local Proxy', value: '/api' },
     { label: 'Local Backend', value: 'http://127.0.0.1:18789/api' },
@@ -96,6 +104,11 @@ export const SettingsPanel: React.FC = () => {
       if (res) setRoutingReport(res);
     }).catch(() => {});
     setDraftProviders(providers);
+    setLoadingSystemConfig(true);
+    settingsService.getSystemConfig()
+      .then((res: any) => setSystemConfig(res?.data || res || {}))
+      .catch((e) => console.error('Failed to load system config', e))
+      .finally(() => setLoadingSystemConfig(false));
   }, []);
 
   useEffect(() => {
@@ -494,6 +507,39 @@ export const SettingsPanel: React.FC = () => {
     }
   };
 
+  const handleSaveSystemConfig = async () => {
+    setSavingSystemConfig(true);
+    try {
+      await settingsService.updateSystemConfig(systemConfig);
+      toast.success('System config saved. Please restart backend to apply changes.');
+    } catch {
+      toast.error('Failed to save system config');
+    } finally {
+      setSavingSystemConfig(false);
+    }
+  };
+
+  const handleSetAsSystemDefault = async (p: ModelProvider) => {
+    if (!window.confirm(`确定要将 [${p.vendor}] ${p.model} 设为后端默认配置吗？\n这将覆盖 .env 文件中的 KEY/BASE/MODEL 配置。`)) return;
+    
+    const newConfig = {
+      openai_api_key: p.apiKey,
+      openai_api_base: p.apiBaseUrl,
+      openai_model_name: p.model,
+    };
+    
+    setSavingSystemConfig(true);
+    try {
+      await settingsService.updateSystemConfig(newConfig);
+      setSystemConfig(prev => ({ ...prev, ...newConfig }));
+      toast.success('已更新系统默认配置，请重启后端生效');
+    } catch {
+      toast.error('保存失败');
+    } finally {
+      setSavingSystemConfig(false);
+    }
+  };
+
   const handleAddProvider = () => {
     const ts = Date.now();
     setDraftProviders((prev) => [
@@ -790,6 +836,61 @@ export const SettingsPanel: React.FC = () => {
         <Card className="overflow-hidden bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 shadow-lg">
             <CardHeader className="border-b border-slate-200 dark:border-slate-700 bg-slate-100/60 dark:bg-slate-800/60">
                 <CardTitle className="text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                    <Server className="w-5 h-5" />
+                    Backend LLM Configuration (.env)
+                </CardTitle>
+            </CardHeader>
+            <CardContent className="pt-6 space-y-4">
+                {loadingSystemConfig && <div className="text-sm text-slate-500 animate-pulse">Loading backend config...</div>}
+                <div className="text-xs text-slate-500 mb-4">
+                    这些配置直接对应后端的 .env 文件。修改后需要重启后端服务才能生效。
+                </div>
+                <div className="grid gap-2">
+                    <label className="text-sm font-medium">OpenAI / DashScope API Key</label>
+                    <Input 
+                        type="password"
+                        value={systemConfig.openai_api_key || ''} 
+                        onChange={(e) => setSystemConfig({...systemConfig, openai_api_key: e.target.value})}
+                        placeholder="sk-..." 
+                    />
+                </div>
+                <div className="grid gap-2">
+                    <label className="text-sm font-medium">API Base URL</label>
+                    <Input 
+                        value={systemConfig.openai_api_base || ''} 
+                        onChange={(e) => setSystemConfig({...systemConfig, openai_api_base: e.target.value})}
+                        placeholder="https://dashscope.aliyuncs.com/compatible-mode/v1" 
+                    />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                    <div className="grid gap-2">
+                        <label className="text-sm font-medium">Model Name (Cloud)</label>
+                        <Input 
+                            value={systemConfig.openai_model_name || ''} 
+                            onChange={(e) => setSystemConfig({...systemConfig, openai_model_name: e.target.value})}
+                            placeholder="qwen-plus" 
+                        />
+                    </div>
+                    <div className="grid gap-2">
+                        <label className="text-sm font-medium">Ollama Model (Local)</label>
+                        <Input 
+                            value={systemConfig.ollama_model || ''} 
+                            onChange={(e) => setSystemConfig({...systemConfig, ollama_model: e.target.value})}
+                            placeholder="qwen3:4b" 
+                        />
+                    </div>
+                </div>
+                <div className="flex justify-end pt-2">
+                    <Button onClick={handleSaveSystemConfig} loading={savingSystemConfig}>
+                        Save to .env
+                    </Button>
+                </div>
+            </CardContent>
+        </Card>
+
+        <Card className="overflow-hidden bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 shadow-lg">
+            <CardHeader className="border-b border-slate-200 dark:border-slate-700 bg-slate-100/60 dark:bg-slate-800/60">
+                <CardTitle className="text-slate-900 dark:text-slate-100 flex items-center gap-2">
                     <KeyRound className="w-5 h-5" />
                     API Configuration
                 </CardTitle>
@@ -972,6 +1073,9 @@ export const SettingsPanel: React.FC = () => {
                             <div className="flex items-center justify-between gap-2">
                                 <Button size="sm" variant={p.enabled ? 'primary' : 'secondary'} onClick={() => setDraftProviders((prev) => prev.map((x) => x.id === p.id ? { ...x, enabled: !x.enabled } : x))}>
                                     {p.enabled ? '启用' : '停用'}
+                                </Button>
+                                <Button size="sm" variant="ghost" title="设为后端默认 (.env)" onClick={() => handleSetAsSystemDefault(p)}>
+                                    <Save className="w-4 h-4 text-blue-500" />
                                 </Button>
                                 <Button size="sm" variant="ghost" onClick={() => {
                                     setDraftProviders((prev) => prev.filter((x) => x.id !== p.id));

@@ -3,16 +3,20 @@ import ReactMarkdown from 'react-markdown';
 import { cn } from '../ui/Button';
 import type { ExtendedMessage } from '@/store/chatStore';
 import { CodeBlock } from './CodeBlock';
-import { Bot, User, Copy, Check, Download } from 'lucide-react';
+import { Bot, User, Copy, Check, Download, Pencil, Trash2, X } from 'lucide-react';
 import { cognitiveLayerLabel } from '@/utils/cognitive';
 
 interface MessageBubbleProps {
   message: ExtendedMessage;
+  onEdit?: (id: string, newContent: string) => void;
+  onDelete?: (id: string) => void;
 }
 
-export const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
+export const MessageBubble: React.FC<MessageBubbleProps> = ({ message, onEdit, onDelete }) => {
   const isUser = message.role === 'user';
   const [copied, setCopied] = React.useState(false);
+  const [isEditing, setIsEditing] = React.useState(false);
+  const [editValue, setEditValue] = React.useState('');
 
   const handleCopy = () => {
     if (typeof message.content === 'string') {
@@ -56,7 +60,41 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
     }
   };
   
+  const handleSaveEdit = () => {
+    if (message.id && onEdit && editValue.trim() !== '') {
+        onEdit(message.id, editValue);
+        setIsEditing(false);
+    }
+  };
+
+  const startEditing = () => {
+      if (typeof message.content === 'string') {
+          setEditValue(message.content);
+          setIsEditing(true);
+      }
+  };
+
   const renderContent = () => {
+    if (isEditing) {
+        return (
+            <div className="flex flex-col gap-2 w-full">
+                <textarea
+                    value={editValue}
+                    onChange={(e) => setEditValue(e.target.value)}
+                    className="w-full bg-white/10 text-inherit border border-white/20 rounded p-2 min-h-[100px] focus:outline-none focus:ring-1 focus:ring-white/30 resize-y"
+                />
+                <div className="flex justify-end gap-2">
+                    <button onClick={() => setIsEditing(false)} className="p-1 hover:bg-white/10 rounded" title="Cancel">
+                        <X className="w-4 h-4" />
+                    </button>
+                    <button onClick={handleSaveEdit} className="p-1 hover:bg-white/10 rounded" title="Save">
+                        <Check className="w-4 h-4" />
+                    </button>
+                </div>
+            </div>
+        );
+    }
+
     if (typeof message.content === 'string') {
       return <ReactMarkdown components={{
         code({ node, inline, className, children, ...props }: any) {
@@ -140,14 +178,35 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
           ? "bg-blue-600 text-white rounded-tr-sm"
           : "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100 border border-zinc-200 dark:border-zinc-700 shadow-md shadow-zinc-200/50 dark:shadow-black/20 rounded-tl-sm"
       )}>
+        {/* User Actions */}
+        {isUser && !isEditing && (
+            <div className="absolute top-2 left-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
+                <button onClick={startEditing} className="p-1 hover:bg-white/20 rounded text-white/70 hover:text-white" title="Edit">
+                    <Pencil className="w-3.5 h-3.5" />
+                </button>
+                <button onClick={() => message.id && onDelete?.(message.id)} className="p-1 hover:bg-white/20 rounded text-white/70 hover:text-white" title="Delete">
+                    <Trash2 className="w-3.5 h-3.5" />
+                </button>
+            </div>
+        )}
+
+        {/* Assistant Actions */}
         {!isUser && (
-            <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+            <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
                 <button 
                     onClick={handleCopy}
-                    className="p-1.5 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-md transition-colors"
-                    title="Copy message"
+                    className="p-1.5 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-md text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors"
+                    title={copied ? "Copied" : "Copy"}
                 >
                     {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                </button>
+                {/* Optional: Add Delete for Assistant too */}
+                <button 
+                    onClick={() => message.id && onDelete?.(message.id)}
+                    className="p-1.5 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-md text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors"
+                    title="Delete"
+                >
+                    <Trash2 className="w-3.5 h-3.5" />
                 </button>
             </div>
         )}

@@ -31,7 +31,7 @@ interface RetrievalHit {
 }
 
 export const ChatWindow = () => {
-  const { messages, isConnected, isThinking, createSession, currentCognitiveLayer, sessionId } = useChatStore();
+  const { messages, isConnected, isThinking, createSession, currentCognitiveLayer, sessionId, deleteMessage, editMessage } = useChatStore();
   const { systemLogs = [] } = useWebSocket() as any;
   const { sendMessage } = useStreamingChat();
   const [input, setInput] = useState('');
@@ -51,6 +51,11 @@ export const ChatWindow = () => {
 
   const handleSend = async () => {
     if (!input.trim() || isThinking) return;
+    
+    // Optimistic update: Add user message immediately
+    // Note: Actual addMessage is handled by store/hook, but for "real-time" feel we rely on store update.
+    // useStreamingChat calls addMessage internally.
+    
     const attachmentSummary = attachments
       .filter((a) => a.status === 'uploaded')
       .map((a) => `[文件] ${a.file.name}`)
@@ -64,6 +69,11 @@ export const ChatWindow = () => {
       .join('\n\n');
     const finalPromptBase = attachmentSummary ? `${input}\n\n${attachmentSummary}` : input;
     const finalPrompt = retrievalSummary ? `${finalPromptBase}\n\n[知识检索上下文]\n${retrievalSummary}` : finalPromptBase;
+    
+    setInput(''); // Clear input immediately for responsiveness
+    setAttachments([]); // Clear attachments
+    setRetrievalHits([]); // Clear retrieval hits
+    
     await sendMessage(
       finalPrompt,
       picked.map((r) => ({
@@ -72,7 +82,6 @@ export const ChatWindow = () => {
         snippet: String(r.content || '').slice(0, 240),
       }))
     );
-    setInput('');
   };
 
   const handleNewChat = () => {
@@ -276,7 +285,11 @@ export const ChatWindow = () => {
                 className="scroller-content"
                 itemContent={(_, msg) => (
                     <div className="py-8 px-4 md:px-8">
-                        <MessageBubble message={msg} />
+                        <MessageBubble 
+                            message={msg} 
+                            onDelete={deleteMessage} 
+                            onEdit={editMessage}
+                        />
                     </div>
                 )}
                 components={{
