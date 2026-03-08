@@ -9,14 +9,13 @@ COPY frontend/ .
 RUN npm run build
 
 # Stage 1: Chef (Pre-computation)
-FROM lukemathwalker/cargo-chef:latest-rust-1.80 AS chef
+FROM lukemathwalker/cargo-chef:latest-rust-1.88 AS chef
 WORKDIR /app
 
 # Stage 2: Planner
 FROM chef AS planner
-COPY Cargo.toml Cargo.lock ./
-COPY crablet/Cargo.toml crablet/
-COPY crablet/src/ crablet/src/
+COPY crablet/Cargo.toml crablet/Cargo.lock ./
+COPY crablet/src/ ./src/
 # Only copy necessary files for recipe generation
 RUN cargo chef prepare --recipe-path recipe.json
 
@@ -27,8 +26,7 @@ COPY --from=planner /app/recipe.json recipe.json
 RUN cargo chef cook --release --recipe-path recipe.json
 
 # Build application
-COPY Cargo.toml Cargo.lock ./
-COPY crablet/ crablet/
+COPY crablet/ ./
 RUN cargo build --release
 
 # Stage 4: Runtime
@@ -53,11 +51,11 @@ WORKDIR /app
 # Copy binary from builder
 COPY --from=builder /app/target/release/crablet /usr/local/bin/
 
-# Copy frontend build to static directory
-COPY --from=frontend-builder /app/frontend/dist /app/static
+# Copy frontend build to the path expected by ServeDir("frontend/dist")
+COPY --from=frontend-builder /app/frontend/dist /app/frontend/dist
 
 # Copy default skills
-COPY skills/ /app/skills/
+COPY crablet/skills/ /app/skills/
 
 # Create directory structure and set permissions
 # skills, data, config, uploads
@@ -80,5 +78,5 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
   CMD curl -f http://localhost:3000/health || exit 1
 
-# Default command
-CMD ["crablet", "serve-web", "--port", "3000"]
+# Default command - Start both gateway and web server
+CMD ["/bin/sh", "-lc", "crablet gateway --host 0.0.0.0 --port 18789 & exec crablet serve-web --port 3000"]

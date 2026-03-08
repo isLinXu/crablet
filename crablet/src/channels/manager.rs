@@ -34,10 +34,10 @@ impl ChannelManager {
                     let channel = crate::channels::domestic::dingtalk::DingTalkChannel::new();
                     self.register(Arc::new(channel));
                 }
-                "wecom" => {
-                    let channel = crate::channels::domestic::wecom::WeComChannel::new(config);
-                    self.register(Arc::new(channel));
-                }
+                // "wecom" => {
+                //     let channel = crate::channels::domestic::wecom::WeComChannel::new(config);
+                //     self.register(Arc::new(channel));
+                // }
                 "telegram" => {
                     #[cfg(feature = "telegram")]
                     {
