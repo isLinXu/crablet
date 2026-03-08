@@ -1,9 +1,7 @@
 use anyhow::{anyhow, Result};
-use std::path::Path;
 use std::process::Stdio;
 use tokio::process::Command;
 use tracing::{info, warn};
-
 /// 安全的 Docker 执行器
 /// 提供完全隔离的执行环境
 pub struct DockerExecutor {

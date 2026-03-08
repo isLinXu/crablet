@@ -3,16 +3,19 @@ use async_trait::async_trait;
 use anyhow::Result;
 use std::time::Instant;
 use tokio::process::Command;
+use tracing::warn;
 
 pub struct LocalSandbox;
 
 #[async_trait]
 impl Sandbox for LocalSandbox {
     async fn init(&self) -> Result<()> {
+        warn!("INITIALIZING LOCAL SANDBOX: This environment is NOT isolated and poses security risks.");
         Ok(())
     }
 
     async fn execute(&self, language: Language, code: &str) -> Result<ExecutionResult> {
+        warn!("EXECUTING IN LOCAL SANDBOX: No isolation for language {:?}. Code: {}", language, code);
         // DANGER: This is not sandboxed! Only for dev/test or when Docker is unavailable.
         let (program, args) = match language {
             Language::Python => ("python3", vec!["-c", code]),

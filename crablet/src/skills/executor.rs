@@ -1,9 +1,8 @@
-use anyhow::{Result, Context};
-use std::process::Stdio;
-use tokio::process::Command;
-use tracing::info;
+use anyhow::{Result, Context, anyhow};
+use tracing::{info, warn};
 use tokio::time::Duration;
 use super::{SkillType, SkillRegistry};
+use crate::sandbox::docker::{DockerExecutor};
 
 pub struct SkillExecutor;
 
@@ -39,39 +38,39 @@ impl SkillExecutor {
         let execution_future = async move {
             match skill_type {
                 SkillType::Local(skill) => {
-                    // Prepare command
+                    // 使用 Docker 沙箱执行，防止命令注入攻击
+                    let executor = DockerExecutor::strict()
+                        .with_work_dir(skill.path.to_string_lossy().to_string())
+                        .with_timeout(timeout_duration.as_secs());
+                    
+                    // 准备命令参数
                     let parts: Vec<&str> = skill.manifest.entrypoint.split_whitespace().collect();
                     if parts.is_empty() {
-                        return Err(anyhow::anyhow!("Invalid entrypoint for skill {}", name));
+                        return Err(anyhow!("Invalid entrypoint for skill {}", name));
                     }
 
                     let cmd = parts[0];
                     let cmd_args = &parts[1..];
-
-                    let mut command = Command::new(cmd);
-                    command.args(cmd_args);
-                    command.current_dir(&skill.path);
                     
+                    // 构建完整的命令列表
+                    let mut full_cmd = vec![cmd];
+                    full_cmd.extend(cmd_args.iter().map(|s| *s));
+                    
+                    // 添加参数
                     let args_json = serde_json::to_string(&args)?;
-                    command.arg(&args_json);
+                    full_cmd.push(&args_json);
 
-                    for (k, v) in &skill.manifest.env {
-                        command.env(k, v);
-                    }
+                    info!("Executing skill {} in Docker sandbox: {:?}", name, full_cmd);
 
-                    command.stdout(Stdio::piped());
-                    command.stderr(Stdio::piped());
-
-                    info!("Executing skill {}: {} {}", name, skill.manifest.entrypoint, args_json);
-
-                    let output = command.spawn()?.wait_with_output().await?;
-
-                    if output.status.success() {
-                        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-                        Ok(stdout)
+                    // 使用 Docker 沙箱执行
+                    let result = executor.execute("alpine:latest", &full_cmd).await?;
+                    
+                    if result.success {
+                        Ok(result.stdout)
                     } else {
-                        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-                        Err(anyhow::anyhow!("Skill execution failed: {}", stderr))
+                        warn!("Skill {} execution failed with exit code: {}", name, result.exit_code);
+                        Err(anyhow!("Skill execution failed (exit code {}): {}", 
+                            result.exit_code, result.stderr))
                     }
                 },
                 SkillType::Mcp(_, client, tool_name) => {

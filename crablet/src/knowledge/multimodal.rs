@@ -1,7 +1,8 @@
 use anyhow::Result;
 use serde_json::json;
 use std::path::Path;
-use std::process::Command;
+use tracing::{info, warn};
+use crate::sandbox::docker::DockerExecutor;
 
 #[derive(Clone)]
 pub struct ProcessedContent {
@@ -9,21 +10,41 @@ pub struct ProcessedContent {
     pub metadata: serde_json::Value,
 }
 
-fn run_cmd(program: &str, args: &[&str]) -> Option<String> {
-    let out = Command::new(program).args(args).output().ok()?;
-    if !out.status.success() {
-        return None;
+async fn run_cmd_in_docker(image: &str, program: &str, args: &[&str], work_dir: &Path) -> Option<String> {
+    let executor = DockerExecutor::strict()
+        .with_work_dir(work_dir.to_string_lossy().to_string())
+        .with_timeout(30);
+
+    let mut full_cmd = vec![program];
+    full_cmd.extend(args.iter().cloned());
+
+    info!("Running {} in Docker sandbox (image: {})", program, image);
+    
+    match executor.execute(image, &full_cmd).await {
+        Ok(result) => {
+            if result.success {
+                let t = result.stdout.trim().to_string();
+                if t.is_empty() { None } else { Some(t) }
+            } else {
+                warn!("Command {} failed in Docker: {}", program, result.stderr);
+                None
+            }
+        }
+        Err(e) => {
+            warn!("Failed to execute {} in Docker: {}", program, e);
+            None
+        }
     }
-    let s = String::from_utf8(out.stdout).ok()?;
-    let t = s.trim().to_string();
-    if t.is_empty() { None } else { Some(t) }
 }
 
-pub fn process_file(path: &Path, ext: &str) -> Result<ProcessedContent> {
+pub async fn process_file(path: &Path, ext: &str) -> Result<ProcessedContent> {
     let source = path.file_name().and_then(|s| s.to_str()).unwrap_or("unknown").to_string();
+    let parent_dir = path.parent().unwrap_or(Path::new("."));
+    let file_name = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
     let lower = ext.to_lowercase();
+    
     if ["txt", "md", "markdown", "csv"].contains(&lower.as_str()) {
-        let text = std::fs::read_to_string(path)?;
+        let text = tokio::fs::read_to_string(path).await?;
         return Ok(ProcessedContent {
             text,
             metadata: json!({
@@ -46,7 +67,7 @@ pub fn process_file(path: &Path, ext: &str) -> Result<ProcessedContent> {
         });
     }
     if ["doc", "docx", "xls", "xlsx"].contains(&lower.as_str()) {
-        let bytes = std::fs::read(path)?;
+        let bytes = tokio::fs::read(path).await?;
         let text = String::from_utf8_lossy(&bytes).to_string();
         return Ok(ProcessedContent {
             text: format!("structured_file:{}\n{}", source, text),
@@ -59,7 +80,8 @@ pub fn process_file(path: &Path, ext: &str) -> Result<ProcessedContent> {
         });
     }
     if ["jpg", "jpeg", "png", "gif", "svg", "webp"].contains(&lower.as_str()) {
-        let ocr = run_cmd("tesseract", &[&path.to_string_lossy(), "stdout"]).unwrap_or_default();
+        // 使用包含 tesseract 的 Docker 镜像
+        let ocr = run_cmd_in_docker("jbarlow83/ocrmypdf", "tesseract", &[file_name, "stdout"], parent_dir).await.unwrap_or_default();
         let extraction = if ocr.is_empty() { "ocr_fallback" } else { "tesseract_ocr" };
         return Ok(ProcessedContent {
             text: if ocr.is_empty() {
@@ -78,8 +100,9 @@ pub fn process_file(path: &Path, ext: &str) -> Result<ProcessedContent> {
     if ["mp3", "wav", "m4a", "flac"].contains(&lower.as_str()) {
         let ffprobe = run_cmd("ffprobe", &[
             "-v", "error", "-show_entries", "format=duration:stream=codec_name",
-            "-of", "default=noprint_wrappers=1", &path.to_string_lossy()
-        ]).unwrap_or_else(|| "ffprobe_unavailable".to_string());
+            "-of", "default=noprint_wrappers=1", file_name
+        ], parent_dir).await.unwrap_or_else(|| "ffprobe_unavailable".to_string());
+        
         return Ok(ProcessedContent {
             text: format!("audio_asset:{}\nmetadata:\n{}\ntranscript_placeholder", source, ffprobe),
             metadata: json!({
@@ -91,10 +114,11 @@ pub fn process_file(path: &Path, ext: &str) -> Result<ProcessedContent> {
         });
     }
     if ["mp4", "avi", "mov", "mkv"].contains(&lower.as_str()) {
-        let ffprobe = run_cmd("ffprobe", &[
+        let ffprobe = run_cmd_in_docker("jrottenberg/ffmpeg", "ffprobe", &[
             "-v", "error", "-show_entries", "format=duration:stream=codec_name,width,height",
-            "-of", "default=noprint_wrappers=1", &path.to_string_lossy()
-        ]).unwrap_or_else(|| "ffprobe_unavailable".to_string());
+            "-of", "default=noprint_wrappers=1", file_name
+        ], parent_dir).await.unwrap_or_else(|| "ffprobe_unavailable".to_string());
+        
         return Ok(ProcessedContent {
             text: format!("video_asset:{}\nmetadata:\n{}\nsubtitle_placeholder\nkeyframe_placeholder", source, ffprobe),
             metadata: json!({

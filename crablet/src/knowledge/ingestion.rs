@@ -61,9 +61,7 @@ impl IngestionService {
 
     pub async fn ingest_file(&self, path: &Path, metadata: serde_json::Value) -> Result<String> {
         let extension = path.extension().and_then(|s| s.to_str()).unwrap_or("").to_lowercase();
-        let path_buf = path.to_path_buf();
-        let ext = extension.clone();
-        let processed = tokio::task::spawn_blocking(move || process_file(&path_buf, &ext)).await??;
+        let processed = process_file(path, &extension).await?;
         let mut merged = metadata.as_object().cloned().unwrap_or_default();
         if let Some(extra) = processed.metadata.as_object() {
             for (k, v) in extra {
