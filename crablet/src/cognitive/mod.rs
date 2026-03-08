@@ -19,6 +19,7 @@ pub mod tot;
 pub mod mcts_tot;
 pub mod meta_router;
 pub mod streaming_pipeline;
+pub mod routing;
 
 #[async_trait]
 pub trait CognitiveSystem: Send + Sync {

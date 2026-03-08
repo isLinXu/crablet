@@ -1,11 +1,10 @@
 use anyhow::{Result, Context, anyhow};
 use crate::plugins::Plugin;
 use crate::safety::oracle::{SafetyOracle, SafetyDecision};
+use crate::sandbox::docker::{DockerExecutor};
 use async_trait::async_trait;
 use serde_json::Value;
-use tokio::process::Command;
-use tokio::time::{timeout, Duration};
-use std::process::Stdio;
+use tracing::{info, warn};
 
 pub struct BashPlugin {
     oracle: SafetyOracle,
@@ -97,41 +96,22 @@ impl BashTool {
     }
 
     pub async fn execute(cmd: &str) -> Result<String> {
-        // Security: Timeout and Output Size Limit
-        let max_duration = Duration::from_secs(10);
-        let max_output_size = 10 * 1024; // 10KB
-
-        // Use parameterized execution if possible, but for raw bash commands we must use sh -c.
-        // We rely on SafetyOracle for command validation before this point.
-        // TODO: Implement command whitelist or restricted shell.
+        // Security: Use Docker sandbox instead of direct shell execution
+        // This prevents command injection attacks by running in an isolated container
+        let executor = DockerExecutor::strict()
+            .with_timeout(10); // 10 second timeout
         
-        let output_result = timeout(max_duration, 
-            Command::new("sh")
-                .arg("-c")
-                .arg(cmd)
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped())
-                .kill_on_drop(true)
-                .output()
-        ).await;
-
-        let output = match output_result {
-            Ok(Ok(o)) => o,
-            Ok(Err(e)) => return Err(anyhow!("Failed to execute command: {}", e)),
-            Err(_) => return Err(anyhow!("Command execution timed out after {:?}", max_duration)),
-        };
-
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let stderr = String::from_utf8_lossy(&output.stderr);
-
-        if stdout.len() > max_output_size {
-            return Err(anyhow!("Output size exceeds limit of {} bytes", max_output_size));
-        }
-
-        if output.status.success() {
-            Ok(stdout.to_string())
+        info!("Executing bash command in Docker sandbox: {}", cmd);
+        
+        // Execute command in Docker sandbox
+        let result = executor.execute("alpine:latest", &["sh", "-c", cmd]).await?;
+        
+        if result.success {
+            Ok(result.stdout)
         } else {
-            Ok(format!("Exit Code: {}\nError: {}\nOutput: {}", output.status, stderr, stdout))
+            warn!("Bash command failed with exit code: {}", result.exit_code);
+            Ok(format!("Exit Code: {}\nError: {}\nOutput: {}", 
+                result.exit_code, result.stderr, result.stdout))
         }
     }
 }

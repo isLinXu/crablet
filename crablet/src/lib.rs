@@ -19,6 +19,7 @@ pub mod events;
 pub mod plugins;
 pub mod agent;
 pub mod error;
+pub mod sandbox;
 
 pub mod audit;
 pub mod auth;

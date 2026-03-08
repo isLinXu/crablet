@@ -1,12 +1,12 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use async_trait::async_trait;
-use tracing::{info, error};
+use tracing::{info, error, warn};
 use serde::{Serialize, Deserialize};
 use crate::agent::swarm::{SwarmAgent, SwarmMessage, AgentId};
 use crate::cognitive::llm::LlmClient;
 use crate::types::Message;
-use tokio::process::Command;
+use crate::sandbox::docker::DockerExecutor;
 use tokio::fs;
 
 #[derive(Clone)]
@@ -75,31 +75,38 @@ impl DataAnalystAgent {
     }
 
     async fn execute_python(&self, code: &str) -> Result<String, String> {
-        let script_path = self.work_dir.join(format!("analysis_{}.py", uuid::Uuid::new_v4()));
+        let script_name = format!("analysis_{}.py", uuid::Uuid::new_v4());
+        let script_path = self.work_dir.join(&script_name);
         
         if let Err(e) = fs::write(&script_path, code).await {
             return Err(format!("Failed to write script: {}", e));
         }
 
-        let output = Command::new("python3")
-            .arg(&script_path)
-            .output()
-            .await;
+        // 使用 Docker 沙箱执行 Python 脚本
+        let executor = DockerExecutor::strict()
+            .with_work_dir(self.work_dir.to_string_lossy().to_string())
+            .with_timeout(60);
+
+        info!("Executing analysis script in Docker sandbox: {}", script_name);
+
+        let result = executor.execute("python:3.11-slim", &["python", &script_name]).await;
 
         // Clean up
         let _ = fs::remove_file(&script_path).await;
 
-        match output {
-            Ok(out) => {
-                let stdout = String::from_utf8_lossy(&out.stdout).to_string();
-                let stderr = String::from_utf8_lossy(&out.stderr).to_string();
-                if out.status.success() {
-                    Ok(stdout)
+        match result {
+            Ok(res) => {
+                if res.success {
+                    Ok(res.stdout)
                 } else {
-                    Err(format!("Script failed:\nSTDOUT: {}\nSTDERR: {}", stdout, stderr))
+                    warn!("Analysis script failed in sandbox (exit code {}): {}", res.exit_code, res.stderr);
+                    Err(format!("Script failed:\nSTDOUT: {}\nSTDERR: {}", res.stdout, res.stderr))
                 }
             }
-            Err(e) => Err(format!("Failed to execute python3: {}", e)),
+            Err(e) => {
+                error!("Docker execution error: {}", e);
+                Err(format!("Failed to execute python in sandbox: {}", e))
+            }
         }
     }
 }
