@@ -9,4 +9,4 @@
   - Dark mode enthusiast.
 
 ## Context
-- Working on "Crablet-v3", a hierarchical cognitive agent system.
+- Working on "Crablet-v0.1.0", a hierarchical cognitive agent system.
