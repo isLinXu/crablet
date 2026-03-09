@@ -4,7 +4,7 @@ use axum::{
     routing::{get, post, put},
     Router,
 };
-use tower_http::services::ServeDir;
+use tower_http::services::{ServeDir, ServeFile};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use crate::cognitive::router::CognitiveRouter;
@@ -76,13 +76,25 @@ pub async fn run(router: Arc<CognitiveRouter>, port: u16, auth_config: Option<(S
         .route("/callback", get(callback_handler))
         .with_state(auth_state);
 
+    // Use runtime path: try relative path first (Docker), fallback to dev path
+    let frontend_path = if std::path::Path::new("frontend/dist").exists() {
+        std::path::PathBuf::from("frontend/dist")
+    } else {
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../frontend/dist")
+    };
+
     let app = Router::new()
         .route("/ws", get(ws_handler))
         .nest("/api", api_router)
         .nest("/auth", auth_router)
         // Fallback to legacy chat or static files
         .route("/legacy_chat", post(chat)) // Keep legacy POST /chat at root? or just use API
-        .fallback_service(ServeDir::new("frontend/dist").append_index_html_on_directories(true))
+        .fallback_service(
+            ServeDir::new(&frontend_path)
+                .not_found_service(ServeFile::new(frontend_path.join("index.html")))
+                .append_index_html_on_directories(true)
+        )
         .layer(axum::extract::DefaultBodyLimit::max(1024 * 1024 * 50)) // 50MB limit
         .with_state(app_state);
 

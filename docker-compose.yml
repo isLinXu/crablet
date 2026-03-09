@@ -1,11 +1,17 @@
+name: crablet
+
 services:
   # Reverse Proxy (TLS + Rate Limiting)
   traefik:
-    image: traefik:v3.1
+    image: traefik:v3.6
     ports: ["443:443", "80:80"]
     volumes:
       - ${DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock:ro
-    command: --providers.docker
+    command:
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --entrypoints.web.address=:80
+      - --entrypoints.websecure.address=:443
     networks:
       - proxy
 
@@ -27,6 +33,7 @@ services:
     restart: unless-stopped
     ports:
       - "3000:3000"   # Web UI
+      - "18789:18789" # API
     environment:
       - RUST_LOG=info
       # Connection to Neo4j
@@ -42,10 +49,17 @@ services:
       - QDRANT_URL=http://qdrant:6334
       # Docker via Proxy
       - DOCKER_HOST=tcp://docker-proxy:2375
+      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET must be set}
     volumes:
       - crablet_data:/app/data:rw
       - crablet_config:/app/config:rw
       - ./skills:/app/skills:rw
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=proxy
+      - traefik.http.routers.crablet.rule=Host(`localhost`) || HostRegexp(`{host:.+}`)
+      - traefik.http.routers.crablet.entrypoints=web
+      - traefik.http.services.crablet.loadbalancer.server.port=3000
     depends_on:
       - neo4j
       - docker-proxy
