@@ -1,4 +1,4 @@
-use mlua::{Lua, Result, ExternalError};
+use mlua::{Lua, Result, ExternalError, IntoLua};
 use crate::tools::bash::BashTool;
 use crate::tools::file::FileTool;
 use crate::tools::search::WebSearchTool;
@@ -34,17 +34,18 @@ pub fn register_bindings(lua: &Lua) -> Result<()> {
     })?)?;
 
     // Bind 'read_file'
-    crablet.set("read_file", lua.create_function(|_, path: String| {
+    crablet.set("read_file", lua.create_async_function(|lua, path: String| async move {
         let oracle = SafetyOracle::new(SafetyLevel::Strict);
         match oracle.check_file_access(&path) {
             SafetyDecision::Allowed => {
-                match FileTool::read(&path) {
-                    Ok(content) => Ok(content),
-                    Err(e) => Ok(format!("Error: {}", e)),
+                let res = FileTool::read(&path).await;
+                match res {
+                    Ok(content) => content.into_lua(&lua),
+                    Err(e) => format!("Error: {}", e).into_lua(&lua),
                 }
             },
-            SafetyDecision::Blocked(reason) => Ok(format!("🚫 Safety Oracle Blocked: {}", reason)),
-            SafetyDecision::RequireConfirmation(reason) => Ok(format!("⚠️ Confirmation Required: {}", reason)),
+            SafetyDecision::Blocked(reason) => format!("🚫 Safety Oracle Blocked: {}", reason).into_lua(&lua),
+            SafetyDecision::RequireConfirmation(reason) => format!("⚠️ Confirmation Required: {}", reason).into_lua(&lua),
         }
     })?)?;
 

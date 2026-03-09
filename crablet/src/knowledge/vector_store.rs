@@ -332,6 +332,11 @@ impl VectorStore {
     }
 
     pub async fn search(&self, query: &str, limit: usize) -> Result<Vec<(String, f32, serde_json::Value)>> {
+        let (results, _) = self.search_with_embedding(query, limit).await?;
+        Ok(results)
+    }
+
+    pub async fn search_with_embedding(&self, query: &str, limit: usize) -> Result<(Vec<(String, f32, serde_json::Value)>, Vec<f32>)> {
         let query_vec = self.embed_query(query).await?;
 
         match &self.backend {
@@ -363,12 +368,12 @@ impl VectorStore {
                 results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
                 results.truncate(limit);
 
-                Ok(results)
+                Ok((results, query_vec))
             },
             #[cfg(feature = "qdrant-support")]
             StoreBackend::Qdrant { client, collection, .. } => {
                 let search_result = client.search_points(
-                    SearchPointsBuilder::new(collection.clone(), query_vec, limit as u64)
+                    SearchPointsBuilder::new(collection.clone(), query_vec.clone(), limit as u64)
                         .with_payload(true)
                 ).await?;
 
@@ -386,7 +391,7 @@ impl VectorStore {
                     let metadata = json!(payload);
                     results.push((content, score, metadata));
                 }
-                Ok(results)
+                Ok((results, query_vec))
             },
             StoreBackend::InMemory { docs } => {
                 let guard = docs.lock().map_err(|e| anyhow::anyhow!("Lock poisoned: {}", e))?;
@@ -399,7 +404,7 @@ impl VectorStore {
                 
                 results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
                 results.truncate(limit);
-                Ok(results)
+                Ok((results, query_vec))
             }
         }
     }

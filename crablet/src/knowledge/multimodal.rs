@@ -98,7 +98,7 @@ pub async fn process_file(path: &Path, ext: &str) -> Result<ProcessedContent> {
         });
     }
     if ["mp3", "wav", "m4a", "flac"].contains(&lower.as_str()) {
-        let ffprobe = run_cmd("ffprobe", &[
+        let ffprobe = run_cmd_in_docker("jrottenberg/ffmpeg", "ffprobe", &[
             "-v", "error", "-show_entries", "format=duration:stream=codec_name",
             "-of", "default=noprint_wrappers=1", file_name
         ], parent_dir).await.unwrap_or_else(|| "ffprobe_unavailable".to_string());

@@ -27,6 +27,7 @@ use tokio::process::Command;
 use regex::Regex;
 use crate::types::TraceStep;
 use crate::types::Message;
+use std::str::FromStr;
 #[cfg(feature = "knowledge")]
 use crate::knowledge::graph_rag::{GraphRAG, EntityExtractorMode};
 

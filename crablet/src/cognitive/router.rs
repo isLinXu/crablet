@@ -27,7 +27,6 @@ use crate::cognitive::meta_router::{MetaCognitiveRouter, SystemChoice};
 use crate::cognitive::system2::HierarchicalReasoningConfig;
 use crate::skills::SkillRegistry;
 use tokio::sync::RwLock;
-use crate::constants::complexity;
 
 // Define a RouterConfig struct to hold dynamic thresholds
 #[derive(Clone, Debug)]
@@ -72,6 +71,7 @@ pub struct CognitiveRouter {
     pub event_bus: Arc<EventBus>,
     pub config: Arc<RwLock<RouterConfig>>,
     pub meta_router: Arc<RwLock<MetaCognitiveRouter>>,
+    pub complexity_analyzer: Arc<crate::cognitive::routing::complexity::ComplexityAnalyzer>,
 }
 
 use crate::config::Config;
@@ -151,6 +151,7 @@ impl CognitiveRouter {
             event_bus,
             config: Arc::new(RwLock::new(initial_config)),
             meta_router: Arc::new(RwLock::new(meta)),
+            complexity_analyzer: Arc::new(crate::cognitive::routing::complexity::ComplexityAnalyzer::new()),
         }
     }
 
@@ -189,6 +190,7 @@ impl CognitiveRouter {
             event_bus,
             config: Arc::new(RwLock::new(initial_config)),
             meta_router: Arc::new(RwLock::new(meta)),
+            complexity_analyzer: Arc::new(crate::cognitive::routing::complexity::ComplexityAnalyzer::new()),
         }
     }
     
@@ -334,35 +336,29 @@ impl CognitiveRouter {
     }
 
     // Enhanced complexity assessment
-    fn assess_complexity_enhanced(input: &str) -> f32 {
-        let mut score = Classifier::assess_complexity(input);
-        
-        let input_lower = input.to_lowercase();
-        
-        // 1. Entity Density (Simple heuristic: capitalized words ratio)
-        // Original logic kept, but maybe check for actual density
-        let words: Vec<&str> = input.split_whitespace().collect();
-        let cap_count = words.iter().filter(|w| w.chars().next().is_some_and(|c| c.is_uppercase())).count();
-        if !words.is_empty() && (cap_count as f32 / words.len() as f32) > 0.3 {
-            score += 0.1;
-        }
-        
-        // 2. Temporal indicators
-        if complexity::TEMPORAL_KEYWORDS.iter().any(|k| input_lower.contains(k)) {
-            score += 0.15;
-        }
-        
-        // 3. Domain specific
-        if complexity::DOMAIN_KEYWORDS.iter().any(|k| input_lower.contains(k)) {
-            score += 0.2; // Coding/Technical is complex
-        }
+    fn assess_complexity_enhanced(&self, input: &str) -> f32 {
+        let message = crate::types::Message::user(input);
+        let characteristics = self.complexity_analyzer.extract_characteristics(&[message]).unwrap_or_else(|_| {
+            // Fallback to basic word count if analyzer fails
+            let words: Vec<&str> = input.split_whitespace().collect();
+            crate::cognitive::routing::complexity::TaskCharacteristics {
+                word_count: words.len(),
+                sentence_count: 1,
+                technical_terms: 0,
+                question_count: 0,
+                instruction_count: 0,
+                creativity_score: 0.0,
+                detected_domains: vec![],
+            }
+        });
 
-        // 4. Analytical
-        if complexity::ANALYTICAL_KEYWORDS.iter().any(|k| input_lower.contains(k)) {
-            score += 0.15;
-        }
+        let base_score = self.complexity_analyzer.calculate_complexity_score(&characteristics);
         
-        score.min(1.0)
+        // Normalize 0.0-10.0+ to 0.0-1.0
+        let normalized_score = (base_score / 10.0).min(1.0);
+        
+        // Dynamic adjustment based on current config (e.g., adaptive threshold)
+        normalized_score
     }
 
     #[instrument(skip(self), fields(session.id = %session_id, input.length = input.len()))]
@@ -445,9 +441,9 @@ impl CognitiveRouter {
         }
 
         // 2. Check for Deep Research or High Complexity (System 3)
-        let complexity_score = Self::assess_complexity_enhanced(input_text);
+        let complexity_score = self.assess_complexity_enhanced(input_text);
         let config = self.config.read().await.clone();
-        let context = self.memory_mgr.get_context(session_id);
+        let context = self.memory_mgr.get_context(session_id).await;
 
         if config.enable_adaptive_routing && !force_cloud && !force_local {
             let (choice, features) = {
@@ -480,7 +476,7 @@ impl CognitiveRouter {
             }
         }
         
-        if matches!(intent, Intent::DeepResearch) || matches!(intent, Intent::MultiStep) && complexity_score > config.system3_threshold {
+        if (matches!(intent, Intent::DeepResearch) || matches!(intent, Intent::MultiStep)) && complexity_score > config.system3_threshold {
              let msg = format!("Routing to System 3 (Intent: {:?}, Complexity: {}): {:?}", intent, complexity_score, input_text);
              info!("{}", msg);
              self.event_bus.publish(AgentEvent::SystemLog(msg));

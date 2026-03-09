@@ -50,6 +50,18 @@ pub async fn handle_debug(session_id: &str, event_bus: Arc<EventBus>) -> Result<
             AgentEvent::ResponseGenerated(s) => println!("RESPONSE: {}", s.green()),
             AgentEvent::CognitiveLayerChanged { layer } => println!("COGNITIVE: {}", layer.magenta()),
             AgentEvent::Error(s) => println!("ERROR: {}", s.red()),
+            AgentEvent::Heartbeat { timestamp, active_sessions } => {
+                println!("HEARTBEAT: {} ({} active sessions)", timestamp, active_sessions);
+            },
+            AgentEvent::BackgroundThinkingTriggered { reason, .. } => {
+                println!("BG THINK: {}", reason.dimmed());
+            },
+            AgentEvent::BackgroundThinkingResult { insights, memories_updated, .. } => {
+                println!("BG RESULT: {} ({} updates)", insights, memories_updated.len());
+            },
+            AgentEvent::CoreMemoryUpdated { block, operation, .. } => {
+                println!("CORE MEM: {} {}", operation, block.cyan());
+            },
         }
     }
     

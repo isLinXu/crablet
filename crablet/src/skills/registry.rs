@@ -56,6 +56,15 @@ impl SkillRegistry {
         self.skills.insert(name, skill_type);
     }
 
+    pub fn unregister(&mut self, name: &str) -> Result<()> {
+        if self.skills.remove(name).is_some() {
+            info!("Unregistered skill: {}", name);
+            Ok(())
+        } else {
+            Err(anyhow::anyhow!("Skill not found: {}", name))
+        }
+    }
+
     pub fn clear(&mut self) {
         self.skills.clear();
         self.resources.clear();
@@ -68,6 +77,20 @@ impl SkillRegistry {
 
     pub fn len(&self) -> usize {
         self.skills.len()
+    }
+
+    pub fn backup(&self) -> RegistryBackup {
+        RegistryBackup {
+            skills: self.skills.clone(),
+            resources: self.resources.clone(),
+            prompts: self.prompts.clone(),
+        }
+    }
+
+    pub fn restore(&mut self, backup: RegistryBackup) {
+        self.skills = backup.skills;
+        self.resources = backup.resources;
+        self.prompts = backup.prompts;
     }
 
     pub fn register_plugin(&mut self, plugin: Box<dyn crate::plugins::Plugin>) {
@@ -403,4 +426,11 @@ impl SkillRegistry {
         
         Ok(())
     }
+}
+
+#[derive(Clone)]
+pub struct RegistryBackup {
+    pub(crate) skills: HashMap<String, SkillType>,
+    pub(crate) resources: HashMap<String, (crate::tools::mcp::McpResource, Arc<crate::tools::mcp::McpClient>)>,
+    pub(crate) prompts: HashMap<String, (crate::tools::mcp::McpPrompt, Arc<crate::tools::mcp::McpClient>)>,
 }
