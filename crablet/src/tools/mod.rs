@@ -21,3 +21,4 @@ pub mod management_plugin;
 pub mod demo;
 pub mod mcp_plugins;
 pub mod browser;
+pub mod memory_tools;

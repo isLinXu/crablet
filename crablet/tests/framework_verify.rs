@@ -3,8 +3,6 @@ use crablet::knowledge::chunking::{Chunker, RecursiveCharacterChunker};
 use crablet::gateway::events::{EventBus, GatewayEvent};
 use crablet::agent::swarm::SwarmMessage;
 use crablet::skills::openclaw::OpenClawSkillLoader;
-use serde_json::json;
-use std::path::PathBuf;
 use tokio::fs;
 
 #[cfg(feature = "knowledge")]

@@ -103,6 +103,7 @@ connect = "0.2.4"
 url = "2.5.8"
 validator = { version = "0.18", features = ["derive"] }
 walkdir = "2.5.0"
+semver = "1.0"
 
 [dev-dependencies]
 tokio-test = "0.4.4"

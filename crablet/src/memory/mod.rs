@@ -1,6 +1,8 @@
 pub mod working;
 pub mod episodic;
 pub mod semantic;
+pub mod core;
+pub mod heartbeat;
 #[cfg(feature = "knowledge")]
 pub mod consolidator;
 pub mod manager;

@@ -1,7 +1,6 @@
 use anyhow::Result;
-use crablet::skills::{SkillRegistry, openclaw::OpenClawSkillLoader, SkillType};
+use crablet::skills::{SkillRegistry, openclaw::OpenClawSkillLoader};
 use std::path::PathBuf;
-use std::sync::Arc;
 use tokio::fs;
 
 #[tokio::test]
@@ -38,9 +37,9 @@ You are a test assistant. Please process {{arg1}}.
     assert_eq!(skill.manifest.version, "1.0.0");
     
     // 4. Verify Instruction Extraction
-    let instruction = OpenClawSkillLoader::get_instruction(&skill_path).await?;
-    assert!(instruction.contains("You are a test assistant"));
-    assert!(instruction.contains("{{arg1}}"));
+    let _instruction = OpenClawSkillLoader::get_instruction(&skill_path).await?;
+    assert!(_instruction.contains("You are a test assistant"));
+    assert!(_instruction.contains("{{arg1}}"));
     
     // 5. Verify Registry Loading
     let mut registry = SkillRegistry::new();
@@ -66,7 +65,7 @@ You are a test assistant. Please process {{arg1}}.
         // Let's try loading directly if we exposed such method, but load_from_dir is the public API.
         // We can manually insert it to verify registry behavior.
         registry.clear();
-        let instruction = OpenClawSkillLoader::get_instruction(&skill_path).await?;
+        let _instruction = OpenClawSkillLoader::get_instruction(&skill_path).await?;
         // We need to access private field `skills`? No, we have `get_skill`.
         // We can't insert directly as fields are private in the test unless we use a pub method.
         // But load_from_dir should work if directory structure is correct.
@@ -80,9 +79,9 @@ You are a test assistant. Please process {{arg1}}.
 
 #[tokio::test]
 async fn test_mcp_registry() -> Result<()> {
-    use crablet::tools::mcp::{McpResource, McpPrompt, McpClient};
+    // use crablet::tools::mcp::{McpResource, McpPrompt, McpClient};
     
-    let mut registry = SkillRegistry::new();
+    let _registry = SkillRegistry::new();
     
     // Mock Client (we can't easily mock McpClient as it spawns process, but we can use a dummy one or skip actual client usage for registry test)
     // Since we can't instantiate McpClient without spawning, we might need to skip this test or mock the struct if we refactor.

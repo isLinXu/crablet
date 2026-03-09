@@ -5,6 +5,24 @@ use uuid::Uuid;
 use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub enum AuditEventType {
+    SwarmActivity,
+    SkillExecution,
+    MemoryConsolidation,
+    SecurityAlert,
+    SystemMaintenance,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct AuditEvent {
+    pub event_id: String,
+    pub event_type: AuditEventType,
+    pub timestamp: i64,
+    pub user_id: Option<String>,
+    pub details: serde_json::Value,
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct AuditLog {
     pub id: String,
@@ -24,6 +42,22 @@ pub struct AuditLogger {
 impl AuditLogger {
     pub fn new(pool: SqlitePool) -> Self {
         Self { pool }
+    }
+
+    pub async fn log_event(&self, event: &AuditEvent) -> anyhow::Result<()> {
+        let details = serde_json::to_string(&event.details)?;
+        let event_type = format!("{:?}", event.event_type);
+        
+        sqlx::query("INSERT INTO audit_events (id, event_type, timestamp, user_id, details) VALUES (?, ?, ?, ?, ?)")
+            .bind(&event.event_id)
+            .bind(event_type)
+            .bind(event.timestamp)
+            .bind(&event.user_id)
+            .bind(details)
+            .execute(&self.pool)
+            .await?;
+            
+        Ok(())
     }
 
     pub async fn log_swarm_activity(&self, event: &AgentEvent) -> anyhow::Result<()> {

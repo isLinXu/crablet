@@ -98,7 +98,7 @@ async fn test_demo_a_react_chain() {
     
     // Verify traces to ensure tools were called
     // ReAct engine should produce traces for thought/action/observation
-    let has_weather_trace = traces.iter().any(|t| t.thought.contains("weather") || t.action.as_deref() == Some("weather"));
+    let _has_weather_trace = traces.iter().any(|t| t.thought.contains("weather") || t.action.as_deref() == Some("weather"));
     // Note: Trace format depends on implementation. 
     // ReAct engine usually records tool execution in traces.
     

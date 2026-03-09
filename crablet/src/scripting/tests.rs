@@ -1,9 +1,6 @@
 #[cfg(test)]
 mod tests {
     use crate::scripting::engine::LuaEngine;
-    use crate::testing::mocks::MockLlmClient;
-    use crate::cognitive::llm::LlmClient;
-    use std::sync::Arc;
 
     #[tokio::test]
     async fn test_lua_run_command() {

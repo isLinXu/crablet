@@ -253,23 +253,36 @@ impl Swarm {
         let topics = self.topics.read().await;
         let channels = self.channels.read().await;
         
-        let mut failures = Vec::new();
-        
         if let Some(subscribers) = topics.get(topic) {
+            // For large swarms, avoid blocking the publisher if some agents are slow
+            // Use parallel dispatch for large subscriber lists
+            let mut tasks = Vec::new();
             for sub_id in subscribers {
                 if sub_id != from {
                     if let Some(tx) = channels.get(sub_id) {
-                        if let Err(e) = tx.send((message.clone(), from.clone())).await {
-                            failures.push(format!("Failed to publish to {}: {}", sub_id.0, e));
-                        }
+                        let tx = tx.clone();
+                        let msg = message.clone();
+                        let from = from.clone();
+                        let sub_id = sub_id.clone();
+                        
+                        tasks.push(tokio::spawn(async move {
+                            // Use timeout to prevent slow agents from holding up resources
+                            match tokio::time::timeout(Duration::from_millis(500), tx.send((msg, from))).await {
+                                Ok(Ok(_)) => Ok(()),
+                                Ok(Err(_)) => Err(format!("Channel closed for agent {}", sub_id.0)),
+                                Err(_) => Err(format!("Publish timeout for agent {}", sub_id.0)),
+                            }
+                        }));
                     }
                 }
             }
-        }
-        
-        if !failures.is_empty() {
-            for fail in failures {
-                tracing::warn!("{}", fail);
+            
+            // Wait for all publishes to complete (with their own internal timeouts)
+            let results = futures::future::join_all(tasks).await;
+            for res in results {
+                if let Ok(Err(e)) = res {
+                    tracing::warn!("Swarm publish warning: {}", e);
+                }
             }
         }
         

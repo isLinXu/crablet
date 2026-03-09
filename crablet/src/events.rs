@@ -48,6 +48,25 @@ pub enum AgentEvent {
     ResponseGenerated(String),
     CognitiveLayerChanged { layer: String },
     Error(String),
+    // Heartbeat events for Always-On Memory Agent
+    Heartbeat {
+        timestamp: DateTime<Utc>,
+        active_sessions: usize,
+    },
+    BackgroundThinkingTriggered {
+        reason: String,
+        context_summary: String,
+    },
+    BackgroundThinkingResult {
+        insights: String,
+        suggested_actions: Vec<String>,
+        memories_updated: Vec<String>,
+    },
+    CoreMemoryUpdated {
+        block: String,
+        operation: String,
+        timestamp: DateTime<Utc>,
+    },
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -127,6 +146,10 @@ impl EventBus {
                     AgentEvent::ResponseGenerated(_) => "ResponseGenerated",
                     AgentEvent::CognitiveLayerChanged { .. } => "CognitiveLayerChanged",
                     AgentEvent::Error(_) => "Error",
+                    AgentEvent::Heartbeat { .. } => "Heartbeat",
+                    AgentEvent::BackgroundThinkingTriggered { .. } => "BackgroundThinkingTriggered",
+                    AgentEvent::BackgroundThinkingResult { .. } => "BackgroundThinkingResult",
+                    AgentEvent::CoreMemoryUpdated { .. } => "CoreMemoryUpdated",
                 };
                 
                 let payload_json = serde_json::to_string(&payload).unwrap_or_default();

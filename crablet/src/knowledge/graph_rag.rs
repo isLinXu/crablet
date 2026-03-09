@@ -38,6 +38,7 @@ impl FromStr for EntityExtractorMode {
     }
 }
 
+impl EntityExtractorMode {
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Rule => "rule",
@@ -110,10 +111,39 @@ impl EntityExtractor {
     }
 }
 
+use moka::future::Cache as MokaCache;
+use std::time::Duration;
+
+pub struct RetrievalCache {
+    pub query_cache: MokaCache<String, Vec<RetrievedContext>>,
+    pub embedding_cache: MokaCache<String, Vec<f32>>,
+    pub subgraph_cache: MokaCache<String, Vec<(String, String, String)>>,
+}
+
+impl RetrievalCache {
+    pub fn new() -> Self {
+        Self {
+            query_cache: MokaCache::builder()
+                .max_capacity(1000)
+                .time_to_live(Duration::from_secs(300))
+                .build(),
+            embedding_cache: MokaCache::builder()
+                .max_capacity(2000)
+                .time_to_live(Duration::from_secs(600))
+                .build(),
+            subgraph_cache: MokaCache::builder()
+                .max_capacity(500)
+                .time_to_live(Duration::from_secs(120))
+                .build(),
+        }
+    }
+}
+
 pub struct GraphRAG {
     vector_store: Arc<VectorStore>,
     knowledge_graph: SharedKnowledgeGraph,
     entity_extractor: Arc<EntityExtractor>,
+    cache: Arc<RetrievalCache>,
 }
 
 impl GraphRAG {
@@ -130,15 +160,32 @@ impl GraphRAG {
             vector_store,
             knowledge_graph,
             entity_extractor: Arc::new(EntityExtractor::new(mode)),
+            cache: Arc::new(RetrievalCache::new()),
         }
     }
 
     pub async fn retrieve(&self, query: &str, top_k: usize) -> Result<Vec<RetrievedContext>> {
-        let raw_results = self.vector_store.search(query, top_k.saturating_mul(2).max(top_k)).await?;
+        // 1. Check Query Cache
+        if let Some(cached) = self.cache.query_cache.get(query).await {
+            return Ok(cached);
+        }
+
+        // 2. Parallel Vector Search and Entity Extraction
+        let query_batch = vec![query.to_string()];
+        let query_refs: Vec<&str> = query_batch.iter().map(|s| s.as_str()).collect();
+        let (search_res, query_entities_res): (Result<(Vec<(String, f32, serde_json::Value)>, Vec<f32>)>, Result<Vec<ExtractedEntity>>) = tokio::join!(
+            self.vector_store.search_with_embedding(query, top_k.saturating_mul(2).max(top_k)),
+            self.entity_extractor.extract_batch(&query_refs)
+        );
+        
+        let (raw_results, query_embedding) = search_res?;
+        let mut query_entities = query_entities_res?;
+        
+        // 3. Extract entities from results
         let contents: Vec<&str> = raw_results.iter().map(|(content, _, _)| content.as_str()).collect();
         let mut entities = self.entity_extractor.extract_batch(&contents).await?;
-        let mut query_entities = self.entity_extractor.extract_batch(&[query]).await?;
         entities.append(&mut query_entities);
+        
         let mut uniq: HashMap<String, ExtractedEntity> = HashMap::new();
         for e in entities {
             uniq.entry(e.name.clone()).or_insert(e);
@@ -147,43 +194,68 @@ impl GraphRAG {
         entities.sort_by(|a, b| a.name.cmp(&b.name));
         entities.truncate(10);
 
+        // 4. Parallel Graph Traversal with Subgraph Cache
+        let mut graph_tasks = Vec::new();
+        for entity in &entities {
+            let kg = self.knowledge_graph.clone();
+            let cache = self.cache.subgraph_cache.clone();
+            let name = entity.name.clone();
+            
+            graph_tasks.push(tokio::spawn(async move {
+                if let Some(cached) = cache.get(&name).await {
+                    return (name, cached);
+                }
+                let relations = kg.find_related(&name).await.unwrap_or_default();
+                cache.insert(name.clone(), relations.clone()).await;
+                (name, relations)
+            }));
+        }
+        
+        let graph_results = futures::future::join_all(graph_tasks).await;
+        
         let mut graph_context_lines = Vec::new();
         let mut relation_hits: HashMap<String, usize> = HashMap::new();
         let mut centrality: HashMap<String, f32> = HashMap::new();
-        for entity in &entities {
-            let relations = self.knowledge_graph.find_related(&entity.name).await.unwrap_or_default();
-            relation_hits.insert(entity.name.clone(), relations.len());
-            for (direction, relation, target) in relations {
-                graph_context_lines.push(format!("{} {} {} {}", entity.name, direction, relation, target));
-                let src = entity.name.clone();
-                let dst = target.to_lowercase();
-                match direction.as_str() {
-                    "->" => {
-                        *centrality.entry(src).or_insert(0.0) += 1.0;
-                        *centrality.entry(dst).or_insert(0.0) += 1.0;
-                    }
-                    "<-" => {
-                        *centrality.entry(src).or_insert(0.0) += 1.0;
-                        *centrality.entry(dst).or_insert(0.0) += 1.0;
-                    }
-                    _ => {
-                        *centrality.entry(src).or_insert(0.0) += 0.5;
-                        *centrality.entry(dst).or_insert(0.0) += 0.5;
+        
+        for res in graph_results {
+            if let Ok((entity_name, relations)) = res {
+                relation_hits.insert(entity_name.clone(), relations.len());
+                for (direction, relation, target) in relations {
+                    graph_context_lines.push(format!("{} {} {} {}", entity_name, direction, relation, target));
+                    let src = entity_name.clone();
+                    let dst = target.to_lowercase();
+                    match direction.as_str() {
+                        "->" | "<-" => {
+                            *centrality.entry(src).or_insert(0.0) += 1.0;
+                            *centrality.entry(dst).or_insert(0.0) += 1.0;
+                        }
+                        _ => {
+                            *centrality.entry(src).or_insert(0.0) += 0.5;
+                            *centrality.entry(dst).or_insert(0.0) += 0.5;
+                        }
                     }
                 }
             }
         }
+        
         normalize_centrality(&mut centrality);
 
+        // 5. Calculate Graph Signal (Reuse query embedding if possible or cache)
         let graph_context_text = graph_context_lines.join("\n");
         let graph_signal = if graph_context_text.is_empty() {
             0.0
         } else {
-            let query_embedding = self.vector_store.embed_query(query).await?;
-            let graph_embedding = self.vector_store.embed_query(&graph_context_text).await?;
+            let graph_embedding = if let Some(cached) = self.cache.embedding_cache.get(&graph_context_text).await {
+                cached
+            } else {
+                let emb = self.vector_store.embed_query(&graph_context_text).await?;
+                self.cache.embedding_cache.insert(graph_context_text.clone(), emb.clone()).await;
+                emb
+            };
             cosine_similarity(&query_embedding, &graph_embedding).clamp(0.0, 1.0)
         };
 
+        // 6. Rerank
         let mut final_results: Vec<(f32, RetrievedContext)> = raw_results
             .into_iter()
             .map(|(content, score, metadata)| {
@@ -197,7 +269,7 @@ impl GraphRAG {
                 (
                     final_score,
                     RetrievedContext {
-                        content,
+                        content: content.clone(),
                         source,
                         score: final_score,
                     },
@@ -220,6 +292,9 @@ impl GraphRAG {
                 score: 0.0,
             });
         }
+
+        // 7. Update Query Cache
+        self.cache.query_cache.insert(query.to_string(), results.clone()).await;
 
         Ok(results)
     }
