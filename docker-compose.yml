@@ -34,10 +34,11 @@ services:
       - NEO4J_USER=neo4j
       - NEO4J_PASS=${NEO4J_PASSWORD:?NEO4J_PASSWORD must be set}
       # Models
-      - OPENAI_MODEL_NAME=gpt-4o-mini
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - MOONSHOT_API_KEY=${MOONSHOT_API_KEY}
       - ZHIPU_API_KEY=${ZHIPU_API_KEY}
+      - OPENAI_API_BASE=${OPENAI_API_BASE}
+      - OPENAI_MODEL_NAME=${OPENAI_MODEL_NAME}
       # Knowledge
       - QDRANT_URL=http://qdrant:6334
       # Docker via Proxy
@@ -45,7 +46,7 @@ services:
     volumes:
       - crablet_data:/app/data:rw
       - crablet_config:/app/config:rw
-      - ./skills:/app/skills:rw
+      - ./crablet/skills:/app/skills:rw
     depends_on:
       - neo4j
       - docker-proxy
@@ -54,6 +55,39 @@ services:
         limits:
           memory: 2G
           cpus: '2.0'
+    networks:
+      - internal
+      - proxy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  crablet-gateway:
+    image: crablet:latest
+    container_name: crablet-gateway
+    restart: unless-stopped
+    command: ["crablet", "gateway", "--port", "18789"]
+    ports:
+      - "18789:18789"   # API Gateway
+    environment:
+      - RUST_LOG=info
+      - NEO4J_URI=neo4j://neo4j:7687
+      - NEO4J_USER=neo4j
+      - NEO4J_PASS=${NEO4J_PASSWORD:?NEO4J_PASSWORD must be set}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - MOONSHOT_API_KEY=${MOONSHOT_API_KEY}
+      - ZHIPU_API_KEY=${ZHIPU_API_KEY}
+      - OPENAI_API_BASE=${OPENAI_API_BASE}
+      - OPENAI_MODEL_NAME=${OPENAI_MODEL_NAME}
+      - QDRANT_URL=http://qdrant:6334
+      - DOCKER_HOST=tcp://docker-proxy:2375
+    volumes:
+      - crablet_data:/app/data:rw
+      - crablet_config:/app/config:rw
+      - ./crablet/skills:/app/skills:rw
+    depends_on:
+      - neo4j
+      - qdrant
+      - docker-proxy
     networks:
       - internal
       - proxy

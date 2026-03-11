@@ -40,9 +40,20 @@ pub struct OpenAiClient {
 #[derive(Serialize)]
 struct OpenAiRequest {
     model: String,
-    messages: Vec<Message>,
+    messages: Vec<OpenAiWireMessage>,
     #[serde(skip_serializing_if = "Option::is_none")]
     tools: Option<Vec<serde_json::Value>>,
+}
+
+#[derive(Serialize)]
+struct OpenAiWireMessage {
+    role: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    content: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tool_calls: Option<Vec<crate::types::ToolCall>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tool_call_id: Option<String>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -61,7 +72,7 @@ use tracing::{error, info};
 #[derive(Serialize)]
 struct OpenAiStreamRequest {
     model: String,
-    messages: Vec<Message>,
+    messages: Vec<OpenAiWireMessage>,
     stream: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     tools: Option<Vec<serde_json::Value>>,
@@ -122,6 +133,57 @@ impl OpenAiClient {
     }
 }
 
+fn to_wire_messages(messages: &[Message]) -> Vec<OpenAiWireMessage> {
+    messages
+        .iter()
+        .map(|m| {
+            let content = m.content.as_ref().and_then(|parts| {
+                if parts.is_empty() {
+                    return None;
+                }
+                let all_text = parts.iter().all(|p| matches!(p, ContentPart::Text { .. }));
+                if all_text {
+                    let joined = parts
+                        .iter()
+                        .filter_map(|p| match p {
+                            ContentPart::Text { text } => Some(text.as_str()),
+                            _ => None,
+                        })
+                        .collect::<Vec<_>>()
+                        .join("");
+                    if joined.is_empty() {
+                        None
+                    } else {
+                        Some(serde_json::Value::String(joined))
+                    }
+                } else {
+                    let arr = parts
+                        .iter()
+                        .map(|p| match p {
+                            ContentPart::Text { text } => serde_json::json!({
+                                "type": "text",
+                                "text": text
+                            }),
+                            ContentPart::ImageUrl { image_url } => serde_json::json!({
+                                "type": "image_url",
+                                "image_url": { "url": image_url.url }
+                            }),
+                        })
+                        .collect::<Vec<_>>();
+                    Some(serde_json::Value::Array(arr))
+                }
+            });
+
+            OpenAiWireMessage {
+                role: m.role.clone(),
+                content,
+                tool_calls: m.tool_calls.clone(),
+                tool_call_id: m.tool_call_id.clone(),
+            }
+        })
+        .collect()
+}
+
 #[async_trait]
 impl LlmClient for OpenAiClient {
     async fn chat_complete(&self, messages: &[Message]) -> Result<String> {
@@ -150,7 +212,7 @@ impl LlmClient for OpenAiClient {
     async fn chat_complete_with_tools(&self, messages: &[Message], tools: &[serde_json::Value]) -> Result<Message> {
         let request = OpenAiRequest {
             model: self.model.clone(),
-            messages: messages.to_vec(),
+            messages: to_wire_messages(messages),
             tools: if tools.is_empty() { None } else { Some(tools.to_vec()) },
         };
 
@@ -191,7 +253,7 @@ impl LlmClient for OpenAiClient {
     async fn chat_stream(&self, messages: &[Message]) -> Result<Pin<Box<dyn Stream<Item = Result<ChatChunk>> + Send>>> {
         let request = OpenAiStreamRequest {
             model: self.model.clone(),
-            messages: messages.to_vec(),
+            messages: to_wire_messages(messages),
             stream: true,
             tools: None, // Streaming tools not supported yet in this simple implementation
         };
