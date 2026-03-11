@@ -5,7 +5,12 @@ import toast from 'react-hot-toast';
 const isGatewayLocalApi = (baseURL?: string) => {
   if (!baseURL) return true;
   if (baseURL.startsWith('/api')) return true;
-  return /127\.0\.0\.1:18789\/api/.test(baseURL) || /localhost:18789\/api/.test(baseURL);
+  try {
+    const parsed = new URL(baseURL);
+    return parsed.port === '18789' && parsed.pathname.startsWith('/api');
+  } catch {
+    return /127\.0\.0\.1:18789\/api/.test(baseURL) || /localhost:18789\/api/.test(baseURL);
+  }
 };
 
 const client = axios.create({

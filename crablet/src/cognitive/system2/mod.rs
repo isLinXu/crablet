@@ -42,7 +42,6 @@ use crate::cognitive::tot::{TreeOfThoughts, TotConfig, SearchStrategy};
 use crate::cognitive::mcts_tot::{MCTSTreeOfThoughts, MCTSConfig};
 use crate::events::AgentEvent;
 use serde::Serialize;
-use std::str::FromStr;
 #[cfg(feature = "knowledge")]
 use crate::knowledge::graph_rag::EntityExtractorMode;
 

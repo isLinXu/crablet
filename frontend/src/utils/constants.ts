@@ -8,8 +8,24 @@ export const LOCAL_STORAGE_KEYS = {
   MODEL_PRIORITY: 'crablet-model-priority',
 };
 
+const getDefaultApiFallback = () => {
+  if (typeof window === 'undefined' || !window.location) {
+    return 'http://127.0.0.1:18789/api';
+  }
+
+  const { protocol, hostname, port } = window.location;
+
+  // Vite dev server uses proxy for /api requests.
+  if (port === '5173') {
+    return '/api';
+  }
+
+  const apiProtocol = protocol === 'https:' ? 'https:' : 'http:';
+  return `${apiProtocol}//${hostname}:18789/api`;
+};
+
 export const getApiBaseUrl = () => {
-  const fallback = 'http://127.0.0.1:18789/api';
+  const fallback = getDefaultApiFallback();
   let url = (localStorage.getItem(LOCAL_STORAGE_KEYS.API_BASE_URL) || import.meta.env.VITE_API_URL || fallback).trim();
 
   if (!url) {
@@ -55,8 +71,11 @@ export const getApiBaseUrl = () => {
       localStorage.setItem(LOCAL_STORAGE_KEYS.API_BASE_URL, fallback);
       return fallback;
     }
-    if (parsed.hostname === 'localhost') {
-      parsed.hostname = '127.0.0.1';
+    const currentHostname = typeof window !== 'undefined' ? window.location.hostname : '';
+    const parsedIsLoopback = parsed.hostname === '127.0.0.1' || parsed.hostname === 'localhost';
+    const currentIsLoopback = currentHostname === '127.0.0.1' || currentHostname === 'localhost';
+    if (parsedIsLoopback && currentHostname && !currentIsLoopback) {
+      parsed.hostname = currentHostname;
     }
     if (parsed.hostname === 'api' && !parsed.port && (!parsed.pathname || parsed.pathname === '/')) {
       localStorage.setItem(LOCAL_STORAGE_KEYS.API_BASE_URL, fallback);
