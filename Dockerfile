@@ -3,32 +3,38 @@
 # Stage: Frontend Builder
 FROM node:20-alpine AS frontend-builder
 WORKDIR /app/frontend
-COPY frontend/package.json frontend/package-lock.json ./
-RUN npm ci
+# COPY frontend/package.json frontend/package-lock.json ./
+COPY frontend/package*.json ./
+# RUN npm ci
+RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
 COPY frontend/ .
 RUN npm run build
 
 # Stage 1: Chef (Pre-computation)
-FROM lukemathwalker/cargo-chef:latest-rust-1.80 AS chef
+FROM lukemathwalker/cargo-chef:latest-rust-1.88 AS chef
 WORKDIR /app
 
 # Stage 2: Planner
 FROM chef AS planner
-COPY Cargo.toml Cargo.lock ./
-COPY crablet/Cargo.toml crablet/
-COPY crablet/src/ crablet/src/
+WORKDIR /app/crablet
+# COPY Cargo.toml Cargo.lock ./
+# COPY crablet/Cargo.toml crablet/
+COPY crablet/Cargo.toml Cargo.toml
+COPY crablet/src/ src/
 # Only copy necessary files for recipe generation
 RUN cargo chef prepare --recipe-path recipe.json
 
 # Stage 3: Builder
 FROM chef AS builder
-COPY --from=planner /app/recipe.json recipe.json
+WORKDIR /app/crablet
+COPY --from=planner /app/crablet/recipe.json recipe.json
+# COPY --from=planner /app/recipe.json recipe.json
 # Build dependencies - this is the caching layer!
 RUN cargo chef cook --release --recipe-path recipe.json
 
 # Build application
-COPY Cargo.toml Cargo.lock ./
-COPY crablet/ crablet/
+COPY crablet/Cargo.toml Cargo.toml
+COPY crablet/ ./
 RUN cargo build --release
 
 # Stage 4: Runtime
@@ -51,13 +57,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 # Copy binary from builder
-COPY --from=builder /app/target/release/crablet /usr/local/bin/
+# COPY --from=builder /app/target/release/crablet /usr/local/bin/
+COPY --from=builder /app/crablet/target/release/crablet /usr/local/bin/
 
 # Copy frontend build to static directory
-COPY --from=frontend-builder /app/frontend/dist /app/static
+COPY --from=frontend-builder /app/frontend/dist /app/frontend/dist
 
 # Copy default skills
-COPY skills/ /app/skills/
+# COPY skills/ /app/skills/
+COPY crablet/skills/ /app/skills/
 
 # Create directory structure and set permissions
 # skills, data, config, uploads
@@ -78,7 +86,7 @@ EXPOSE 3000
 
 # Healthcheck
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD curl -f http://localhost:3000/health || exit 1
+  CMD curl -f http://localhost:3000/ || exit 1
 
 # Default command
 CMD ["crablet", "serve-web", "--port", "3000"]
