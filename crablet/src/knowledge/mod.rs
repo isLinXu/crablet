@@ -1,6 +1,7 @@
 pub mod pdf;
 pub mod extractor;
 pub mod vector_store;
+pub mod embedder;
 pub mod chunking;
 pub mod reranking;
 pub mod graph_rag;

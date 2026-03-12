@@ -3,6 +3,9 @@ pub mod episodic;
 pub mod semantic;
 pub mod core;
 pub mod heartbeat;
+pub mod hot_reload;
+pub mod priority;
+pub mod distributed;
 #[cfg(feature = "knowledge")]
 pub mod consolidator;
 pub mod manager;

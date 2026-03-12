@@ -50,6 +50,9 @@ pub enum CrabletError {
     #[error("Internal error: {0}")]
     Internal(String),
 
+    #[error("Watcher error: {0}")]
+    Watcher(#[from] notify::Error),
+
     #[error("Search error: {0}")]
     SearchError(String),
 
