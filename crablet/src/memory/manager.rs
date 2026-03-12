@@ -3,24 +3,80 @@ use std::path::PathBuf;
 use dashmap::DashMap;
 use tokio::task::JoinHandle;
 use std::time::{Duration, Instant};
+use parking_lot::Mutex;
+use lru::LruCache;
 use crate::memory::episodic::EpisodicMemory;
 use crate::memory::working::WorkingMemory;
 use crate::memory::shared::{SharedBlackboard, CrossAgentMessage};
 use crate::memory::core::{CoreMemory, CoreMemoryBlock};
 use crate::agent::AgentRole;
-use tracing::{info, warn};
+use tracing::{info, warn, error};
 use crate::error::Result;
 
 #[cfg(feature = "knowledge")]
 use crate::memory::consolidator::MemoryConsolidator;
 
 use tokio::sync::RwLock;
-
 use moka::future::Cache as MokaCache;
+
+/// Helper for managing working memory with O(1) LRU eviction
+pub struct WorkingMemoryStore {
+    data: DashMap<String, Arc<RwLock<WorkingMemory>>>,
+    access_order: Mutex<LruCache<String, ()>>,
+    max_entries: usize,
+}
+
+impl WorkingMemoryStore {
+    pub fn new(max_entries: usize) -> Self {
+        Self {
+            data: DashMap::new(),
+            access_order: Mutex::new(LruCache::new(std::num::NonZeroUsize::new(max_entries).unwrap())),
+            max_entries,
+        }
+    }
+
+    pub fn get(&self, key: &str) -> Option<Arc<RwLock<WorkingMemory>>> {
+        if let Some(wm) = self.data.get(key) {
+            let mut order = self.access_order.lock();
+            order.put(key.to_string(), ());
+            return Some(wm.clone());
+        }
+        None
+    }
+
+    pub fn insert(&self, key: String, value: Arc<RwLock<WorkingMemory>>) {
+        let mut order = self.access_order.lock();
+        if self.data.len() >= self.max_entries && !self.data.contains_key(&key) {
+            if let Some((evict_key, _)) = order.pop_lru() {
+                self.data.remove(&evict_key);
+            }
+        }
+        self.data.insert(key.clone(), value);
+        order.put(key, ());
+    }
+
+    pub fn remove(&self, key: &str) {
+        self.data.remove(key);
+        let mut order = self.access_order.lock();
+        order.pop(key);
+    }
+
+    pub fn len(&self) -> usize {
+        self.data.len()
+    }
+
+    pub fn contains_key(&self, key: &str) -> bool {
+        self.data.contains_key(key)
+    }
+
+    pub fn iter(&self) -> dashmap::iter::Iter<'_, String, Arc<RwLock<WorkingMemory>>> {
+        self.data.iter()
+    }
+}
 
 pub struct MemoryManager {
     pub episodic: Option<Arc<EpisodicMemory>>,
-    pub working_memories: Arc<DashMap<String, Arc<RwLock<WorkingMemory>>>>,
+    pub working_store: Arc<WorkingMemoryStore>,
     /// L1 Cache for recently accessed working memories
     pub l1_cache: MokaCache<String, Arc<RwLock<WorkingMemory>>>,
     pub blackboard: SharedBlackboard,
@@ -34,9 +90,10 @@ pub struct MemoryManager {
     #[cfg(feature = "knowledge")]
     pub consolidator: Option<Arc<MemoryConsolidator>>,
     _ttl_cleaner: Option<JoinHandle<()>>,
-    max_memory_entries: usize,
     #[allow(dead_code)]
     memory_ttl: Duration,
+    _hot_reloader: Option<crate::memory::hot_reload::CoreMemoryHotReloader>,
+    pub distributed_sync: Option<Arc<crate::memory::distributed::DistributedCoreMemory>>,
 }
 
 impl MemoryManager {
@@ -73,8 +130,8 @@ impl MemoryManager {
         clean_interval: Duration,
         core_memory_path: Option<PathBuf>,
     ) -> Self {
-        let working_memories = Arc::new(DashMap::new());
-        let cleaner = Self::start_ttl_cleaner(working_memories.clone(), ttl, clean_interval);
+        let working_store = Arc::new(WorkingMemoryStore::new(max_entries));
+        let cleaner = Self::start_ttl_cleaner(working_store.clone(), ttl, clean_interval);
         
         // Load or create Core Memory
         let core_memory = if let Some(ref path) = core_memory_path {
@@ -89,6 +146,23 @@ impl MemoryManager {
             Arc::new(RwLock::new(CoreMemory::new()))
         };
         
+        // Initialize HotReloader if path is provided
+        let mut hot_reloader = None;
+        let mut distributed_sync = None;
+        if let Some(ref path) = core_memory_path {
+            let mut reloader = crate::memory::hot_reload::CoreMemoryHotReloader::new(path.clone());
+            if let Err(e) = reloader.start_watch(core_memory.clone()) {
+                error!("Failed to start Core Memory hot-reloader: {}", e);
+            } else {
+                hot_reloader = Some(reloader);
+            }
+            
+            distributed_sync = Some(Arc::new(crate::memory::distributed::DistributedCoreMemory::new(
+                core_memory.clone(),
+                path.clone()
+            )));
+        }
+        
         let l1_cache = MokaCache::builder()
             .max_capacity(100)
             .time_to_live(Duration::from_secs(300))
@@ -96,7 +170,7 @@ impl MemoryManager {
             
         Self {
             episodic,
-            working_memories,
+            working_store,
             l1_cache,
             blackboard: SharedBlackboard::new(),
             mailbox: Arc::new(DashMap::new()),
@@ -106,21 +180,22 @@ impl MemoryManager {
             #[cfg(feature = "knowledge")]
             consolidator: None,
             _ttl_cleaner: Some(cleaner),
-            max_memory_entries: max_entries,
             memory_ttl: ttl,
+            _hot_reloader: hot_reloader,
+            distributed_sync,
         }
     }
 
-    fn start_ttl_cleaner(memories: Arc<DashMap<String, Arc<RwLock<WorkingMemory>>>>, ttl: Duration, interval: Duration) -> JoinHandle<()> {
+    fn start_ttl_cleaner(store: Arc<WorkingMemoryStore>, ttl: Duration, interval: Duration) -> JoinHandle<()> {
         tokio::spawn(async move {
             loop {
                 tokio::time::sleep(interval).await;
                 let now = Instant::now();
-                let initial_count = memories.len();
+                let initial_count = store.len();
                 
                 // Collect keys to remove to avoid holding locks too long
                 let mut to_remove = Vec::new();
-                for entry in memories.iter() {
+                for entry in store.iter() {
                     let wm = entry.value().read().await;
                     if now.duration_since(wm.last_accessed) >= ttl {
                         to_remove.push(entry.key().clone());
@@ -128,10 +203,10 @@ impl MemoryManager {
                 }
                 
                 for key in to_remove {
-                    memories.remove(&key);
+                    store.remove(&key);
                 }
 
-                let cleaned_count = initial_count - memories.len();
+                let cleaned_count = initial_count - store.len();
                 if cleaned_count > 0 {
                     info!("MemoryManager: Cleaned {} expired working memories", cleaned_count);
                 }
@@ -150,9 +225,8 @@ impl MemoryManager {
             return wm_arc;
         }
 
-        // 2. Check Working Memories (L2)
-        if let Some(wm_arc) = self.working_memories.get(session_id) {
-            let wm_arc = wm_arc.clone();
+        // 2. Check Working Store (L2)
+        if let Some(wm_arc) = self.working_store.get(session_id) {
             self.l1_cache.insert(session_id.to_string(), wm_arc.clone()).await;
             
             let wm_arc_clone = wm_arc.clone();
@@ -161,25 +235,6 @@ impl MemoryManager {
                 wm.last_accessed = Instant::now();
             });
             return wm_arc;
-        }
-
-        // Evict if full (LRU-ish)
-        if self.working_memories.len() >= self.max_memory_entries {
-             // Find oldest accessed (Note: this is still O(N) but we only do it on creation)
-             let mut oldest_key = None;
-             let mut oldest_time = Instant::now();
-             
-             for entry in self.working_memories.iter() {
-                 let wm = entry.value().read().await;
-                 if wm.last_accessed < oldest_time {
-                     oldest_time = wm.last_accessed;
-                     oldest_key = Some(entry.key().clone());
-                 }
-             }
-             
-             if let Some(key) = oldest_key {
-                 self.working_memories.remove(&key);
-             }
         }
 
         // Determine capacity based on role
@@ -191,13 +246,47 @@ impl MemoryManager {
             _ => (10, 8000), // Default
         };
 
-        // Get or Create
-        self.working_memories.entry(session_id.to_string())
-            .or_insert_with(|| Arc::new(RwLock::new(WorkingMemory::new(capacity, max_tokens))))
-            .value()
-            .clone()
+        // Create New
+        let wm_arc = Arc::new(RwLock::new(WorkingMemory::new(capacity, max_tokens)));
+        self.working_store.insert(session_id.to_string(), wm_arc.clone());
+        self.l1_cache.insert(session_id.to_string(), wm_arc.clone()).await;
+
+        wm_arc
     }
 
+    /// 启动预热: 加载最近活跃的 sessions
+    pub async fn warmup(&self, recent_session_ids: &[String]) -> Result<()> {
+        let mut handles = Vec::new();
+        
+        for session_id in recent_session_ids {
+            let wm = self.get_or_create_working_memory(session_id, None).await;
+            
+            // 从 Episodic Memory 预加载历史
+            if let Some(episodic) = &self.episodic {
+                let wm_clone = wm.clone();
+                let sid = session_id.to_string();
+                let episodic_clone = episodic.clone();
+                
+                handles.push(tokio::spawn(async move {
+                    if let Ok(history) = episodic_clone.get_context(&sid, 10).await {
+                        let mut w = wm_clone.write().await;
+                        for msg in history {
+                            w.add_full_message(msg);
+                        }
+                    }
+                }));
+            }
+        }
+        
+        for h in handles {
+            let _ = h.await;
+        }
+        
+        info!("Warmup completed: {} sessions preloaded", recent_session_ids.len());
+        Ok(())
+    }
+
+    /// Save Message to both Episodic and Working Memory
     pub async fn save_message_atomic(&self, session_id: &str, role: &str, content: &str) -> Result<()> {
         // 1. Transactional Save to Episodic Memory
         if let Some(mem) = &self.episodic {
@@ -252,8 +341,16 @@ impl MemoryManager {
         let mut core = self.core_memory.write().await;
         let added = core.append(block, content)?;
         
-        // Persist changes
-        self.persist_core_memory(&core).await;
+        // Immediate persistence (Async, non-blocking)
+        let path = self.core_memory_path.clone();
+        let core_clone = core.clone();
+        tokio::spawn(async move {
+            if let Some(ref p) = path {
+                if let Err(e) = core_clone.save(p) {
+                    warn!("Failed to persist Core Memory (async): {}", e);
+                }
+            }
+        });
         
         Ok(added)
     }
@@ -269,7 +366,16 @@ impl MemoryManager {
         let replaced = core.replace(block, old_content, new_content)?;
         
         if replaced {
-            self.persist_core_memory(&core).await;
+            // Immediate persistence (Async, non-blocking)
+            let path = self.core_memory_path.clone();
+            let core_clone = core.clone();
+            tokio::spawn(async move {
+                if let Some(ref p) = path {
+                    if let Err(e) = core_clone.save(p) {
+                        warn!("Failed to persist Core Memory (async): {}", e);
+                    }
+                }
+            });
         }
         
         Ok(replaced)
@@ -280,10 +386,20 @@ impl MemoryManager {
         let mut core = self.core_memory.write().await;
         core.clear(block);
         
-        self.persist_core_memory(&core).await;
+        // Immediate persistence (Async, non-blocking)
+        let path = self.core_memory_path.clone();
+        let core_clone = core.clone();
+        tokio::spawn(async move {
+            if let Some(ref p) = path {
+                if let Err(e) = core_clone.save(p) {
+                    warn!("Failed to persist Core Memory (async): {}", e);
+                }
+            }
+        });
     }
 
-    /// Persist Core Memory to disk
+    /// Persist Core Memory to disk (Sync-ish but internally calls disk I/O)
+    #[allow(dead_code)]
     async fn persist_core_memory(&self, core: &CoreMemory) {
         if let Some(ref path) = self.core_memory_path {
             if let Err(e) = core.save(path) {
@@ -295,7 +411,9 @@ impl MemoryManager {
     /// Save Core Memory (public interface)
     pub async fn save_core_memory(&self) -> Result<()> {
         let core = self.core_memory.read().await;
-        self.persist_core_memory(&core).await;
+        if let Some(ref path) = self.core_memory_path {
+            core.save(path)?;
+        }
         Ok(())
     }
 
@@ -321,7 +439,7 @@ impl MemoryManager {
 
     /// Get count of active working memory sessions
     pub fn active_session_count(&self) -> usize {
-        self.working_memories.len()
+        self.working_store.len()
     }
 }
 
@@ -374,8 +492,8 @@ mod tests {
         manager.save_message_atomic("s3", "user", "msg3").await.unwrap();
 
         // Check
-        assert!(manager.working_memories.contains_key("s1")); // Kept (accessed)
-        assert!(manager.working_memories.contains_key("s3")); // New
-        assert!(!manager.working_memories.contains_key("s2")); // Evicted
+        assert!(manager.working_store.contains_key("s1")); // Kept (accessed)
+        assert!(manager.working_store.contains_key("s3")); // New
+        assert!(!manager.working_store.contains_key("s2")); // Evicted
     }
 }

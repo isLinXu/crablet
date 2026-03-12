@@ -1,53 +1,16 @@
 use anyhow::Result;
-use fastembed::{TextEmbedding, InitOptions, EmbeddingModel};
+use fastembed::{InitOptions, EmbeddingModel};
 use sqlx::{sqlite::SqlitePool, Row};
 use std::sync::{Arc, Mutex};
 use serde_json::json;
 use crate::knowledge::chunking::{Chunker, RecursiveCharacterChunker, MarkdownChunker};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use crate::knowledge::embedder::{EmbedderPool, Embedder, cosine_similarity};
 use futures::StreamExt; // For stream iteration
 
 #[cfg(feature = "qdrant-support")]
 use qdrant_client::qdrant::{PointStruct, Distance, CreateCollectionBuilder, VectorParamsBuilder, UpsertPointsBuilder, SearchPointsBuilder, DeletePointsBuilder, Filter, Condition, Value};
 #[cfg(feature = "qdrant-support")]
 use qdrant_client::Qdrant;
-
-struct EmbedderPool {
-    pool: Vec<Arc<Mutex<TextEmbedding>>>,
-    next: AtomicUsize,
-    mock_mode: bool,
-}
-
-impl EmbedderPool {
-    fn new(size: usize, options: InitOptions) -> Result<Self> {
-        let mut pool = Vec::with_capacity(size);
-        for _ in 0..size {
-             let opts = options.clone();
-             let embedder = TextEmbedding::try_new(opts)?;
-             pool.push(Arc::new(Mutex::new(embedder)));
-        }
-        Ok(Self { pool, next: AtomicUsize::new(0), mock_mode: false })
-    }
-    
-    fn new_mock() -> Self {
-        Self { pool: Vec::new(), next: AtomicUsize::new(0), mock_mode: true }
-    }
-
-    async fn embed(&self, texts: Vec<String>) -> Result<Vec<Vec<f32>>> {
-        if self.mock_mode {
-            // Return dummy vectors of size 384 (all-MiniLM-L6-v2 size)
-            return Ok(texts.iter().map(|_| vec![0.1; 384]).collect());
-        }
-
-        let idx = self.next.fetch_add(1, Ordering::Relaxed) % self.pool.len();
-        let embedder = self.pool[idx].clone();
-        
-        tokio::task::spawn_blocking(move || {
-            let mut embedder = embedder.lock().map_err(|e| anyhow::anyhow!("Embedder lock poisoned: {}", e))?;
-            embedder.embed(texts, None)
-        }).await?
-    }
-}
 
 enum StoreBackend {
     Sqlite {
@@ -584,16 +547,8 @@ impl VectorStore {
         let embeddings = self.embedder.embed(vec![query.to_string()]).await?;
         Ok(embeddings[0].clone())
     }
-}
 
-fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
-    let dot_product: f32 = a.iter().zip(b).map(|(x, y)| x * y).sum();
-    let norm_a: f32 = a.iter().map(|x| x * x).sum::<f32>().sqrt();
-    let norm_b: f32 = b.iter().map(|x| x * x).sum::<f32>().sqrt();
-    
-    if norm_a == 0.0 || norm_b == 0.0 {
-        return 0.0;
+    pub fn get_embedder(&self) -> Embedder {
+        Embedder::new(self.embedder.clone())
     }
-    
-    dot_product / (norm_a * norm_b)
 }

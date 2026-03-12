@@ -8,11 +8,23 @@ pub mod dependency;
 pub mod openclaw;
 pub mod installer;
 pub mod watcher;
+pub mod composite;
+pub mod chain;
+pub mod orchestrator;
+pub mod dsl;
+pub mod visualization;
+pub mod semantic_matcher;
+pub mod hybrid_matcher;
 
 // Re-export core types
 pub use registry::SkillRegistry;
 pub use executor::SkillExecutor;
 pub use dependency::SkillDependencies;
+pub use composite::{CompositeSkill, CompositeExecutor, CompositionType, SkillNode, ErrorPolicy, RetryPolicy};
+pub use chain::{SkillChain, SkillChainEngine, ChainStep, StepType, StepConnection, ChainConfig, ChainErrorPolicy};
+pub use dsl::{WorkflowDefinition, WorkflowCompiler};
+pub use orchestrator::{SkillOrchestrator, OrchestratorConfig, ExecutionRequest, ExecutionResponse, ExecutionStatus};
+pub use visualization::{GraphExporter, GraphFormat};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SkillManifest {
