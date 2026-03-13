@@ -89,17 +89,25 @@ const classifyPrompt = (prompt: string) => {
   return 'general';
 };
 
-const pickFallback = (providers: ModelProvider[]) =>
-  [...providers]
-    .filter((p) => p.enabled)
-    .sort((a, b) => a.priority - b.priority)[0];
+const pickFallback = (providers: ModelProvider[], modelType: 'chat' | 'image' = 'chat') => {
+  const enabled = providers.filter((p) => p.enabled);
+  const typed = enabled.filter((p) => inferModelType(p) === modelType);
+  return [...(typed.length > 0 ? typed : enabled)].sort((a, b) => a.priority - b.priority)[0];
+};
 
-const preferProviderWithKey = (candidate: ModelProvider, providers: ModelProvider[]) => {
+const preferProviderWithKey = (
+  candidate: ModelProvider,
+  providers: ModelProvider[],
+  preferredType: 'chat' | 'image' = 'chat'
+) => {
   if (candidate.apiKey?.trim()) return candidate;
+  const enabled = providers.filter((p) => p.enabled);
+  const typed = enabled.filter((p) => inferModelType(p) === preferredType);
   const withKey = [...providers]
-    .filter((p) => p.enabled && !!p.apiKey?.trim())
+    .filter((p) => typed.includes(p) && !!p.apiKey?.trim())
     .sort((a, b) => a.priority - b.priority)[0];
-  return withKey || candidate;
+  if (withKey) return withKey;
+  return candidate;
 };
 
 export const useModelStore = create<ModelState>()(
@@ -131,23 +139,26 @@ export const useModelStore = create<ModelState>()(
       resolveForPrompt: (sessionId: string | null, prompt: string, priority: 'speed' | 'quality' | 'balanced' = 'balanced') => {
         const { providers, sessionManualProvider } = get();
         const enabled = providers.filter((p: ModelProvider) => p.enabled);
-        const fallback = pickFallback(enabled) || defaultProviders[0];
+        const chatProviders = enabled.filter((p: ModelProvider) => inferModelType(p) === 'chat');
+        const imageProviders = enabled.filter((p: ModelProvider) => inferModelType(p) === 'image');
+        const fallback = pickFallback(enabled, 'chat') || defaultProviders[0];
         if (!sessionId) {
+          const effective = preferProviderWithKey(fallback, enabled, 'chat');
           return {
-            providerId: fallback.id,
-            vendor: fallback.vendor,
-            model: fallback.model,
-            modelType: inferModelType(fallback),
-            apiBaseUrl: fallback.apiBaseUrl,
-            apiKey: fallback.apiKey,
-            version: fallback.version,
+            providerId: effective.id,
+            vendor: effective.vendor,
+            model: effective.model,
+            modelType: inferModelType(effective),
+            apiBaseUrl: effective.apiBaseUrl,
+            apiKey: effective.apiKey,
+            version: effective.version,
             reason: 'no-session-fallback',
           };
         }
         const manual = sessionManualProvider[sessionId];
         if (manual) {
           const selected = providers.find((p: ModelProvider) => p.id === manual && p.enabled) || fallback;
-          const effective = preferProviderWithKey(selected, enabled);
+          const effective = preferProviderWithKey(selected, enabled, inferModelType(selected));
           return {
             providerId: effective.id,
             vendor: effective.vendor,
@@ -161,17 +172,25 @@ export const useModelStore = create<ModelState>()(
         }
         const q = classifyPrompt(prompt);
         const byVendor = (vendor: string) => enabled.find((p: ModelProvider) => p.vendor.toLowerCase() === vendor.toLowerCase());
-        const imageProviders = enabled.filter((p: ModelProvider) => inferModelType(p) === 'image');
         let selected = fallback;
         if (q === 'image_gen' && imageProviders.length > 0) {
           selected = [...imageProviders].sort((a, b) => a.priority - b.priority)[0] || fallback;
         }
-        if (q === 'multimodal') selected = byVendor('Google') || fallback;
-        if (q === 'coding') selected = byVendor('OpenAI') || fallback;
-        if (q === 'analysis') selected = byVendor('Anthropic') || fallback;
-        if (priority === 'speed') selected = [...enabled].sort((a, b) => a.priority - b.priority)[0] || selected;
-        if (priority === 'quality') selected = [...enabled].sort((a, b) => b.priority - a.priority)[0] || selected;
-        const effective = preferProviderWithKey(selected, enabled);
+        if (q === 'multimodal') selected = byVendor('Google') || pickFallback(enabled, 'chat') || fallback;
+        if (q === 'coding') selected = byVendor('OpenAI') || pickFallback(enabled, 'chat') || fallback;
+        if (q === 'analysis') selected = byVendor('Anthropic') || pickFallback(enabled, 'chat') || fallback;
+        if (q !== 'image_gen' && inferModelType(selected) !== 'chat') {
+          selected = pickFallback(enabled, 'chat') || selected;
+        }
+        if (priority === 'speed') {
+          const speedPool = q === 'image_gen' ? imageProviders : (chatProviders.length > 0 ? chatProviders : enabled);
+          selected = [...speedPool].sort((a, b) => a.priority - b.priority)[0] || selected;
+        }
+        if (priority === 'quality') {
+          const qualityPool = q === 'image_gen' ? imageProviders : (chatProviders.length > 0 ? chatProviders : enabled);
+          selected = [...qualityPool].sort((a, b) => b.priority - a.priority)[0] || selected;
+        }
+        const effective = preferProviderWithKey(selected, enabled, q === 'image_gen' ? 'image' : 'chat');
         return {
           providerId: effective.id,
           vendor: effective.vendor,

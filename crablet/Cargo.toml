@@ -116,7 +116,3 @@ tokio-test = "0.4.4"
 tempfile = "3.10"
 proptest = "1.4"
 criterion = { version = "0.5", features = ["async_tokio"] }
-
-[[bench]]
-name = "main"
-harness = false

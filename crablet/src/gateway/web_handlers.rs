@@ -119,8 +119,27 @@ fn load_markdown_file(filename: &str) -> Option<String> {
     }
 }
 
+fn resolve_env_file_path() -> PathBuf {
+    if let Ok(v) = std::env::var("CRABLET_ENV_FILE") {
+        let p = PathBuf::from(v);
+        if p.exists() {
+            return p;
+        }
+    }
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let candidates = [
+        cwd.join(".env"),
+        cwd.join("crablet").join(".env"),
+        cwd.join("../crablet").join(".env"),
+    ];
+    candidates
+        .into_iter()
+        .find(|p| p.exists())
+        .unwrap_or_else(|| cwd.join(".env"))
+}
+
 fn env_value_from_file(key: &str) -> Option<String> {
-    let content = fs::read_to_string(".env").ok()?;
+    let content = fs::read_to_string(resolve_env_file_path()).ok()?;
     for line in content.lines() {
         if let Some((k, v)) = line.split_once('=') {
             if k.trim() == key {
@@ -1466,17 +1485,19 @@ pub struct SystemConfigPayload {
     pub openai_api_base: Option<String>,
     pub openai_model_name: Option<String>,
     pub ollama_model: Option<String>,
+    pub llm_vendor: Option<String>,
 }
 
 pub async fn get_system_config(
     State(_gateway): State<Arc<CrabletGateway>>,
 ) -> Result<Json<SystemConfigPayload>, StatusCode> {
-    let content = fs::read_to_string(".env").unwrap_or_default();
+    let content = fs::read_to_string(resolve_env_file_path()).unwrap_or_default();
     let mut config = SystemConfigPayload {
         openai_api_key: None,
         openai_api_base: None,
         openai_model_name: None,
         ollama_model: None,
+        llm_vendor: None,
     };
     
     for line in content.lines() {
@@ -1492,6 +1513,7 @@ pub async fn get_system_config(
                 "OPENAI_API_BASE" => config.openai_api_base = Some(val),
                 "OPENAI_MODEL_NAME" => config.openai_model_name = Some(val),
                 "OLLAMA_MODEL" => config.ollama_model = Some(val),
+                "LLM_VENDOR" => config.llm_vendor = Some(val),
                 _ => {}
             }
         }
@@ -1504,7 +1526,7 @@ pub async fn update_system_config(
     State(_gateway): State<Arc<CrabletGateway>>,
     Json(payload): Json<SystemConfigPayload>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
-    let path = PathBuf::from(".env");
+    let path = resolve_env_file_path();
     let content = fs::read_to_string(&path).unwrap_or_default();
     let mut lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
     
@@ -1534,6 +1556,9 @@ pub async fn update_system_config(
     }
     if let Some(v) = payload.ollama_model {
         upsert("OLLAMA_MODEL", &v);
+    }
+    if let Some(v) = payload.llm_vendor {
+        upsert("LLM_VENDOR", &v);
     }
 
     let new_content = lines.join("\n");

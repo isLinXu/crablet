@@ -3,7 +3,11 @@ import { MessageSquare, Database, Terminal, Settings, Workflow, Menu, X, LayoutD
 import { NavLink } from 'react-router-dom';
 import clsx from 'clsx';
 
-export const Sidebar = () => {
+type SidebarProps = {
+  onRouteIntent?: (path: string) => void;
+};
+
+export const Sidebar = ({ onRouteIntent }: SidebarProps) => {
   const [isOpen, setIsOpen] = useState(false);
 
   const menuItems = [
@@ -50,6 +54,9 @@ export const Sidebar = () => {
             <NavLink
               key={item.path}
               to={item.path}
+              onMouseEnter={() => onRouteIntent?.(item.path)}
+              onFocus={() => onRouteIntent?.(item.path)}
+              onTouchStart={() => onRouteIntent?.(item.path)}
               onClick={() => setIsOpen(false)}
               className={({ isActive }) => clsx(
                 "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 group",

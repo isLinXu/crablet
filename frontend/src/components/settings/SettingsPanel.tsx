@@ -10,6 +10,24 @@ import toast from 'react-hot-toast';
 import type { ApiKeyInfo, McpOverview, RoutingEvaluationReport, RoutingSettings } from '@/types/domain';
 import { settingsService } from '@/services/settingsService';
 import { useModelStore, type ModelProvider } from '@/store/modelStore';
+import { api } from '@/services/api';
+
+type VendorName = 'OpenAI' | 'Anthropic' | 'Google' | 'Aliyun' | 'Tencent' | 'ByteDance' | 'Kimi' | 'ZhiPu' | 'Ollama' | 'Custom';
+
+const VENDOR_OPTIONS: VendorName[] = ['OpenAI', 'Anthropic', 'Google', 'Aliyun', 'Tencent', 'ByteDance', 'Kimi', 'ZhiPu', 'Ollama', 'Custom'];
+
+const VENDOR_DEFAULTS: Record<VendorName, { endpoint: string; chatModels: string[]; imageModels: string[] }> = {
+  OpenAI: { endpoint: 'https://api.openai.com/v1', chatModels: ['gpt-4o-mini', 'gpt-4o', 'o3-mini'], imageModels: ['gpt-image-1'] },
+  Anthropic: { endpoint: 'https://api.anthropic.com/v1', chatModels: ['claude-3-5-sonnet', 'claude-3-5-haiku'], imageModels: [] },
+  Google: { endpoint: 'https://generativelanguage.googleapis.com/v1beta', chatModels: ['gemini-1.5-pro', 'gemini-1.5-flash'], imageModels: [] },
+  Aliyun: { endpoint: 'https://dashscope.aliyuncs.com/compatible-mode/v1', chatModels: ['qwen-plus', 'qwen-max', 'qwen-turbo'], imageModels: ['qwen-image-2.0', 'wanx2.1-t2i-turbo'] },
+  Tencent: { endpoint: 'https://api.hunyuan.cloud.tencent.com/v1', chatModels: ['hunyuan-pro', 'hunyuan-lite'], imageModels: ['hunyuan-image'] },
+  ByteDance: { endpoint: 'https://ark.cn-beijing.volces.com/api/v3', chatModels: ['doubao-pro-32k', 'doubao-lite-4k'], imageModels: ['doubao-image'] },
+  Kimi: { endpoint: 'https://api.moonshot.cn/v1', chatModels: ['moonshot-v1-8k', 'moonshot-v1-32k'], imageModels: [] },
+  ZhiPu: { endpoint: 'https://open.bigmodel.cn/api/paas/v4', chatModels: ['glm-4-flash', 'glm-4-plus'], imageModels: ['cogview-3-flash'] },
+  Ollama: { endpoint: 'http://127.0.0.1:11434/v1', chatModels: ['qwen2.5:14b', 'llama3.1:8b'], imageModels: ['sdxl:latest'] },
+  Custom: { endpoint: '', chatModels: ['qwen-plus'], imageModels: [] },
+};
 
 export const SettingsPanel: React.FC = () => {
   const { theme, setTheme } = useThemeStore();
@@ -49,6 +67,7 @@ export const SettingsPanel: React.FC = () => {
     openai_api_base?: string;
     openai_model_name?: string;
     ollama_model?: string;
+    llm_vendor?: string;
   }>({});
   const [loadingSystemConfig, setLoadingSystemConfig] = useState(false);
   const [savingSystemConfig, setSavingSystemConfig] = useState(false);
@@ -63,7 +82,7 @@ export const SettingsPanel: React.FC = () => {
     { label: '字节豆包', value: 'https://ark.cn-beijing.volces.com/api/v3' },
   ];
 
-  const detectVendor = (base: string): 'OpenAI' | 'Anthropic' | 'Google' | 'Aliyun' | 'Tencent' | 'ByteDance' | null => {
+  const detectVendor = (base: string): VendorName | null => {
     const lower = base.toLowerCase();
     if (lower.includes('openai.com')) return 'OpenAI';
     if (lower.includes('anthropic.com')) return 'Anthropic';
@@ -71,7 +90,109 @@ export const SettingsPanel: React.FC = () => {
     if (lower.includes('dashscope.aliyuncs.com') || lower.includes('aliyuncs.com')) return 'Aliyun';
     if (lower.includes('hunyuan.cloud.tencent.com') || lower.includes('hunyuan.tencentcloudapi.com') || lower.includes('tencentcloudapi.com')) return 'Tencent';
     if (lower.includes('volces.com') || lower.includes('volcengineapi.com') || lower.includes('ark.cn-beijing')) return 'ByteDance';
+    if (lower.includes('moonshot.cn')) return 'Kimi';
+    if (lower.includes('bigmodel.cn')) return 'ZhiPu';
+    if (lower.includes('127.0.0.1:11434') || lower.includes('localhost:11434')) return 'Ollama';
     return null;
+  };
+
+  const normalizeVendorName = (vendor: string): VendorName => {
+    const value = String(vendor || '').trim().toLowerCase();
+    if (value === 'openai') return 'OpenAI';
+    if (value === 'anthropic') return 'Anthropic';
+    if (value === 'google') return 'Google';
+    if (value === 'aliyun') return 'Aliyun';
+    if (value === 'tencent') return 'Tencent';
+    if (value === 'bytedance') return 'ByteDance';
+    if (value === 'kimi') return 'Kimi';
+    if (value === 'zhipu') return 'ZhiPu';
+    if (value === 'ollama') return 'Ollama';
+    return 'Custom';
+  };
+
+  const modelSuggestionsForVendor = (vendor: string, modelType: 'chat' | 'image' = 'chat') => {
+    const v = normalizeVendorName(vendor);
+    const defaults = VENDOR_DEFAULTS[v];
+    return modelType === 'image' ? defaults.imageModels : defaults.chatModels;
+  };
+
+  const vendorToEnvVendor = (vendor: string | null): string => {
+    switch (vendor) {
+      case 'Aliyun':
+        return 'aliyun';
+      case 'OpenAI':
+        return 'openai';
+      case 'Kimi':
+        return 'kimi';
+      case 'ZhiPu':
+        return 'zhipu';
+      case 'Ollama':
+        return 'ollama';
+      case 'Google':
+        return 'custom';
+      case 'Anthropic':
+        return 'custom';
+      case 'Tencent':
+        return 'custom';
+      case 'ByteDance':
+        return 'custom';
+      default:
+        return 'custom';
+    }
+  };
+
+  const envVendorToRouteVendor = (vendor: string): string => {
+    switch (vendor.toLowerCase()) {
+      case 'aliyun':
+        return 'Aliyun';
+      case 'openai':
+        return 'OpenAI';
+      case 'ollama':
+        return 'Ollama';
+      case 'kimi':
+        return 'Kimi';
+      case 'zhipu':
+        return 'ZhiPu';
+      default:
+        return 'Custom';
+    }
+  };
+
+  const validateVendorModel = (vendor: string, model: string): string => {
+    const v = vendor.toLowerCase();
+    if (!model.trim()) return 'Model Name 不能为空';
+    if (v === 'aliyun' && !/^(qwen|wanx)/i.test(model)) return 'Aliyun 模型建议使用 qwen* 或 wanx*';
+    if (v === 'openai' && !/^(gpt|o1|o3)/i.test(model)) return 'OpenAI 模型建议使用 gpt*/o1*/o3*';
+    if (v === 'kimi' && !/^(moonshot|kimi)/i.test(model)) return 'Kimi 模型建议使用 moonshot* 或 kimi*';
+    if (v === 'zhipu' && !/^(glm|cog)/i.test(model)) return 'ZhiPu 模型建议使用 glm* 或 cog*';
+    if (v === 'anthropic' && !/^claude/i.test(model)) return 'Anthropic 模型建议使用 claude*';
+    if (v === 'google' && !/^gemini/i.test(model)) return 'Google 模型建议使用 gemini*';
+    if (v === 'tencent' && !/^hunyuan/i.test(model)) return 'Tencent 模型建议使用 hunyuan*';
+    if (v === 'bytedance' && !/^doubao/i.test(model)) return 'ByteDance 模型建议使用 doubao*';
+    if (v === 'ollama' && !/:/.test(model)) return 'Ollama 模型建议使用 model:tag 格式';
+    if (/(qwen-image|wanx|doubao-image|sdxl|stable-diffusion|image)/i.test(model)) return '当前配置用于聊天模型，请不要填写图像模型';
+    return '';
+  };
+
+  const verifySystemChatConfig = async (cfg: { base: string; model: string; key: string; vendor: string }) => {
+    if (!cfg.base) throw new Error('API Base URL 不能为空');
+    if (!cfg.model) throw new Error('Model Name 不能为空');
+    if (!cfg.key && cfg.vendor !== 'ollama') throw new Error('API Key 不能为空（本地 Ollama 可为空）');
+    const resp: any = await api.post('/v1/chat', {
+      message: 'ping',
+      session_id: `cfg-verify-${Date.now()}`,
+      route: {
+        vendor: envVendorToRouteVendor(cfg.vendor),
+        model: cfg.model,
+        api_base_url: cfg.base,
+        api_key: cfg.key,
+        model_type: 'chat',
+        reason: 'settings-verify',
+      },
+    });
+    if (!resp || resp.error) {
+      throw new Error(resp?.error || '模型连通性验证失败');
+    }
   };
 
   const handlePresetSelect = (value: string) => {
@@ -172,15 +293,7 @@ export const SettingsPanel: React.FC = () => {
       localStorage.removeItem(LOCAL_STORAGE_KEYS.AUTH_TOKEN);
     }
     if (providerMode) {
-      const defaultModelByVendor: Record<string, string> = {
-        OpenAI: 'gpt-4o-mini',
-        Anthropic: 'claude-3-5-sonnet',
-        Google: 'gemini-1.5-pro',
-        Aliyun: 'qwen-plus',
-        Tencent: 'hunyuan-pro',
-        ByteDance: 'doubao-pro-32k',
-      };
-      const model = defaultModelByVendor[providerMode] || 'qwen-plus';
+      const model = modelSuggestionsForVendor(providerMode, 'chat')[0] || 'qwen-plus';
       upsertProvider({
         id: `${providerMode.toLowerCase()}-${model.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
         vendor: providerMode,
@@ -208,18 +321,34 @@ export const SettingsPanel: React.FC = () => {
             : p
         )
       );
-      if (apiKeyValue) {
-        try {
-          const newConfig = {
-            openai_api_key: apiKeyValue,
-            openai_api_base: normalizedUrl,
-            openai_model_name: model,
-          };
-          await settingsService.updateSystemConfig(newConfig);
-          setSystemConfig((prev) => ({ ...prev, ...newConfig }));
-        } catch {
-          toast.error('已保存前端设置，但同步后端 .env 失败');
+      try {
+        const newConfig = {
+          openai_api_key: apiKeyValue,
+          openai_api_base: normalizedUrl,
+          openai_model_name: model,
+          llm_vendor: vendorToEnvVendor(providerMode),
+        };
+        await settingsService.updateSystemConfig(newConfig);
+        const confirmed: any = await settingsService.getSystemConfig();
+        const confirmedConfig = confirmed?.data || confirmed || {};
+        setSystemConfig((prev) => ({ ...prev, ...confirmedConfig }));
+        const expected = {
+          openai_api_key: newConfig.openai_api_key || '',
+          openai_api_base: newConfig.openai_api_base || '',
+          openai_model_name: newConfig.openai_model_name || '',
+          llm_vendor: newConfig.llm_vendor || '',
+        };
+        const actual = {
+          openai_api_key: confirmedConfig.openai_api_key || '',
+          openai_api_base: confirmedConfig.openai_api_base || '',
+          openai_model_name: confirmedConfig.openai_model_name || '',
+          llm_vendor: confirmedConfig.llm_vendor || '',
+        };
+        if (JSON.stringify(expected) !== JSON.stringify(actual)) {
+          toast.error('后端配置回读校验不一致，请检查 .env 文件权限或路径');
         }
+      } catch {
+        toast.error('已保存前端设置，但同步后端 .env 失败');
       }
       toast(`已切换到${providerMode}厂商模式，配置已同步到模型路由与后端.env`);
     }
@@ -557,12 +686,43 @@ export const SettingsPanel: React.FC = () => {
   };
 
   const handleSaveSystemConfig = async () => {
+    const base = String(systemConfig.openai_api_base || '').trim();
+    const model = String(systemConfig.openai_model_name || '').trim();
+    const key = String(systemConfig.openai_api_key || '').trim();
+    const inferredVendor = vendorToEnvVendor(detectVendor(base));
+    const vendor = String(systemConfig.llm_vendor || inferredVendor || 'custom').trim().toLowerCase();
+    const modelIssue = validateVendorModel(vendor, model);
+    if (modelIssue) {
+      toast.error(modelIssue);
+      return;
+    }
     setSavingSystemConfig(true);
     try {
-      await settingsService.updateSystemConfig(systemConfig);
-      toast.success('System config saved. Please restart backend to apply changes.');
+      await verifySystemChatConfig({ base, model, key, vendor });
+      const payload = { ...systemConfig, openai_api_base: base, openai_model_name: model, openai_api_key: key, llm_vendor: vendor };
+      await settingsService.updateSystemConfig(payload);
+      const confirmed: any = await settingsService.getSystemConfig();
+      const confirmedConfig = confirmed?.data || confirmed || {};
+      setSystemConfig((prev) => ({ ...prev, ...confirmedConfig }));
+      const expected = {
+        openai_api_key: key,
+        openai_api_base: base,
+        openai_model_name: model,
+        llm_vendor: vendor,
+      };
+      const actual = {
+        openai_api_key: confirmedConfig.openai_api_key || '',
+        openai_api_base: confirmedConfig.openai_api_base || '',
+        openai_model_name: confirmedConfig.openai_model_name || '',
+        llm_vendor: confirmedConfig.llm_vendor || '',
+      };
+      if (JSON.stringify(expected) !== JSON.stringify(actual)) {
+        toast.error('配置保存后回读不一致，请检查后端 .env 写入路径');
+        return;
+      }
+      toast.success('System config verified and synced to local .env.');
     } catch {
-      toast.error('Failed to save system config');
+      toast.error('保存失败：模型配置校验未通过或后端写入失败');
     } finally {
       setSavingSystemConfig(false);
     }
@@ -570,20 +730,39 @@ export const SettingsPanel: React.FC = () => {
 
   const handleSetAsSystemDefault = async (p: ModelProvider) => {
     if (!window.confirm(`确定要将 [${p.vendor}] ${p.model} 设为后端默认配置吗？\n这将覆盖 .env 文件中的 KEY/BASE/MODEL 配置。`)) return;
+    if ((p.modelType || 'chat') !== 'chat') {
+      toast.error('系统默认模型必须是 chat 类型，不能使用 image 模型');
+      return;
+    }
+    const vendor = vendorToEnvVendor(p.vendor);
+    const modelIssue = validateVendorModel(vendor, p.model);
+    if (modelIssue) {
+      toast.error(modelIssue);
+      return;
+    }
     
     const newConfig = {
       openai_api_key: p.apiKey,
       openai_api_base: p.apiBaseUrl,
       openai_model_name: p.model,
+      llm_vendor: vendor,
     };
     
     setSavingSystemConfig(true);
     try {
+      await verifySystemChatConfig({
+        base: String(p.apiBaseUrl || '').trim(),
+        model: String(p.model || '').trim(),
+        key: String(p.apiKey || '').trim(),
+        vendor: vendor.toLowerCase(),
+      });
       await settingsService.updateSystemConfig(newConfig);
-      setSystemConfig(prev => ({ ...prev, ...newConfig }));
-      toast.success('已更新系统默认配置，请重启后端生效');
+      const confirmed: any = await settingsService.getSystemConfig();
+      const confirmedConfig = confirmed?.data || confirmed || {};
+      setSystemConfig(prev => ({ ...prev, ...confirmedConfig }));
+      toast.success('已更新系统默认配置并完成回读校验');
     } catch {
-      toast.error('保存失败');
+      toast.error('保存失败：模型校验或后端写入未通过');
     } finally {
       setSavingSystemConfig(false);
     }
@@ -607,22 +786,70 @@ export const SettingsPanel: React.FC = () => {
     ]);
   };
 
-  const currentVendor = detectVendor(apiBaseUrl.trim());
-  const vendorGuide: Record<string, { endpoint: string; keyHint: string }> = {
-    OpenAI: { endpoint: 'https://api.openai.com/v1', keyHint: 'sk-***' },
-    Anthropic: { endpoint: 'https://api.anthropic.com/v1', keyHint: 'sk-ant-***' },
-    Google: { endpoint: 'https://generativelanguage.googleapis.com/v1beta', keyHint: 'AIza***' },
-    Aliyun: { endpoint: 'https://dashscope.aliyuncs.com/compatible-mode/v1', keyHint: 'sk-***' },
-    Tencent: { endpoint: 'https://api.hunyuan.cloud.tencent.com/v1', keyHint: '按腾讯云控制台分配的Key' },
-    ByteDance: { endpoint: 'https://ark.cn-beijing.volces.com/api/v3', keyHint: '按火山引擎控制台分配的Key' },
+  const applySystemVendorPreset = (vendor: VendorName) => {
+    const defaults = VENDOR_DEFAULTS[vendor];
+    const suggestedModel = defaults.chatModels[0] || '';
+    setSystemConfig((prev) => ({
+      ...prev,
+      llm_vendor: vendorToEnvVendor(vendor),
+      openai_api_base: defaults.endpoint || prev.openai_api_base || '',
+      openai_model_name: suggestedModel || prev.openai_model_name || '',
+    }));
+    toast(`已应用 ${vendor} 推荐端点与模型`);
   };
-  const keyPlaceholderByVendor: Record<string, string> = {
+
+  const updateProviderVendor = (id: string, vendor: VendorName) => {
+    setDraftProviders((prev) =>
+      prev.map((p) => {
+        if (p.id !== id) return p;
+        const defaults = VENDOR_DEFAULTS[vendor];
+        const modelType = p.modelType || 'chat';
+        const suggestions = modelSuggestionsForVendor(vendor, modelType);
+        return {
+          ...p,
+          vendor,
+          apiBaseUrl: defaults.endpoint || p.apiBaseUrl,
+          model: suggestions[0] || p.model,
+        };
+      })
+    );
+  };
+
+  const updateProviderModelType = (id: string, modelType: 'chat' | 'image') => {
+    setDraftProviders((prev) =>
+      prev.map((p) => {
+        if (p.id !== id) return p;
+        const suggestions = modelSuggestionsForVendor(p.vendor, modelType);
+        const model = suggestions.includes(p.model) ? p.model : (suggestions[0] || p.model);
+        return { ...p, modelType, model };
+      })
+    );
+  };
+
+  const currentVendor = detectVendor(apiBaseUrl.trim());
+  const vendorGuide: Record<VendorName, { endpoint: string; keyHint: string }> = {
+    OpenAI: { endpoint: VENDOR_DEFAULTS.OpenAI.endpoint, keyHint: 'sk-***' },
+    Anthropic: { endpoint: VENDOR_DEFAULTS.Anthropic.endpoint, keyHint: 'sk-ant-***' },
+    Google: { endpoint: VENDOR_DEFAULTS.Google.endpoint, keyHint: 'AIza***' },
+    Aliyun: { endpoint: VENDOR_DEFAULTS.Aliyun.endpoint, keyHint: 'sk-***' },
+    Tencent: { endpoint: VENDOR_DEFAULTS.Tencent.endpoint, keyHint: '按腾讯云控制台分配的Key' },
+    ByteDance: { endpoint: VENDOR_DEFAULTS.ByteDance.endpoint, keyHint: '按火山引擎控制台分配的Key' },
+    Kimi: { endpoint: VENDOR_DEFAULTS.Kimi.endpoint, keyHint: 'sk-***' },
+    ZhiPu: { endpoint: VENDOR_DEFAULTS.ZhiPu.endpoint, keyHint: '按智谱控制台分配的Key' },
+    Ollama: { endpoint: VENDOR_DEFAULTS.Ollama.endpoint, keyHint: '本地模型通常无需Key' },
+    Custom: { endpoint: '', keyHint: '按服务商文档填写' },
+  };
+  const keyPlaceholderByVendor: Record<VendorName, string> = {
     OpenAI: '例如 sk-***',
     Anthropic: '例如 sk-ant-***',
     Google: '例如 AIza***',
     Aliyun: '例如 sk-***',
     Tencent: '输入腾讯云分配的 Key',
     ByteDance: '输入火山引擎分配的 Key',
+    Kimi: '例如 sk-***',
+    ZhiPu: '输入智谱分配的 Key',
+    Ollama: '本地可留空',
+    Custom: '输入服务商分配的 Key',
   };
   const keyPatternIssue = (() => {
     const key = apiKey.trim();
@@ -631,9 +858,11 @@ export const SettingsPanel: React.FC = () => {
     if (currentVendor === 'Anthropic' && !key.startsWith('sk-ant-')) return 'Anthropic Key 通常以 sk-ant- 开头';
     if (currentVendor === 'Google' && !/^AIza/i.test(key)) return 'Google Key 通常以 AIza 开头';
     if (currentVendor === 'Aliyun' && !key.startsWith('sk-')) return '阿里百炼 Key 通常以 sk- 开头';
+    if (currentVendor === 'Kimi' && !key.startsWith('sk-')) return 'Kimi Key 通常以 sk- 开头';
+    if (currentVendor === 'Ollama') return '';
     return '';
   })();
-  const troubleshootingGuide: Record<string, { keyFormat: string; endpoint: string; permission: string; cors: string }> = {
+  const troubleshootingGuide: Record<VendorName, { keyFormat: string; endpoint: string; permission: string; cors: string }> = {
     OpenAI: {
       keyFormat: '确认Key以 sk- 开头，且未包含多余空格',
       endpoint: '端点建议使用 https://api.openai.com/v1',
@@ -669,6 +898,30 @@ export const SettingsPanel: React.FC = () => {
       endpoint: '建议使用 https://ark.cn-beijing.volces.com/api/v3',
       permission: '确认对应模型已开通并在可用区域',
       cors: '浏览器跨域失败时优先使用后端代理',
+    },
+    Kimi: {
+      keyFormat: '确认Moonshot Key有效',
+      endpoint: '建议使用 https://api.moonshot.cn/v1',
+      permission: '确认账号已开通目标模型调用权限',
+      cors: '浏览器跨域失败时优先使用后端代理',
+    },
+    ZhiPu: {
+      keyFormat: '确认智谱Key有效',
+      endpoint: '建议使用 https://open.bigmodel.cn/api/paas/v4',
+      permission: '确认目标模型已开通',
+      cors: '浏览器跨域失败时优先使用后端代理',
+    },
+    Ollama: {
+      keyFormat: '本地Ollama通常无需Key',
+      endpoint: '建议使用 http://127.0.0.1:11434/v1',
+      permission: '确认本地模型已 pull 并运行',
+      cors: '本地访问通常无跨域问题',
+    },
+    Custom: {
+      keyFormat: '按服务商文档检查Key格式',
+      endpoint: '确认 endpoint 与协议版本匹配',
+      permission: '确认目标模型权限已开通',
+      cors: '跨域失败时优先使用后端代理',
     },
   };
 
@@ -895,6 +1148,26 @@ export const SettingsPanel: React.FC = () => {
                     这些配置直接对应后端的 .env 文件。修改后需要重启后端服务才能生效。
                 </div>
                 <div className="grid gap-2">
+                    <label className="text-sm font-medium">LLM Vendor</label>
+                    <div className="flex gap-2">
+                      <select
+                          value={normalizeVendorName(systemConfig.llm_vendor ? envVendorToRouteVendor(systemConfig.llm_vendor) : (detectVendor(systemConfig.openai_api_base || '') || 'Custom'))}
+                          onChange={(e) => applySystemVendorPreset(e.target.value as VendorName)}
+                          className="h-10 w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-sm"
+                      >
+                          {VENDOR_OPTIONS.map((v) => (
+                            <option key={v} value={v}>{v}</option>
+                          ))}
+                      </select>
+                      <Button
+                        variant="secondary"
+                        onClick={() => applySystemVendorPreset(normalizeVendorName(systemConfig.llm_vendor ? envVendorToRouteVendor(systemConfig.llm_vendor) : (detectVendor(systemConfig.openai_api_base || '') || 'Custom')))}
+                      >
+                        应用推荐
+                      </Button>
+                    </div>
+                </div>
+                <div className="grid gap-2">
                     <label className="text-sm font-medium">OpenAI / DashScope API Key</label>
                     <Input 
                         type="password"
@@ -915,10 +1188,22 @@ export const SettingsPanel: React.FC = () => {
                     <div className="grid gap-2">
                         <label className="text-sm font-medium">Model Name (Cloud)</label>
                         <Input 
+                            list="system-model-recommendations"
                             value={systemConfig.openai_model_name || ''} 
                             onChange={(e) => setSystemConfig({...systemConfig, openai_model_name: e.target.value})}
                             placeholder="qwen-plus" 
                         />
+                        <datalist id="system-model-recommendations">
+                          {modelSuggestionsForVendor(
+                            systemConfig.llm_vendor ? envVendorToRouteVendor(systemConfig.llm_vendor) : (detectVendor(systemConfig.openai_api_base || '') || 'Custom'),
+                            'chat'
+                          ).map((m) => (
+                            <option key={m} value={m} />
+                          ))}
+                        </datalist>
+                        <div className="text-[11px] text-slate-500">
+                          推荐模型：{modelSuggestionsForVendor(systemConfig.llm_vendor ? envVendorToRouteVendor(systemConfig.llm_vendor) : (detectVendor(systemConfig.openai_api_base || '') || 'Custom'), 'chat').join(' / ') || '无'}
+                        </div>
                     </div>
                     <div className="grid gap-2">
                         <label className="text-sm font-medium">Ollama Model (Local)</label>
@@ -1105,11 +1390,29 @@ export const SettingsPanel: React.FC = () => {
                 <div className="space-y-3">
                     {draftProviders.map((p, idx) => (
                         <div key={p.id} className="rounded border border-slate-200 dark:border-slate-700 p-3 grid grid-cols-1 md:grid-cols-8 gap-2">
-                            <Input value={p.vendor} onChange={(e) => setDraftProviders((prev) => prev.map((x) => x.id === p.id ? { ...x, vendor: e.target.value } : x))} placeholder="厂商" />
-                            <Input value={p.model} onChange={(e) => setDraftProviders((prev) => prev.map((x) => x.id === p.id ? { ...x, model: e.target.value } : x))} placeholder="模型名" />
+                            <select
+                                value={normalizeVendorName(p.vendor)}
+                                onChange={(e) => updateProviderVendor(p.id, e.target.value as VendorName)}
+                                className="bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded px-2 py-2 text-sm"
+                            >
+                                {VENDOR_OPTIONS.map((v) => (
+                                  <option key={v} value={v}>{v}</option>
+                                ))}
+                            </select>
+                            <Input
+                                list={`provider-model-${idx}`}
+                                value={p.model}
+                                onChange={(e) => setDraftProviders((prev) => prev.map((x) => x.id === p.id ? { ...x, model: e.target.value } : x))}
+                                placeholder="模型名"
+                            />
+                            <datalist id={`provider-model-${idx}`}>
+                                {modelSuggestionsForVendor(p.vendor, p.modelType || 'chat').map((m) => (
+                                  <option key={m} value={m} />
+                                ))}
+                            </datalist>
                             <select
                                 value={p.modelType || 'chat'}
-                                onChange={(e) => setDraftProviders((prev) => prev.map((x) => x.id === p.id ? { ...x, modelType: e.target.value as 'chat' | 'image' } : x))}
+                                onChange={(e) => updateProviderModelType(p.id, e.target.value as 'chat' | 'image')}
                                 className="bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded px-2 py-2 text-sm"
                             >
                                 <option value="chat">chat</option>
