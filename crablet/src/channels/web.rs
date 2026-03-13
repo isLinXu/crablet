@@ -4,7 +4,7 @@ use axum::{
     routing::{get, post, put},
     Router,
 };
-use tower_http::services::ServeDir;
+use tower_http::services::{ServeDir, ServeFile};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use crate::cognitive::router::CognitiveRouter;
@@ -30,6 +30,12 @@ struct ChatInput {
 pub async fn run(router: Arc<CognitiveRouter>, port: u16, auth_config: Option<(String, String, String, String)>) -> anyhow::Result<()> {
     // Create uploads directory if it doesn't exist
     fs::create_dir_all("uploads").await?;
+    let static_dir = if PathBuf::from("frontend/dist/index.html").exists() {
+        PathBuf::from("frontend/dist")
+    } else {
+        PathBuf::from("../frontend/dist")
+    };
+    let index_file = static_dir.join("index.html");
 
     let app_state = router;
     
@@ -82,7 +88,11 @@ pub async fn run(router: Arc<CognitiveRouter>, port: u16, auth_config: Option<(S
         .nest("/auth", auth_router)
         // Fallback to legacy chat or static files
         .route("/legacy_chat", post(chat)) // Keep legacy POST /chat at root? or just use API
-        .fallback_service(ServeDir::new("frontend/dist").append_index_html_on_directories(true))
+        .fallback_service(
+            ServeDir::new(static_dir)
+                .append_index_html_on_directories(true)
+                .not_found_service(ServeFile::new(index_file))
+        )
         .layer(axum::extract::DefaultBodyLimit::max(1024 * 1024 * 50)) // 50MB limit
         .with_state(app_state);
 

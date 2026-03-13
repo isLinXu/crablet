@@ -483,7 +483,34 @@ Crablet supports a wide range of LLM backends through a unified `LlmClient` trai
 - **Docker** (optional — for Neo4j and sandbox execution)
 - **Git**
 
-### Option 1: Local Build
+### Option 1: One-Click Scripts (Recommended)
+
+```bash
+# 1. Clone
+git clone https://github.com/isLinXu/crablet.git
+cd crablet
+
+# 2. Configure model settings anytime
+./settings.sh
+# Optional: non-interactive or skip model connectivity check
+./settings.sh --non-interactive
+./settings.sh --skip-verify
+
+# 3. Install and start in one command
+./one-click.sh
+```
+
+Useful flags:
+
+```bash
+# Skip install, start services only
+./one-click.sh --start-only
+
+# Non-interactive mode (CI/CD-friendly)
+./one-click.sh --non-interactive
+```
+
+### Option 2: Local Build
 
 ```bash
 # 1. Clone
@@ -515,7 +542,7 @@ export OPENAI_API_BASE=https://dashscope.aliyuncs.com/compatible-mode/v1
 > export RUSTC_WRAPPER=sccache
 > ```
 
-### Option 2: Docker Compose (Recommended for full stack)
+### Option 3: Docker Compose (Recommended for full stack)
 
 ```bash
 # Set your API key
@@ -528,7 +555,7 @@ docker-compose up -d
 open http://localhost:3000
 ```
 
-### Option 3: Docker Single Container
+### Option 4: Docker Single Container
 
 ```bash
 docker run -d \

@@ -484,7 +484,34 @@ Crablet 通过统一的 `LlmClient` trait 支持多种 LLM 后端：
 - **Docker**（可选——用于 Neo4j 和沙箱执行）
 - **Git**
 
-### 方式一：本地构建
+### 方式一：一键脚本（推荐）
+
+```bash
+# 1. 克隆仓库
+git clone https://github.com/isLinXu/crablet.git
+cd crablet
+
+# 2. 随时更新模型配置
+./settings.sh
+# 可选：非交互模式或跳过模型连通性校验
+./settings.sh --non-interactive
+./settings.sh --skip-verify
+
+# 3. 一键安装并启动
+./one-click.sh
+```
+
+常用参数：
+
+```bash
+# 跳过安装，仅启动服务
+./one-click.sh --start-only
+
+# 非交互模式（适合 CI/CD）
+./one-click.sh --non-interactive
+```
+
+### 方式二：本地构建
 
 ```bash
 # 1. 克隆仓库
@@ -516,7 +543,7 @@ export OPENAI_API_BASE=https://dashscope.aliyuncs.com/compatible-mode/v1
 > export RUSTC_WRAPPER=sccache
 > ```
 
-### 方式二：Docker Compose（推荐，完整技术栈）
+### 方式三：Docker Compose（推荐，完整技术栈）
 
 ```bash
 # 设置 API Key
@@ -529,7 +556,7 @@ docker-compose up -d
 open http://localhost:3000
 ```
 
-### 方式三：Docker 单容器
+### 方式四：Docker 单容器
 
 ```bash
 docker run -d \

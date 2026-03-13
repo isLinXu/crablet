@@ -23,6 +23,49 @@ export default defineConfig({
       }
     }
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes('node_modules')) {
+            return
+          }
+          if (
+            id.includes('@xyflow/react') ||
+            id.includes('dagre')
+          ) {
+            return 'flow-vendor'
+          }
+          if (
+            id.includes('react-markdown') ||
+            id.includes('react-virtuoso')
+          ) {
+            return 'chat-vendor'
+          }
+          if (
+            id.includes('react-router-dom') ||
+            id.includes('react-dom') ||
+            id.includes('react') ||
+            id.includes('zustand')
+          ) {
+            return 'react-core'
+          }
+          if (
+            id.includes('i18next') ||
+            id.includes('react-i18next')
+          ) {
+            return 'i18n-vendor'
+          }
+          if (id.includes('axios')) {
+            return 'http-vendor'
+          }
+          if (id.includes('lucide-react')) {
+            return 'icons-vendor'
+          }
+        },
+      },
+    },
+  },
   test: {
     globals: true,
     environment: 'jsdom',

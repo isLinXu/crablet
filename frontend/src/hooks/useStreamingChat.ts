@@ -57,6 +57,10 @@ export function useStreamingChat() {
     setSessionId,
   } = useChatStore();
   const resolveForPrompt = useModelStore((state) => state.resolveForPrompt);
+  const providers = useModelStore((state) => state.providers);
+
+  const isImagePrompt = (prompt: string) =>
+    /(draw|绘图|画图|生成图片|生成图像|海报|插画|text-to-image|image generation)/i.test(prompt);
 
   const sendMessage = useCallback(async (content: string, citations?: CitationItem[]) => {
     const activeSessionId = sessionId ?? `session-${Date.now()}`;
@@ -78,20 +82,34 @@ export function useStreamingChat() {
       const p = localStorage.getItem(LOCAL_STORAGE_KEYS.MODEL_PRIORITY);
       const priority = p === 'speed' || p === 'quality' || p === 'balanced' ? p : 'balanced';
       const resolved = resolveForPrompt(activeSessionId, content, priority);
+      const chatFallback = [...providers]
+        .filter((p) => p.enabled && (p.modelType === 'chat' || !p.modelType))
+        .sort((a, b) => a.priority - b.priority)[0];
+      const forceChat = resolved.modelType === 'image' && !isImagePrompt(content) && !!chatFallback;
+      const effective = forceChat ? {
+        providerId: chatFallback!.id,
+        vendor: chatFallback!.vendor,
+        model: chatFallback!.model,
+        modelType: 'chat' as const,
+        apiBaseUrl: chatFallback!.apiBaseUrl,
+        apiKey: chatFallback!.apiKey,
+        version: chatFallback!.version,
+        reason: 'forced-chat-for-text',
+      } : resolved;
       const payload = {
         message: content,
         session_id: activeSessionId,
         route: {
-          provider_id: resolved.providerId,
-          vendor: resolved.vendor,
-          model: resolved.model,
-          version: resolved.version,
-          reason: resolved.reason,
+          provider_id: effective.providerId,
+          vendor: effective.vendor,
+          model: effective.model,
+          version: effective.version,
+          reason: effective.reason,
           priority,
           question_type: 'general',
-          api_base_url: resolved.apiBaseUrl,
-          api_key: resolved.apiKey,
-          model_type: resolved.modelType,
+          api_base_url: effective.apiBaseUrl,
+          api_key: effective.apiKey,
+          model_type: effective.modelType,
         },
       };
       const baseUrl = getApiBaseUrl().replace(/\/+$/, '');
@@ -150,6 +168,7 @@ export function useStreamingChat() {
       const decoder = new TextDecoder('utf-8');
       let buffer = '';
       let full = '';
+      let receivedDone = false;
       while (true) {
         const { value, done } = await reader.read();
         if (done) break;
@@ -186,6 +205,8 @@ export function useStreamingChat() {
             }
           } else if (event.type === 'error') {
             throw new Error(event.content || '流式处理出错');
+          } else if (event.type === 'done') {
+            receivedDone = true;
           }
         }
       }
@@ -203,14 +224,18 @@ export function useStreamingChat() {
           }
         }
       }
-      if (full) updateLastMessage(full);
+      if (full) {
+        updateLastMessage(full);
+      } else if (receivedDone) {
+        updateLastMessage('模型未返回文本结果，请切换为聊天模型后重试。');
+      }
       setCurrentCognitiveLayer('system2');
     } catch (error: any) {
       updateLastMessage(error?.message || '流式发送失败，请稍后重试');
     } finally {
       setThinking(false);
     }
-  }, [addMessage, appendTrace, resolveForPrompt, sessionId, setCurrentCognitiveLayer, setSessionId, setThinking, updateLastMessage]);
+  }, [addMessage, appendTrace, providers, resolveForPrompt, sessionId, setCurrentCognitiveLayer, setSessionId, setThinking, updateLastMessage]);
 
   return { sendMessage };
 }
