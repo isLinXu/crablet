@@ -30,5 +30,12 @@ pub mod health;
 pub mod gateway;
 pub mod telemetry;
 pub mod protocols;
-#[cfg(test)]
 pub mod testing;
+
+// Auto-Working & RPA modules
+#[cfg(feature = "auto-working")]
+pub mod auto_working;
+#[cfg(feature = "auto-working")]
+pub mod rpa;
+#[cfg(feature = "auto-working")]
+pub mod connectors;

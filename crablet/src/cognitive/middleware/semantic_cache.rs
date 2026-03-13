@@ -23,15 +23,15 @@ impl CognitiveMiddleware for SemanticCacheMiddleware {
 
     async fn execute(
         &self,
-        input: &str,
+        _input: &str,
         _context: &mut Vec<Message>,
-        state: &MiddlewareState,
+        _state: &MiddlewareState,
     ) -> Result<Option<(String, Vec<TraceStep>)>> {
         #[cfg(feature = "knowledge")]
-        if let Some(vs) = &state.vector_store {
+        if let Some(vs) = &_state.vector_store {
             // Optimization: Search for top 3 results to increase hit chance if first is just below threshold
             // but semantically identical
-            let search_result: Result<Vec<(String, f32, serde_json::Value)>> = vs.search(input, 3).await;
+            let search_result: Result<Vec<(String, f32, serde_json::Value)>> = vs.search(_input, 3).await;
             if let Ok(results) = search_result {
                 for (_content, score, metadata) in results {
                     // Check if metadata indicates it's a cached Q&A pair

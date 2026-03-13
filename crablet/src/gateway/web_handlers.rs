@@ -5,6 +5,8 @@ use axum::{
 };
 #[cfg(feature = "knowledge")]
 use std::io::Write;
+#[cfg(feature = "knowledge")]
+use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::OnceLock;
 use std::collections::HashSet;
@@ -18,6 +20,7 @@ use crate::cognitive::router::RouterConfig;
 use crate::cognitive::streaming_pipeline::{
     EmptyDeltaFilterMiddleware, FinalizeSummaryMiddleware, MetricsMiddleware, StreamChunk, StreamingPipeline,
 };
+use crate::cognitive::llm::{LlmClient, OpenAiClient};
 // use crate::agent::swarm::SwarmMessage;
 use crate::gateway::auth::ApiKeyInfo;
 use serde::{Deserialize, Serialize};
@@ -27,7 +30,6 @@ use tokio::process::Command;
 use regex::Regex;
 use crate::types::TraceStep;
 use crate::types::Message;
-use std::str::FromStr;
 #[cfg(feature = "knowledge")]
 use crate::knowledge::graph_rag::{GraphRAG, EntityExtractorMode};
 
@@ -117,6 +119,54 @@ fn load_markdown_file(filename: &str) -> Option<String> {
     }
 }
 
+fn env_value_from_file(key: &str) -> Option<String> {
+    let content = fs::read_to_string(".env").ok()?;
+    for line in content.lines() {
+        if let Some((k, v)) = line.split_once('=') {
+            if k.trim() == key {
+                let value = v.trim().to_string();
+                if !value.is_empty() {
+                    return Some(value);
+                }
+            }
+        }
+    }
+    None
+}
+
+fn llm_from_route(route: Option<&RouteSelection>) -> Option<Arc<Box<dyn LlmClient>>> {
+    let base_url = route
+        .and_then(|r| r.api_base_url.as_ref().map(|v| v.trim().to_string()))
+        .filter(|v| !v.is_empty())
+        .or_else(|| env_value_from_file("OPENAI_API_BASE"))?;
+    let api_key = route
+        .and_then(|r| r.api_key.as_ref().map(|v| v.trim().to_string()))
+        .filter(|v| !v.is_empty())
+        .or_else(|| env_value_from_file("DASHSCOPE_API_KEY"))
+        .or_else(|| env_value_from_file("OPENAI_API_KEY"))?;
+    if base_url.is_empty() || api_key.is_empty() {
+        return None;
+    }
+    let model = route
+        .and_then(|r| r.model.as_ref().map(|v| v.trim().to_string()))
+        .filter(|v| !v.is_empty())
+        .or_else(|| env_value_from_file("OPENAI_MODEL_NAME"))
+        .unwrap_or_else(|| "qwen-plus".to_string());
+    if model.is_empty() {
+        return None;
+    }
+    let client = OpenAiClient {
+        api_key,
+        base_url: base_url.trim_end_matches('/').to_string(),
+        model,
+        client: reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(120))
+            .build()
+            .ok()?,
+    };
+    Some(Arc::new(Box::new(client)))
+}
+
 fn system_prompt_markdown() -> String {
     static CONTENT: OnceLock<String> = OnceLock::new();
     CONTENT
@@ -156,8 +206,10 @@ fn with_identity_persona_input(message: &str) -> String {
 
 async fn prepare_stream_rag(gateway: &Arc<CrabletGateway>, input: &str) -> Option<StreamRagPreparation> {
     let mut rag_context = String::new();
+    #[allow(unused_mut)]
     let mut refs: Vec<serde_json::Value> = Vec::new();
     let mut graph_entities: Vec<String> = Vec::new();
+    #[allow(unused_mut)]
     let mut retrieval = "none".to_string();
 
     if let Some(kg) = &gateway.router.sys2.kg {
@@ -470,6 +522,25 @@ pub async fn chat_handler(
 ) -> Json<serde_json::Value> {
     let session_id = payload.session_id.clone().unwrap_or_else(|| "default".to_string());
     let input = with_identity_persona_input(&payload.message);
+    if let Some(llm) = llm_from_route(payload.route.as_ref()) {
+        let mut messages = Vec::new();
+        let system_context = system_prompt_markdown();
+        if !system_context.is_empty() {
+            messages.push(Message::system(system_context));
+        }
+        messages.push(Message::user(payload.message.clone()));
+        return match llm.chat_complete(&messages).await {
+            Ok(response) => Json(serde_json::json!({
+                "response": response,
+                "traces": [],
+                "cognitive_layer": "system2",
+                "session_id": session_id
+            })),
+            Err(e) => Json(serde_json::json!({
+                "error": e.to_string()
+            })),
+        };
+    }
     
     // Note: We skip WebSocket session creation for REST calls.
     // gateway.session.create_session(session_id.clone(), ...);
@@ -498,7 +569,7 @@ pub async fn chat_stream(
     let session_id_for_event = session_id.clone();
     let message = payload.message.clone();
     let enhanced_input = with_identity_persona_input(&message);
-    let llm = gateway.router.sys2.llm.clone();
+    let llm = llm_from_route(payload.route.as_ref()).unwrap_or_else(|| gateway.router.sys2.llm.clone());
     let gateway_for_stream = gateway.clone();
     let pipeline = StreamingPipeline::new(vec![
         Arc::new(EmptyDeltaFilterMiddleware),
@@ -1058,6 +1129,7 @@ pub async fn get_mcp_overview(
 pub async fn list_documents(
     State(gateway): State<Arc<CrabletGateway>>,
 ) -> Json<serde_json::Value> {
+    let _ = gateway;
     #[cfg(feature = "knowledge")]
     if let Some(ingestion) = &gateway.ingestion {
         if let Ok(docs) = ingestion.list_documents().await {
@@ -1136,6 +1208,8 @@ pub async fn upload_knowledge(
     State(gateway): State<Arc<CrabletGateway>>,
     multipart: Multipart,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
+    let _ = gateway;
+    let _ = multipart;
     let allowed = [
         "pdf", "doc", "docx", "txt", "md", "csv", "xls", "xlsx",
         "jpg", "jpeg", "png", "gif", "svg", "webp",
@@ -1143,6 +1217,8 @@ pub async fn upload_knowledge(
         "mp4", "avi", "mov", "mkv",
     ];
     let max_size: usize = 300 * 1024 * 1024;
+    let _ = allowed;
+    let _ = max_size;
     #[cfg(feature = "knowledge")]
     if let Some(ingestion) = &gateway.ingestion {
         let mut multipart = multipart;

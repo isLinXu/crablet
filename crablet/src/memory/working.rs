@@ -13,12 +13,12 @@ static BPE: OnceLock<tiktoken_rs::CoreBPE> = OnceLock::new();
 
 #[derive(Clone)]
 pub struct WorkingMemory {
-    capacity_messages: usize, // Soft limit on message count
-    max_tokens: usize,        // Hard limit on tokens (e.g., 4000, 8000)
-    history: VecDeque<Message>,
+    pub capacity_messages: usize, // Soft limit on message count
+    pub max_tokens: usize,        // Hard limit on tokens (e.g., 4000, 8000)
+    pub history: VecDeque<Message>,
     pub last_accessed: Instant,
     #[cfg(feature = "knowledge")]
-    consolidator: Option<Arc<MemoryConsolidator>>,
+    pub consolidator: Option<Arc<MemoryConsolidator>>,
 }
 
 impl WorkingMemory {
@@ -51,13 +51,13 @@ impl WorkingMemory {
         self.compress_context();
     }
     
-    fn count_tokens(&self, text: &str) -> usize {
+    pub fn count_tokens(&self, text: &str) -> usize {
         BPE.get_or_init(|| cl100k_base().expect("Failed to init tokenizer"))
             .encode_with_special_tokens(text)
             .len()
     }
     
-    fn estimate_message_tokens(&self, msg: &Message) -> usize {
+    pub fn estimate_message_tokens(&self, msg: &Message) -> usize {
         // Simple estimation including role overhead
         let content_str = msg.content.as_ref().map(|parts| {
              parts.iter().map(|p| match p {

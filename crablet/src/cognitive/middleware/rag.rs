@@ -18,7 +18,9 @@ impl CognitiveMiddleware for RagMiddleware {
 
     async fn execute(&self, input: &str, context: &mut Vec<Message>, state: &MiddlewareState) -> Result<Option<(String, Vec<TraceStep>)>> {
         let mut rag_context = String::new();
+        #[allow(unused_mut)]
         let mut retrieval = "none".to_string();
+        #[allow(unused_mut)]
         let mut refs: Vec<RagTraceItem> = Vec::new();
         let mut graph_entities: Vec<String> = Vec::new();
         

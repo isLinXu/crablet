@@ -484,8 +484,8 @@ mod tests {
         manager.save_message_atomic("s2", "user", "msg2").await.unwrap();
         tokio::time::sleep(Duration::from_millis(50)).await;
         
-        // Access s1 to make it recent
-        let _ = manager.get_or_create_working_memory("s1", None).await;
+        // Access s1 to make it recent in LRU order
+        let _ = manager.working_store.get("s1");
         tokio::time::sleep(Duration::from_millis(50)).await;
 
         // Add s3 -> s2 should be evicted (oldest accessed)

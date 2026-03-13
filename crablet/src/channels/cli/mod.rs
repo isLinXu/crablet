@@ -80,6 +80,22 @@ pub async fn run(config: Config) -> Result<()> {
         Some(Commands::Analyze { path, goal }) => {
             handlers::analyze::handle_analyze(&router, path.clone(), goal.clone()).await
         }
+        #[cfg(feature = "auto-working")]
+        Some(Commands::Task { subcmd }) => {
+            handlers::task::handle_task(subcmd).await
+        }
+        #[cfg(feature = "auto-working")]
+        Some(Commands::Workflow { subcmd }) => {
+            handlers::workflow::handle_workflow(subcmd).await
+        }
+        #[cfg(feature = "auto-working")]
+        Some(Commands::Connector { subcmd }) => {
+            handlers::connector::handle_connector(subcmd).await
+        }
+        #[cfg(feature = "auto-working")]
+        Some(Commands::Rpa { subcmd }) => {
+            handlers::rpa::handle_rpa(subcmd).await
+        }
         None => {
             use clap::CommandFactory;
             Cli::command().print_help()?;

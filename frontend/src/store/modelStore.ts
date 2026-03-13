@@ -94,6 +94,14 @@ const pickFallback = (providers: ModelProvider[]) =>
     .filter((p) => p.enabled)
     .sort((a, b) => a.priority - b.priority)[0];
 
+const preferProviderWithKey = (candidate: ModelProvider, providers: ModelProvider[]) => {
+  if (candidate.apiKey?.trim()) return candidate;
+  const withKey = [...providers]
+    .filter((p) => p.enabled && !!p.apiKey?.trim())
+    .sort((a, b) => a.priority - b.priority)[0];
+  return withKey || candidate;
+};
+
 export const useModelStore = create<ModelState>()(
   persist(
     (set, get) => ({
@@ -139,14 +147,15 @@ export const useModelStore = create<ModelState>()(
         const manual = sessionManualProvider[sessionId];
         if (manual) {
           const selected = providers.find((p: ModelProvider) => p.id === manual && p.enabled) || fallback;
+          const effective = preferProviderWithKey(selected, enabled);
           return {
-            providerId: selected.id,
-            vendor: selected.vendor,
-            model: selected.model,
-            modelType: inferModelType(selected),
-            apiBaseUrl: selected.apiBaseUrl,
-            apiKey: selected.apiKey,
-            version: selected.version,
+            providerId: effective.id,
+            vendor: effective.vendor,
+            model: effective.model,
+            modelType: inferModelType(effective),
+            apiBaseUrl: effective.apiBaseUrl,
+            apiKey: effective.apiKey,
+            version: effective.version,
             reason: 'manual-selection',
           };
         }
@@ -162,14 +171,15 @@ export const useModelStore = create<ModelState>()(
         if (q === 'analysis') selected = byVendor('Anthropic') || fallback;
         if (priority === 'speed') selected = [...enabled].sort((a, b) => a.priority - b.priority)[0] || selected;
         if (priority === 'quality') selected = [...enabled].sort((a, b) => b.priority - a.priority)[0] || selected;
+        const effective = preferProviderWithKey(selected, enabled);
         return {
-          providerId: selected.id,
-          vendor: selected.vendor,
-          model: selected.model,
-          modelType: inferModelType(selected),
-          apiBaseUrl: selected.apiBaseUrl,
-          apiKey: selected.apiKey,
-          version: selected.version,
+          providerId: effective.id,
+          vendor: effective.vendor,
+          model: effective.model,
+          modelType: inferModelType(effective),
+          apiBaseUrl: effective.apiBaseUrl,
+          apiKey: effective.apiKey,
+          version: effective.version,
           reason: `auto-${q}-${priority}`,
         };
       },

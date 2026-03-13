@@ -285,21 +285,21 @@ impl Plugin for ArchivalMemorySearchPlugin {
     }
 
     async fn execute(&self, _command: &str, args: Value) -> Result<String> {
-        let query = args.get("query")
+        let _query = args.get("query")
             .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow!("Missing 'query' parameter"))?;
 
-        let count = args.get("count")
+        let _count = args.get("count")
             .and_then(|v| v.as_u64())
             .unwrap_or(5) as usize;
 
         #[cfg(feature = "knowledge")]
         {
             if let Some(ref vs) = self.vector_store {
-                match vs.search(query, count).await {
+                match vs.search(_query, _count).await {
                     Ok(results) => {
                         if results.is_empty() {
-                            Ok(format!("No archival memories found matching '{}'", query))
+                            Ok(format!("No archival memories found matching '{}'", _query))
                         } else {
                             let formatted: Vec<String> = results.iter()
                                 .enumerate()
@@ -311,7 +311,7 @@ impl Plugin for ArchivalMemorySearchPlugin {
                             Ok(format!(
                                 "Found {} archival memories matching '{}':\n{}",
                                 results.len(),
-                                query,
+                                _query,
                                 formatted.join("\n")
                             ))
                         }
@@ -375,16 +375,16 @@ impl Plugin for ArchivalMemoryInsertPlugin {
     }
 
     async fn execute(&self, _command: &str, args: Value) -> Result<String> {
-        let content = args.get("content")
+        let _content = args.get("content")
             .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow!("Missing 'content' parameter"))?;
 
-        let importance = args.get("importance")
-            .and_then(|v| v.as_f64())
-            .unwrap_or(1.0) as f32;
-
         #[cfg(feature = "knowledge")]
         {
+            let importance = args.get("importance")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(1.0) as f32;
+
             if let Some(ref vs) = self.vector_store {
                 let metadata = json!({
                     "type": "user_inserted",
@@ -392,11 +392,11 @@ impl Plugin for ArchivalMemoryInsertPlugin {
                     "timestamp": chrono::Utc::now().to_rfc3339(),
                 });
 
-                match vs.add_document(content, Some(metadata)).await {
+                match vs.add_document(_content, Some(metadata)).await {
                     Ok(_) => {
                         info!("Inserted new archival memory");
                         Ok(format!("Successfully inserted memory into archival storage: '{}'", 
-                            if content.len() > 100 { &content[..100] } else { content }))
+                            if _content.len() > 100 { &_content[..100] } else { _content }))
                     }
                     Err(e) => {
                         warn!("Failed to insert archival memory: {}", e);

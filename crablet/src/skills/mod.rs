@@ -27,6 +27,25 @@ pub use orchestrator::{SkillOrchestrator, OrchestratorConfig, ExecutionRequest, 
 pub use visualization::{GraphExporter, GraphFormat};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SkillParameter {
+    pub name: String,
+    pub description: String,
+    pub param_type: String,
+    pub required: bool,
+    pub default: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SkillDefinition {
+    pub name: String,
+    pub description: String,
+    pub parameters: Vec<SkillParameter>,
+    pub handler: String,
+    pub examples: Vec<String>,
+    pub metadata: serde_json::Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SkillManifest {
     pub name: String,
     pub description: String,

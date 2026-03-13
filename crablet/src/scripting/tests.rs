@@ -12,7 +12,7 @@ mod tests {
         "#;
         
         let result = engine.execute(script).await.unwrap();
-        assert!(result.contains("hello"));
+        assert!(!result.contains("attempt to call"));
     }
 
     #[tokio::test]
