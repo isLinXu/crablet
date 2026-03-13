@@ -248,10 +248,10 @@ impl CognitiveRouter {
         self
     }
 
-    pub async fn consolidate_memory(&self, session_id: &str) -> Result<()> {
+    pub async fn consolidate_memory(&self, _session_id: &str) -> Result<()> {
         #[cfg(feature = "knowledge")]
         if let Some(mem) = &self.memory_mgr.episodic {
-            self.sys2.consolidate_memory(mem, session_id).await?;
+            self.sys2.consolidate_memory(mem, _session_id).await?;
         }
         Ok(())
     }

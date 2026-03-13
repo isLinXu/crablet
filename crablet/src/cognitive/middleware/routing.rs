@@ -60,12 +60,12 @@ impl CognitiveMiddleware for RoutingMiddleware {
         "Intent Routing"
     }
 
-    async fn execute(&self, input: &str, context: &mut Vec<Message>, state: &MiddlewareState) -> Result<Option<(String, Vec<TraceStep>)>> {
+    async fn execute(&self, input: &str, context: &mut Vec<Message>, _state: &MiddlewareState) -> Result<Option<(String, Vec<TraceStep>)>> {
         let mut intent = Intent::General; // Default
         
         // 1. Try Semantic Classification (Zero-Shot) if VectorStore is available
         #[cfg(feature = "knowledge")]
-        if let Some(vs) = &state.vector_store {
+        if let Some(vs) = &_state.vector_store {
             if let Some(protos) = self.get_prototypes(vs).await {
                 if let Ok(query_emb) = vs.embed_query(input).await {
                     let mut max_score = -1.0;

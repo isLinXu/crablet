@@ -405,8 +405,9 @@ mod tests {
     fn test_core_memory_append() {
         let mut core = CoreMemory::default();
         
-        let added = core.append(CoreMemoryBlock::Persona, "I am a helpful assistant.").unwrap();
-        assert_eq!(added, 24);
+        let text = "I am a helpful assistant.";
+        let added = core.append(CoreMemoryBlock::Persona, text).unwrap();
+        assert_eq!(added, text.chars().count());
         assert_eq!(core.persona, "I am a helpful assistant.");
         
         core.append(CoreMemoryBlock::Persona, "I like to be concise.").unwrap();

@@ -42,6 +42,7 @@ use crate::cognitive::tot::{TreeOfThoughts, TotConfig, SearchStrategy};
 use crate::cognitive::mcts_tot::{MCTSTreeOfThoughts, MCTSConfig};
 use crate::events::AgentEvent;
 use serde::Serialize;
+#[cfg(feature = "knowledge")]
 use std::str::FromStr;
 #[cfg(feature = "knowledge")]
 use crate::knowledge::graph_rag::EntityExtractorMode;
@@ -364,20 +365,20 @@ impl System2 {
         }
     }
 
-    pub async fn consolidate_memory(&self, memory: &EpisodicMemory, session_id: &str) -> Result<()> {
+    pub async fn consolidate_memory(&self, _memory: &EpisodicMemory, _session_id: &str) -> Result<()> {
         #[cfg(feature = "knowledge")]
         {
             if let Some(consolidator) = &self.consolidator {
-                 consolidator.consolidate(memory, session_id).await?;
+                 consolidator.consolidate(_memory, _session_id).await?;
             }
         }
         Ok(())
     }
 
-    pub fn start_consolidation_loop(&self, memory: Arc<EpisodicMemory>) {
+    pub fn start_consolidation_loop(&self, _memory: Arc<EpisodicMemory>) {
         #[cfg(feature = "knowledge")]
         if let Some(consolidator) = &self.consolidator {
-            consolidator.clone().start_background_loop(memory);
+            consolidator.clone().start_background_loop(_memory);
         }
     }
 

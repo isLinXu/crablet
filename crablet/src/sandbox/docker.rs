@@ -6,15 +6,15 @@ use tracing::{info, warn};
 /// 提供完全隔离的执行环境
 pub struct DockerExecutor {
     /// 容器内存限制 (MB)
-    memory_limit: usize,
+    pub memory_limit: usize,
     /// CPU 限制 (核心数)
-    cpu_limit: f32,
+    pub cpu_limit: f32,
     /// 网络访问权限
-    network_enabled: bool,
+    pub network_enabled: bool,
     /// 工作目录挂载
-    work_dir: Option<String>,
+    pub work_dir: Option<String>,
     /// 超时时间 (秒)
-    timeout_secs: u64,
+    pub timeout_secs: u64,
 }
 
 impl DockerExecutor {

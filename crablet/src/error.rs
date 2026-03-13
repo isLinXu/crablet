@@ -32,6 +32,9 @@ pub enum CrabletError {
     #[error("Network error: {0}")]
     Network(String),
 
+    #[error("RPA error: {0}")]
+    RpaError(String),
+
     #[error("IO error: {0}")]
     IO(#[from] std::io::Error),
 
@@ -52,6 +55,9 @@ pub enum CrabletError {
 
     #[error("Watcher error: {0}")]
     Watcher(#[from] notify::Error),
+
+    #[error("Parse error: {0}")]
+    Parse(#[from] chrono::ParseError),
 
     #[error("Search error: {0}")]
     SearchError(String),

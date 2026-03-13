@@ -4,11 +4,12 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-default = ["qdrant-support", "web"]
+default = ["qdrant-support", "web", "auto-working"]
 inference = ["dep:ort"]
 browser = ["dep:chromiumoxide"]
+auto-working = ["dep:cron", "dep:enigo", "dep:lettre", "dep:imap"]
 discord = ["dep:serenity"]
-full = ["knowledge", "audio", "vision", "web", "scripting", "telemetry", "sandbox", "telegram", "browser", "discord"]
+full = ["knowledge", "audio", "vision", "web", "scripting", "telemetry", "sandbox", "telegram", "browser", "discord", "auto-working"]
 telegram = ["dep:teloxide"]
 knowledge = ["dep:fastembed", "dep:pdf-extract", "dep:neo4rs", "qdrant-support"]
 # knowledge = ["dep:fastembed", "dep:pdf-extract", "dep:neo4rs"] # Qdrant disabled for now due to dep issues
@@ -79,6 +80,11 @@ strsim = "0.10.0" # For Levenshtein distance
 ort = { version = "2.0.0-rc.9", optional = true } # Modern ONNX Runtime wrapper (replaces onnxruntime)
 chromiumoxide = { version = "0.5", features = ["tokio-runtime"], optional = true }
 serenity = { version = "0.12", default-features = false, features = ["client", "gateway", "rustls_backend", "model"], optional = true }
+cron = { version = "0.12", optional = true }
+enigo = { version = "0.2", optional = true }
+lettre = { version = "0.11", optional = true }
+imap = { version = "3.0.0-alpha.15", optional = true }
+data-encoding = "2.4"
 colored = "3.1.1"
 scraper = "0.25.0"
 evalexpr = "11.0"
@@ -109,3 +115,8 @@ semver = "1.0"
 tokio-test = "0.4.4"
 tempfile = "3.10"
 proptest = "1.4"
+criterion = { version = "0.5", features = ["async_tokio"] }
+
+[[bench]]
+name = "main"
+harness = false

@@ -19,3 +19,11 @@ pub mod research;
 pub mod debug;
 pub mod audit;
 pub mod analyze;
+#[cfg(feature = "auto-working")]
+pub mod task;
+#[cfg(feature = "auto-working")]
+pub mod workflow;
+#[cfg(feature = "auto-working")]
+pub mod connector;
+#[cfg(feature = "auto-working")]
+pub mod rpa;

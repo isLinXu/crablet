@@ -14,12 +14,12 @@ async fn test_ttl_cleanup_with_fast_interval() {
     );
     
     manager.save_message("session1", "user", "hello").await;
-    assert_eq!(manager.working_memories.len(), 1);
+    assert_eq!(manager.working_store.len(), 1);
     
     // Wait for TTL + Interval
     sleep(Duration::from_millis(100)).await;
     
-    assert_eq!(manager.working_memories.len(), 0, "Expired sessions should be cleaned");
+    assert_eq!(manager.working_store.len(), 0, "Expired sessions should be cleaned");
 }
 
 #[tokio::test]
@@ -34,7 +34,7 @@ async fn test_lru_eviction_deterministic() {
     sleep(Duration::from_millis(10)).await;
     
     // Access oldest to make it recent
-    let _ = manager.get_context("oldest");
+    let _ = manager.get_context("oldest").await;
     sleep(Duration::from_millis(10)).await;
     
     // Trigger eviction by accessing/creating "newest"
@@ -42,10 +42,10 @@ async fn test_lru_eviction_deterministic() {
     // save_message will trigger eviction logic.
     manager.save_message("newest", "user", "3").await;
     
-    assert_eq!(manager.working_memories.len(), 2);
-    assert!(manager.working_memories.contains_key("newest"));
-    assert!(manager.working_memories.contains_key("oldest")); // oldest accessed recently
-    assert!(!manager.working_memories.contains_key("middle")); // middle evicted
+    assert_eq!(manager.working_store.len(), 2);
+    assert!(manager.working_store.contains_key("newest"));
+    assert!(manager.working_store.contains_key("oldest")); // oldest accessed recently
+    assert!(!manager.working_store.contains_key("middle")); // middle evicted
 }
 
 proptest! {
@@ -78,9 +78,9 @@ proptest! {
             for i in 0..session_count {
                 let session_id = format!("session-{}", i);
                 manager.save_message(&session_id, "user", "hello").await;
-                assert!(manager.working_memories.len() <= max_entries,
+                assert!(manager.working_store.len() <= max_entries,
                     "Memory entries {} exceeded max {}", 
-                    manager.working_memories.len(), max_entries);
+                    manager.working_store.len(), max_entries);
             }
         });
     }

@@ -39,6 +39,7 @@ pub async fn handle_run(lane_router: &LaneRouter, prompt: &str, session: Option<
 }
 
 async fn start_chat_loop(lane_router: &LaneRouter, router: &CognitiveRouter, session_id: &str) -> Result<()> {
+    let _ = router; // Silence if unused
     let mut input = String::new();
     let stdin = io::stdin(); // Create stdin handle outside loop
 

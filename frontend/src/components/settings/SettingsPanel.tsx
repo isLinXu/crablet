@@ -115,7 +115,7 @@ export const SettingsPanel: React.FC = () => {
     setDraftProviders(providers);
   }, [providers]);
 
-  const handleSaveApiSettings = () => {
+  const handleSaveApiSettings = async () => {
     let normalizedUrl = apiBaseUrl.trim();
     if (!normalizedUrl) {
       toast.error('API URL 不能为空');
@@ -172,7 +172,56 @@ export const SettingsPanel: React.FC = () => {
       localStorage.removeItem(LOCAL_STORAGE_KEYS.AUTH_TOKEN);
     }
     if (providerMode) {
-      toast(`已切换到${providerMode}厂商模式，可直接测试连接并同步模型`);
+      const defaultModelByVendor: Record<string, string> = {
+        OpenAI: 'gpt-4o-mini',
+        Anthropic: 'claude-3-5-sonnet',
+        Google: 'gemini-1.5-pro',
+        Aliyun: 'qwen-plus',
+        Tencent: 'hunyuan-pro',
+        ByteDance: 'doubao-pro-32k',
+      };
+      const model = defaultModelByVendor[providerMode] || 'qwen-plus';
+      upsertProvider({
+        id: `${providerMode.toLowerCase()}-${model.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
+        vendor: providerMode,
+        model,
+        modelType: /image|画|绘图|图像|文生图|doubao-image|qwen-image/i.test(model) ? 'image' : 'chat',
+        version: 'latest',
+        apiBaseUrl: normalizedUrl,
+        apiKey: apiKeyValue,
+        enabled: true,
+        priority: 0,
+      });
+      const sameVendor = providers.filter((p) => p.vendor.toLowerCase() === providerMode.toLowerCase());
+      sameVendor.forEach((p) => {
+        upsertProvider({
+          ...p,
+          apiBaseUrl: normalizedUrl,
+          apiKey: apiKeyValue,
+          enabled: true,
+        });
+      });
+      setDraftProviders((prev) =>
+        prev.map((p) =>
+          p.vendor.toLowerCase() === providerMode.toLowerCase()
+            ? { ...p, apiBaseUrl: normalizedUrl, apiKey: apiKeyValue, enabled: true }
+            : p
+        )
+      );
+      if (apiKeyValue) {
+        try {
+          const newConfig = {
+            openai_api_key: apiKeyValue,
+            openai_api_base: normalizedUrl,
+            openai_model_name: model,
+          };
+          await settingsService.updateSystemConfig(newConfig);
+          setSystemConfig((prev) => ({ ...prev, ...newConfig }));
+        } catch {
+          toast.error('已保存前端设置，但同步后端 .env 失败');
+        }
+      }
+      toast(`已切换到${providerMode}厂商模式，配置已同步到模型路由与后端.env`);
     }
     toast.success(`API 设置已保存并生效：${normalizedUrl}`);
   };
