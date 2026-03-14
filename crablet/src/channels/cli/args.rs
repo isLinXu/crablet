@@ -389,23 +389,140 @@ pub enum SkillSubcommands {
         name_or_url: String,
         /// Optional name override
         name: Option<String>,
+        /// Interactive mode with guided setup
+        #[arg(short, long)]
+        interactive: bool,
+        /// Skip signature verification
+        #[arg(long)]
+        skip_verify: bool,
+        /// Force reinstall if already exists
+        #[arg(short, long)]
+        force: bool,
+        /// Use isolated environment
+        #[arg(long)]
+        isolated: bool,
     },
     /// Uninstall a skill
     Uninstall {
         /// Name of the skill to uninstall
         name: String,
+        /// Force uninstall without confirmation
+        #[arg(short, long)]
+        force: bool,
     },
     /// Search for skills in the registry
     Search {
         /// Query string
         query: String,
+        /// Filter by category
+        #[arg(short, long)]
+        category: Option<String>,
+        /// Maximum results
+        #[arg(short, long, default_value = "10")]
+        limit: usize,
+        /// Semantic search (natural language)
+        #[arg(short, long)]
+        semantic: bool,
     },
     /// List installed skills
-    List,
+    List {
+        /// Show detailed information
+        #[arg(short, long)]
+        detailed: bool,
+        /// Show update status
+        #[arg(short, long)]
+        updates: bool,
+    },
     /// Import skill from ClawHub URL
     Import {
         /// ClawHub skill URL
         url: String,
+    },
+    /// Check for skill updates
+    Update {
+        /// Skill name (if not provided, checks all)
+        name: Option<String>,
+        /// List available updates without installing
+        #[arg(short, long)]
+        list: bool,
+        /// Apply all updates automatically
+        #[arg(short, long)]
+        all: bool,
+    },
+    /// Show skill information
+    Info {
+        /// Skill name
+        name: String,
+        /// Show full documentation
+        #[arg(short, long)]
+        docs: bool,
+    },
+    /// Interactive skill installation wizard
+    Wizard,
+    /// Developer tools for skill development
+    Dev {
+        #[command(subcommand)]
+        subcmd: SkillDevSubcommands,
+    },
+}
+
+#[derive(Subcommand, Clone)]
+pub enum SkillDevSubcommands {
+    /// Initialize a new skill project
+    Init {
+        /// Skill name
+        name: String,
+        /// Skill type
+        #[arg(short, long, default_value = "openclaw")]
+        skill_type: String,
+        /// Project directory (default: skill name)
+        #[arg(short, long)]
+        path: Option<std::path::PathBuf>,
+    },
+    /// Validate skill project
+    Validate {
+        /// Project path (default: current directory)
+        #[arg(short, long)]
+        path: Option<std::path::PathBuf>,
+    },
+    /// Run tests for skill
+    Test {
+        /// Project path (default: current directory)
+        #[arg(short, long)]
+        path: Option<std::path::PathBuf>,
+        /// Test arguments
+        #[arg(short, long)]
+        args: Option<String>,
+    },
+    /// Build skill package
+    Build {
+        /// Project path (default: current directory)
+        #[arg(short, long)]
+        path: Option<std::path::PathBuf>,
+        /// Output directory
+        #[arg(short, long, default_value = "dist")]
+        output: std::path::PathBuf,
+    },
+    /// Publish skill to registry
+    Publish {
+        /// Project path (default: current directory)
+        #[arg(short, long)]
+        path: Option<std::path::PathBuf>,
+        /// Registry URL
+        #[arg(short, long)]
+        registry: Option<String>,
+        /// Dry run (don't actually publish)
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Generate documentation
+    Docs {
+        /// Project path (default: current directory)
+        #[arg(short, long)]
+        path: Option<std::path::PathBuf>,
+        /// Output directory
+        #[arg(short, long, default_value = "docs/generated")]
+        output: std::path::PathBuf,
     },
 }
 

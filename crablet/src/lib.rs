@@ -20,6 +20,8 @@ pub mod plugins;
 pub mod agent;
 pub mod error;
 pub mod sandbox;
+pub mod workflow;
+pub mod observability;
 
 pub mod heartbeat;
 pub mod background;

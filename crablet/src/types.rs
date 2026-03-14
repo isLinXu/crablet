@@ -97,6 +97,33 @@ impl Message {
         }
     }
 
+    pub fn assistant(content: impl Into<String>) -> Self {
+        Self {
+            role: "assistant".to_string(),
+            content: Some(vec![ContentPart::Text { text: content.into() }]),
+            tool_calls: None,
+            tool_call_id: None,
+        }
+    }
+
+    pub fn assistant_with_tool_calls(content: impl Into<String>, tool_calls: Vec<ToolCall>) -> Self {
+        Self {
+            role: "assistant".to_string(),
+            content: Some(vec![ContentPart::Text { text: content.into() }]),
+            tool_calls: Some(tool_calls),
+            tool_call_id: None,
+        }
+    }
+
+    pub fn tool_result(tool_call_id: impl Into<String>, content: impl Into<String>) -> Self {
+        Self {
+            role: "tool".to_string(),
+            content: Some(vec![ContentPart::Text { text: content.into() }]),
+            tool_calls: None,
+            tool_call_id: Some(tool_call_id.into()),
+        }
+    }
+
     pub fn text(&self) -> Option<String> {
         self.content.as_ref().map(|parts| {
             parts.iter().map(|p| match p {

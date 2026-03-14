@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { MessageSquare, Database, Terminal, Settings, Workflow, Menu, X, LayoutDashboard, Activity, Plug, Brain } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { MessageSquare, Database, Terminal, Settings, Workflow, Menu, X, LayoutDashboard, Activity, Plug, Brain, Eye } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
 import clsx from 'clsx';
 
@@ -7,8 +7,37 @@ type SidebarProps = {
   onRouteIntent?: (path: string) => void;
 };
 
+// 系统指标类型
+interface SystemMetrics {
+  vramUsage: number;
+  cpuUsage: number;
+  activeAgents: number;
+  status: 'online' | 'thinking' | 'offline';
+}
+
 export const Sidebar = ({ onRouteIntent }: SidebarProps) => {
   const [isOpen, setIsOpen] = useState(false);
+  const [metrics, setMetrics] = useState<SystemMetrics>({
+    vramUsage: 0,
+    cpuUsage: 0,
+    activeAgents: 0,
+    status: 'online'
+  });
+
+  // 模拟获取系统指标
+  useEffect(() => {
+    const updateMetrics = () => {
+      setMetrics({
+        vramUsage: Math.floor(Math.random() * 30) + 40, // 40-70%
+        cpuUsage: Math.floor(Math.random() * 20) + 10,  // 10-30%
+        activeAgents: Math.floor(Math.random() * 3) + 1, // 1-3
+        status: 'online'
+      });
+    };
+    updateMetrics();
+    const interval = setInterval(updateMetrics, 5000);
+    return () => clearInterval(interval);
+  }, []);
 
   const menuItems = [
     { path: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
@@ -19,8 +48,19 @@ export const Sidebar = ({ onRouteIntent }: SidebarProps) => {
     { path: '/mcp', icon: Plug, label: 'MCP' },
     { path: '/memory', icon: Brain, label: 'Memory' },
     { path: '/knowledge', icon: Database, label: 'Knowledge' },
+    { path: '/observability', icon: Eye, label: 'Observability' },
     { path: '/settings', icon: Settings, label: 'Settings' },
   ] as const;
+
+  // 呼吸灯颜色根据状态变化
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'online': return 'bg-emerald-500';
+      case 'thinking': return 'bg-amber-500';
+      case 'offline': return 'bg-rose-500';
+      default: return 'bg-zinc-500';
+    }
+  };
 
   return (
     <>
@@ -59,30 +99,88 @@ export const Sidebar = ({ onRouteIntent }: SidebarProps) => {
               onTouchStart={() => onRouteIntent?.(item.path)}
               onClick={() => setIsOpen(false)}
               className={({ isActive }) => clsx(
-                "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 group",
+                "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 group relative",
                 isActive 
-                  ? "bg-blue-600 text-white shadow-md shadow-blue-900/20" 
-                  : "text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100"
+                  ? "text-white" 
+                  : "text-zinc-400 hover:text-zinc-100"
               )}
             >
               {({ isActive }) => (
                 <>
-                  <item.icon className={clsx("w-5 h-5 transition-colors", isActive ? "text-white" : "text-zinc-500 group-hover:text-zinc-300")} />
-                  <span className="font-medium text-sm">{item.label}</span>
+                  {/* 侧边高亮条 */}
+                  <div className={clsx(
+                    "absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 rounded-r-full transition-all duration-200",
+                    isActive ? "bg-blue-500 opacity-100" : "bg-blue-500 opacity-0 group-hover:opacity-30"
+                  )} />
+                  <item.icon className={clsx(
+                    "w-5 h-5 transition-colors ml-1", 
+                    isActive ? "text-blue-400" : "text-zinc-500 group-hover:text-zinc-300"
+                  )} />
+                  <span className={clsx(
+                    "font-medium text-sm",
+                    isActive ? "text-zinc-100" : "text-zinc-400 group-hover:text-zinc-100"
+                  )}>{item.label}</span>
                 </>
               )}
             </NavLink>
           ))}
         </nav>
         
+        {/* 系统仪表盘 */}
         <div className="p-4 border-t border-zinc-800">
-          <div className="px-3 py-2 rounded-lg bg-zinc-950/50 border border-zinc-800/50">
-            <div className="flex items-center gap-2 mb-1">
-                <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
-                <span className="text-xs font-medium text-zinc-400">System Normal</span>
+          <div className="px-3 py-3 rounded-lg bg-zinc-950/50 border border-zinc-800/50 space-y-3">
+            {/* 状态指示器 */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className={clsx(
+                  "w-2 h-2 rounded-full animate-breathe",
+                  getStatusColor(metrics.status)
+                )}></div>
+                <span className="text-xs font-medium text-zinc-400">
+                  {metrics.status === 'online' ? 'System Normal' : 
+                   metrics.status === 'thinking' ? 'Thinking...' : 'Offline'}
+                </span>
+              </div>
+              <span className="text-[10px] text-zinc-600 font-mono">v0.2.0-beta</span>
             </div>
-            <div className="text-[10px] text-zinc-600 font-mono">
-                v0.2.0-beta
+            
+            {/* 指标网格 */}
+            <div className="grid grid-cols-3 gap-2">
+              <div className="text-center">
+                <div className="text-[10px] text-zinc-500 mb-0.5">VRAM</div>
+                <div className="text-xs font-semibold text-zinc-300">{metrics.vramUsage}%</div>
+                <div className="w-full h-1 bg-zinc-800 rounded-full mt-1 overflow-hidden">
+                  <div 
+                    className="h-full bg-blue-500 rounded-full transition-all duration-500"
+                    style={{ width: `${metrics.vramUsage}%` }}
+                  />
+                </div>
+              </div>
+              <div className="text-center">
+                <div className="text-[10px] text-zinc-500 mb-0.5">CPU</div>
+                <div className="text-xs font-semibold text-zinc-300">{metrics.cpuUsage}%</div>
+                <div className="w-full h-1 bg-zinc-800 rounded-full mt-1 overflow-hidden">
+                  <div 
+                    className="h-full bg-emerald-500 rounded-full transition-all duration-500"
+                    style={{ width: `${metrics.cpuUsage}%` }}
+                  />
+                </div>
+              </div>
+              <div className="text-center">
+                <div className="text-[10px] text-zinc-500 mb-0.5">Agents</div>
+                <div className="text-xs font-semibold text-zinc-300">{metrics.activeAgents}</div>
+                <div className="flex justify-center gap-0.5 mt-1">
+                  {Array.from({ length: 3 }).map((_, i) => (
+                    <div 
+                      key={i}
+                      className={clsx(
+                        "w-1.5 h-1.5 rounded-full",
+                        i < metrics.activeAgents ? "bg-amber-500" : "bg-zinc-700"
+                      )}
+                    />
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
         </div>

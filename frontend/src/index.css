@@ -3,3 +3,211 @@
 :root {
   font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
 }
+
+/* 呼吸灯动画 */
+@keyframes breathe {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scale(1.1);
+    box-shadow: 0 0 0 8px rgba(16, 185, 129, 0);
+  }
+}
+
+.animate-breathe {
+  animation: breathe 2s ease-in-out infinite;
+}
+
+/* 螃蟹爬行动画 */
+@keyframes crab-walk {
+  0%, 100% {
+    transform: translateX(0) rotate(0deg);
+  }
+  25% {
+    transform: translateX(2px) rotate(-2deg);
+  }
+  50% {
+    transform: translateX(0) rotate(0deg);
+  }
+  75% {
+    transform: translateX(-2px) rotate(2deg);
+  }
+}
+
+.animate-crab-walk {
+  animation: crab-walk 0.6s ease-in-out infinite;
+}
+
+/* 钳子摆动动画 */
+@keyframes claw-left {
+  0%, 100% {
+    transform: translateY(-50%) rotate(-10deg);
+  }
+  50% {
+    transform: translateY(-50%) rotate(10deg);
+  }
+}
+
+@keyframes claw-right {
+  0%, 100% {
+    transform: translateY(-50%) rotate(10deg);
+  }
+  50% {
+    transform: translateY(-50%) rotate(-10deg);
+  }
+}
+
+.animate-claw-left {
+  animation: claw-left 1s ease-in-out infinite;
+}
+
+.animate-claw-right {
+  animation: claw-right 1s ease-in-out infinite;
+}
+
+/* 腿部摆动动画 */
+@keyframes leg-wave {
+  0%, 100% {
+    transform: rotate(var(--rotation, 0deg)) scaleY(1);
+  }
+  50% {
+    transform: rotate(calc(var(--rotation, 0deg) + 10deg)) scaleY(0.8);
+  }
+}
+
+.animate-leg {
+  animation: leg-wave 0.4s ease-in-out infinite;
+}
+
+/* 气泡上浮动画 */
+@keyframes bubble-float {
+  0%, 100% {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: translateY(-5px) scale(1.05);
+    opacity: 0.9;
+  }
+}
+
+.animate-bubble {
+  animation: bubble-float 2s ease-in-out infinite;
+}
+
+/* 波浪动画 */
+@keyframes wave {
+  0%, 100% {
+    transform: translateX(0);
+  }
+  50% {
+    transform: translateX(5px);
+  }
+}
+
+.animate-wave {
+  animation: wave 2s ease-in-out infinite;
+}
+
+/* 闪烁渐变动画 */
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.animate-shimmer {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.1) 50%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 2s infinite;
+}
+
+/* 脉冲光环 */
+@keyframes pulse-ring {
+  0% {
+    transform: scale(0.8);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(2);
+    opacity: 0;
+  }
+}
+
+.animate-pulse-ring {
+  animation: pulse-ring 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* 自定义滚动条 */
+.scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(161 161 170) transparent;
+}
+
+.scrollbar-thin::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background-color: rgb(161 161 170);
+  border-radius: 3px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background-color: rgb(113 113 122);
+}
+
+/* 选中文字样式 */
+::selection {
+  background-color: rgba(59, 130, 246, 0.3);
+  color: inherit;
+}
+
+/* 焦点样式 */
+*:focus-visible {
+  outline: 2px solid rgba(59, 130, 246, 0.5);
+  outline-offset: 2px;
+}
+
+/* 平滑滚动 */
+html {
+  scroll-behavior: smooth;
+}
+
+/* 防止文本选择 */
+.no-select {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* 文字截断 */
+.line-clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.line-clamp-3 {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}

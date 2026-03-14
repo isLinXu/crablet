@@ -108,6 +108,7 @@ impl SkillRegistry {
             permissions: vec![],
             conflicts: vec![],
             min_crablet_version: None,
+            author: None,
         };
         self.skills.insert(plugin.name().to_string(), SkillType::Plugin(manifest, Arc::new(plugin)));
     }
@@ -127,6 +128,7 @@ impl SkillRegistry {
             permissions: vec![],
             conflicts: vec![],
             min_crablet_version: None,
+            author: None,
         };
         
         self.skills.insert(tool_name.clone(), SkillType::Mcp(manifest, client, tool_name));

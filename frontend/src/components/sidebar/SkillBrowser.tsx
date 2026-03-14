@@ -1,13 +1,17 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useApi } from '../../hooks/useApi';
-import type { BatchTestResult, RegistrySkillItem, SkillsShTopItem, Skill } from '@/types/domain';
+import type { BatchTestResult, RegistrySkillItem, SkillsShTopItem, Skill, SkillRunResult } from '@/types/domain';
 import { skillService } from '@/services/skillService';
 import { Card, CardHeader, CardTitle, CardContent } from '../ui/Card';
 import { Button } from '../ui/Button';
-import { Loader2, Terminal, CheckCircle, XCircle, Search, Download, PlayCircle, Wrench, Sparkles } from 'lucide-react';
+import { Loader2, Terminal, CheckCircle, XCircle, Search, Download, PlayCircle, Wrench, Sparkles, Brain, Clock, FileText } from 'lucide-react';
 import { EmptyState } from '../ui/EmptyState';
 import toast from 'react-hot-toast';
 import { Input } from '../ui/Input';
+import { SemanticSearch } from '../skills/SemanticSearch';
+import { SkillRunner, QuickRunButton } from '../skills/SkillRunner';
+import { SkillLogs, ViewLogsButton } from '../skills/SkillLogs';
+import { CreateSkillButton } from '../skills/SkillCreator';
 
 export const SkillBrowser: React.FC = () => {
   const fetchSkillsApi = useCallback(() => skillService.listSkills().then((data) => ({ data })), []);
@@ -32,6 +36,13 @@ export const SkillBrowser: React.FC = () => {
   const [bulkProgress, setBulkProgress] = useState({ done: 0, total: 0, success: 0, failed: 0 });
   const [bulkFailedItems, setBulkFailedItems] = useState<SkillsShTopItem[]>([]);
   const topPageSize = 20;
+
+  // 新增状态
+  const [activeTab, setActiveTab] = useState<'installed' | 'search' | 'semantic' | 'top'>('installed');
+  const [runningSkill, setRunningSkill] = useState<Skill | null>(null);
+  const [viewingLogsSkill, setViewingLogsSkill] = useState<Skill | null>(null);
+  const [viewingAllLogs, setViewingAllLogs] = useState(false);
+  const [runResults, setRunResults] = useState<Record<string, SkillRunResult>>({});
 
   useEffect(() => {
     fetchSkills().catch(() => {});
@@ -215,6 +226,10 @@ export const SkillBrowser: React.FC = () => {
     await installTopBatch(bulkFailedItems);
   };
 
+  const handleRunComplete = useCallback((result: SkillRunResult) => {
+    setRunResults((prev) => ({ ...prev, [result.skill_name]: result }));
+  }, []);
+
   return (
     <div className="h-full p-6 overflow-y-auto bg-gray-50 dark:bg-gray-900">
       <div className="flex justify-between items-center mb-4">
@@ -222,213 +237,324 @@ export const SkillBrowser: React.FC = () => {
             <Terminal className="w-6 h-6" />
             Skill Browser
         </h1>
-        <Button onClick={() => fetchSkills()} variant="secondary" size="sm">
+        <div className="flex items-center gap-2">
+          <CreateSkillButton onCreated={fetchSkills} />
+          <Button onClick={() => setViewingAllLogs(true)} variant="secondary" size="sm">
+            <Clock className="w-4 h-4 mr-1" />
+            日志
+          </Button>
+          <Button onClick={() => fetchSkills()} variant="secondary" size="sm">
             Refresh
-        </Button>
+          </Button>
+        </div>
       </div>
-      <div className="mb-6 grid grid-cols-1 lg:grid-cols-3 gap-3">
-        <Input
-          value={searchText}
-          onChange={(e) => setSearchText(e.target.value)}
-          placeholder="搜索已安装技能..."
-          className="lg:col-span-2"
-        />
-        <Button onClick={handleBatchTest} disabled={selectedSkills.length === 0} variant="primary">
-          <PlayCircle className="w-4 h-4 mr-2" />
-          批量测试({selectedSkills.length})
-        </Button>
-      </div>
-      <div className="mb-6 flex flex-wrap gap-2">
-        <Button onClick={() => handleQuickAction('create-skills', 'create skills')} variant="primary">
-          <Sparkles className="w-4 h-4 mr-2" />
-          创建Skills
-        </Button>
-        <Button onClick={() => handleQuickAction('find-skills', 'find skills')} variant="secondary">
-          <Search className="w-4 h-4 mr-2" />
-          查找Skills
-        </Button>
-      </div>
-      <Card className="mb-6">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-base flex items-center gap-2">
-            <Search className="w-4 h-4" />
-            技能市场搜索与安装
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="flex gap-2">
-            <Input
-              value={registryQuery}
-              onChange={(e) => setRegistryQuery(e.target.value)}
-              placeholder="输入关键字搜索技能市场"
-            />
-            <Button onClick={handleRegistrySearch} loading={searching}>
-              搜索
-            </Button>
-          </div>
-          <div className="flex gap-2">
-            <Input
-              value={installUrl}
-              onChange={(e) => setInstallUrl(e.target.value)}
-              placeholder="通过Git URL安装技能（https://...git）"
-            />
-            <Button onClick={handleInstallByUrl} variant="secondary">
-              <Download className="w-4 h-4 mr-2" />
-              导入安装
-            </Button>
-          </div>
-          {registryResults.length > 0 && (
-            <div className="space-y-2 max-h-56 overflow-y-auto">
-              {registryResults.map((item) => (
-                <div key={item.name} className="border rounded-md p-3 dark:border-gray-700 flex justify-between items-center gap-3">
-                  <div className="min-w-0">
-                    <div className="font-semibold truncate">{item.display_name || item.name}</div>
-                    <div className="text-xs text-gray-500 truncate">{item.description}</div>
-                  </div>
-                  <Button size="sm" onClick={() => handleInstall(item)}>
-                    安装
-                  </Button>
-                </div>
-              ))}
-            </div>
-          )}
-          {registryResults.length > 0 && (
-            <div className="text-xs text-gray-500">搜索来源：{searchSource || 'unknown'}</div>
-          )}
-        </CardContent>
-      </Card>
-      <Card className="mb-6">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-base flex items-center justify-between">
-            <span>Skills.sh Top 100</span>
-            <div className="flex gap-2">
-              <Button size="sm" variant={topSort === 'installs' ? 'primary' : 'secondary'} onClick={() => setTopSort('installs')}>
-                按安装量
-              </Button>
-              <Button size="sm" variant={topSort === 'name' ? 'primary' : 'secondary'} onClick={() => setTopSort('name')}>
-                按名称
-              </Button>
-            </div>
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="mb-3 flex flex-wrap items-center gap-2">
-            <Input
-              value={String(bulkCount)}
-              onChange={(e) => setBulkCount(Number.isNaN(Number(e.target.value)) ? 10 : Number(e.target.value))}
-              className="w-24"
-              placeholder="10"
-            />
-            <Button onClick={handleBulkImportTop} disabled={bulkImporting || topSkills.length === 0}>
-              {bulkImporting ? '导入中...' : `导入前${Math.max(1, Math.min(100, bulkCount))}`}
-            </Button>
-            <Button variant="secondary" onClick={handleRetryFailed} disabled={bulkImporting || bulkFailedItems.length === 0}>
-              重试失败({bulkFailedItems.length})
-            </Button>
-          </div>
-          {(bulkProgress.total > 0 || bulkImporting) && (
-            <div className="mb-3 text-xs text-gray-500">
-              进度 {bulkProgress.done}/{bulkProgress.total}，成功 {bulkProgress.success}，失败 {bulkProgress.failed}
-            </div>
-          )}
-          {topSkills.length === 0 ? (
-            <div className="text-sm text-gray-500">暂无可用Top100数据</div>
-          ) : (
-            <div className="space-y-2 max-h-80 overflow-y-auto">
-              {topPageItems.map((item, idx) => (
-                <div key={`${item.source}-${item.skill_id}-${idx}`} className="border rounded-md p-2 dark:border-gray-700 flex items-center justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="text-sm font-medium truncate">#{(topPage - 1) * topPageSize + idx + 1} {item.name}</div>
-                    <div className="text-xs text-gray-500 truncate">{item.source} / {item.skill_id} / installs {item.installs}</div>
-                  </div>
-                  <div className="flex gap-2">
-                    <Button size="sm" onClick={() => handleInstallTopSkill(item)}>一键安装</Button>
-                    <Button size="sm" variant="ghost" onClick={() => fillInstallUrlFromTop(item)}>填入安装</Button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-          {topSkills.length > 0 && (
-            <div className="mt-3 flex justify-between items-center">
-              <Button size="sm" variant="secondary" disabled={topPage <= 1} onClick={() => setTopPage((p) => Math.max(1, p - 1))}>上一页</Button>
-              <span className="text-xs text-gray-500">第 {topPage} / {topTotalPages} 页</span>
-              <Button size="sm" variant="secondary" disabled={topPage >= topTotalPages} onClick={() => setTopPage((p) => Math.min(topTotalPages, p + 1))}>下一页</Button>
-            </div>
-          )}
-        </CardContent>
-      </Card>
 
-      {loading && !skills ? (
-        <div className="flex justify-center p-10">
-          <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
-        </div>
-      ) : filteredSkills.length === 0 ? (
-        <EmptyState 
-            title="No skills found" 
-            description="Install skills or plugins to see them here." 
-            icon={<Terminal className="w-12 h-12 text-gray-300" />}
-        />
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredSkills.map((skill) => (
-            <Card key={skill.name} className="hover:shadow-lg transition-shadow">
-              <CardHeader className="pb-3">
-                <div className="flex justify-between items-start">
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        checked={selectedSkills.includes(skill.name)}
-                        onChange={() => toggleSelect(skill.name)}
-                      />
-                      <CardTitle className="text-lg">{skill.name}</CardTitle>
-                    </div>
-                    {skill.enabled ? (
-                        <CheckCircle className="w-5 h-5 text-green-500" />
-                    ) : (
-                        <XCircle className="w-5 h-5 text-gray-300" />
-                    )}
-                </div>
-                <div className="text-xs text-gray-500 dark:text-gray-400 font-mono mt-1">
-                    v{skill.version}
-                </div>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-gray-600 dark:text-gray-300 min-h-[40px]">
-                  {skill.description || "No description provided."}
-                </p>
-                <div className="mt-4 flex justify-end">
-                    <Button size="sm" variant={skill.enabled ? 'secondary' : 'primary'} onClick={() => handleToggle(skill)}>
-                      <Wrench className="w-4 h-4 mr-2" />
-                      {skill.enabled ? '禁用' : '启用'}
-                    </Button>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+      {/* Tab 导航 */}
+      <div className="flex items-center gap-2 mb-6 border-b dark:border-gray-700">
+        {[
+          { key: 'installed', label: '已安装', icon: Terminal },
+          { key: 'search', label: '市场搜索', icon: Search },
+          { key: 'semantic', label: '语义搜索', icon: Brain },
+          { key: 'top', label: 'Top 100', icon: Sparkles },
+        ].map((tab) => (
+          <button
+            key={tab.key}
+            onClick={() => setActiveTab(tab.key as typeof activeTab)}
+            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === tab.key
+                ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400'
+            }`}
+          >
+            <tab.icon className="w-4 h-4" />
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {/* 已安装技能 Tab */}
+      {activeTab === 'installed' && (
+        <>
+          <div className="mb-6 grid grid-cols-1 lg:grid-cols-3 gap-3">
+            <Input
+              value={searchText}
+              onChange={(e) => setSearchText(e.target.value)}
+              placeholder="搜索已安装技能..."
+              className="lg:col-span-2"
+            />
+            <Button onClick={handleBatchTest} disabled={selectedSkills.length === 0} variant="primary">
+              <PlayCircle className="w-4 h-4 mr-2" />
+              批量测试({selectedSkills.length})
+            </Button>
+          </div>
+          <div className="mb-6 flex flex-wrap gap-2">
+            <Button onClick={() => handleQuickAction('create-skills', 'create skills')} variant="primary">
+              <Sparkles className="w-4 h-4 mr-2" />
+              创建Skills
+            </Button>
+            <Button onClick={() => handleQuickAction('find-skills', 'find skills')} variant="secondary">
+              <Search className="w-4 h-4 mr-2" />
+              查找Skills
+            </Button>
+          </div>
+        </>
       )}
-      {batchTestExecuted && (
-        <Card className="mt-6">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">批量测试结果</CardTitle>
+
+      {/* 语义搜索 Tab */}
+      {activeTab === 'semantic' && (
+        <Card className="mb-6">
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Brain className="w-4 h-4" />
+              语义搜索技能
+            </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-2">
-            {batchResults.length === 0 ? (
-              <div className="text-sm text-red-500">未返回任何测试结果</div>
-            ) : (
-              batchResults.map((r) => (
-                <div key={r.name} className="text-sm flex justify-between border-b py-1 dark:border-gray-700">
-                  <span>{r.name}</span>
-                  <span className={r.passed ? 'text-green-600' : 'text-red-500'}>
-                    {r.passed ? '通过' : `未通过 (installed=${String(r.installed)}, enabled=${String(r.enabled)})`}
-                  </span>
-                </div>
-              ))
+          <CardContent>
+            <SemanticSearch
+              onSelectSkill={(name) => {
+                setSearchText(name);
+                setActiveTab('installed');
+              }}
+              onRunSkill={(name) => {
+                const skill = skills?.find((s) => s.name === name);
+                if (skill) {
+                  setRunningSkill(skill);
+                }
+              }}
+            />
+          </CardContent>
+        </Card>
+      )}
+      {/* 市场搜索 Tab */}
+      {activeTab === 'search' && (
+        <Card className="mb-6">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Search className="w-4 h-4" />
+              技能市场搜索与安装
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="flex gap-2">
+              <Input
+                value={registryQuery}
+                onChange={(e) => setRegistryQuery(e.target.value)}
+                placeholder="输入关键字搜索技能市场"
+              />
+              <Button onClick={handleRegistrySearch} loading={searching}>
+                搜索
+              </Button>
+            </div>
+            <div className="flex gap-2">
+              <Input
+                value={installUrl}
+                onChange={(e) => setInstallUrl(e.target.value)}
+                placeholder="通过Git URL安装技能（https://...git）"
+              />
+              <Button onClick={handleInstallByUrl} variant="secondary">
+                <Download className="w-4 h-4 mr-2" />
+                导入安装
+              </Button>
+            </div>
+            {registryResults.length > 0 && (
+              <div className="space-y-2 max-h-56 overflow-y-auto">
+                {registryResults.map((item) => (
+                  <div key={item.name} className="border rounded-md p-3 dark:border-gray-700 flex justify-between items-center gap-3">
+                    <div className="min-w-0">
+                      <div className="font-semibold truncate">{item.display_name || item.name}</div>
+                      <div className="text-xs text-gray-500 truncate">{item.description}</div>
+                    </div>
+                    <Button size="sm" onClick={() => handleInstall(item)}>
+                      安装
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {registryResults.length > 0 && (
+              <div className="text-xs text-gray-500">搜索来源：{searchSource || 'unknown'}</div>
             )}
           </CardContent>
         </Card>
       )}
+
+      {/* Top 100 Tab */}
+      {activeTab === 'top' && (
+        <Card className="mb-6">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center justify-between">
+              <span>Skills.sh Top 100</span>
+              <div className="flex gap-2">
+                <Button size="sm" variant={topSort === 'installs' ? 'primary' : 'secondary'} onClick={() => setTopSort('installs')}>
+                  按安装量
+                </Button>
+                <Button size="sm" variant={topSort === 'name' ? 'primary' : 'secondary'} onClick={() => setTopSort('name')}>
+                  按名称
+                </Button>
+              </div>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="mb-3 flex flex-wrap items-center gap-2">
+              <Input
+                value={String(bulkCount)}
+                onChange={(e) => setBulkCount(Number.isNaN(Number(e.target.value)) ? 10 : Number(e.target.value))}
+                className="w-24"
+                placeholder="10"
+              />
+              <Button onClick={handleBulkImportTop} disabled={bulkImporting || topSkills.length === 0}>
+                {bulkImporting ? '导入中...' : `导入前${Math.max(1, Math.min(100, bulkCount))}`}
+              </Button>
+              <Button variant="secondary" onClick={handleRetryFailed} disabled={bulkImporting || bulkFailedItems.length === 0}>
+                重试失败({bulkFailedItems.length})
+              </Button>
+            </div>
+            {(bulkProgress.total > 0 || bulkImporting) && (
+              <div className="mb-3 text-xs text-gray-500">
+                进度 {bulkProgress.done}/{bulkProgress.total}，成功 {bulkProgress.success}，失败 {bulkProgress.failed}
+              </div>
+            )}
+            {topSkills.length === 0 ? (
+              <div className="text-sm text-gray-500">暂无可用Top100数据</div>
+            ) : (
+              <div className="space-y-2 max-h-80 overflow-y-auto">
+                {topPageItems.map((item, idx) => (
+                  <div key={`${item.source}-${item.skill_id}-${idx}`} className="border rounded-md p-2 dark:border-gray-700 flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium truncate">#{(topPage - 1) * topPageSize + idx + 1} {item.name}</div>
+                      <div className="text-xs text-gray-500 truncate">{item.source} / {item.skill_id} / installs {item.installs}</div>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button size="sm" onClick={() => handleInstallTopSkill(item)}>一键安装</Button>
+                      <Button size="sm" variant="ghost" onClick={() => fillInstallUrlFromTop(item)}>填入安装</Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            {topSkills.length > 0 && (
+              <div className="mt-3 flex justify-between items-center">
+                <Button size="sm" variant="secondary" disabled={topPage <= 1} onClick={() => setTopPage((p) => Math.max(1, p - 1))}>上一页</Button>
+                <span className="text-xs text-gray-500">第 {topPage} / {topTotalPages} 页</span>
+                <Button size="sm" variant="secondary" disabled={topPage >= topTotalPages} onClick={() => setTopPage((p) => Math.min(topTotalPages, p + 1))}>下一页</Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* 已安装技能列表 */}
+      {activeTab === 'installed' && (
+        <>
+          {loading && !skills ? (
+            <div className="flex justify-center p-10">
+              <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+            </div>
+          ) : filteredSkills.length === 0 ? (
+            <EmptyState 
+                title="No skills found" 
+                description="Install skills or plugins to see them here." 
+                icon={<Terminal className="w-12 h-12 text-gray-300" />}
+            />
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {filteredSkills.map((skill) => (
+                <Card key={skill.name} className="hover:shadow-lg transition-shadow">
+                  <CardHeader className="pb-3">
+                    <div className="flex justify-between items-start">
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={selectedSkills.includes(skill.name)}
+                            onChange={() => toggleSelect(skill.name)}
+                          />
+                          <CardTitle className="text-lg">{skill.name}</CardTitle>
+                        </div>
+                        {skill.enabled ? (
+                            <CheckCircle className="w-5 h-5 text-green-500" />
+                        ) : (
+                            <XCircle className="w-5 h-5 text-gray-300" />
+                        )}
+                    </div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400 font-mono mt-1">
+                        v{skill.version}
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-sm text-gray-600 dark:text-gray-300 min-h-[40px]">
+                      {skill.description || "No description provided."}
+                    </p>
+                    
+                    {/* 运行结果展示 */}
+                    {runResults[skill.name] && (
+                      <div className={`mt-2 p-2 rounded text-xs ${runResults[skill.name].success ? 'bg-green-50 text-green-700 dark:bg-green-900/20' : 'bg-red-50 text-red-700 dark:bg-red-900/20'}`}>
+                        <div className="flex items-center gap-1">
+                          {runResults[skill.name].success ? <CheckCircle className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
+                          <span>上次运行: {runResults[skill.name].execution_time_ms}ms</span>
+                        </div>
+                      </div>
+                    )}
+                    
+                    <div className="mt-4 flex justify-end gap-2">
+                        <Button size="sm" variant="secondary" onClick={() => setViewingLogsSkill(skill)}>
+                          <Clock className="w-4 h-4 mr-1" />
+                          日志
+                        </Button>
+                        <Button size="sm" variant="primary" onClick={() => setRunningSkill(skill)}>
+                          <PlayCircle className="w-4 h-4 mr-1" />
+                          运行
+                        </Button>
+                        <Button size="sm" variant={skill.enabled ? 'secondary' : 'primary'} onClick={() => handleToggle(skill)}>
+                          <Wrench className="w-4 h-4 mr-1" />
+                          {skill.enabled ? '禁用' : '启用'}
+                        </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+          {batchTestExecuted && (
+            <Card className="mt-6">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">批量测试结果</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {batchResults.length === 0 ? (
+                  <div className="text-sm text-red-500">未返回任何测试结果</div>
+                ) : (
+                  batchResults.map((r) => (
+                    <div key={r.name} className="text-sm flex justify-between border-b py-1 dark:border-gray-700">
+                      <span>{r.name}</span>
+                      <span className={r.passed ? 'text-green-600' : 'text-red-500'}>
+                        {r.passed ? '通过' : `未通过 (installed=${String(r.installed)}, enabled=${String(r.enabled)})`}
+                      </span>
+                    </div>
+                  ))
+                )}
+              </CardContent>
+            </Card>
+          )}
+        </>
+      )}
+
+      {/* 运行技能弹窗 */}
+      <SkillRunner
+        skill={runningSkill || undefined}
+        isOpen={!!runningSkill}
+        onClose={() => setRunningSkill(null)}
+        onRun={handleRunComplete}
+      />
+
+      {/* 查看日志弹窗 */}
+      <SkillLogs
+        skill={viewingLogsSkill || undefined}
+        isOpen={!!viewingLogsSkill || viewingAllLogs}
+        onClose={() => {
+          setViewingLogsSkill(null);
+          setViewingAllLogs(false);
+        }}
+      />
     </div>
   );
 };

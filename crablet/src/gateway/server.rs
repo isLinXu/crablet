@@ -17,14 +17,17 @@ use crate::events::EventBus;
 use crate::gateway::types::GatewayConfig;
 use crate::gateway::canvas_manager::CanvasManager;
 use crate::gateway::web_handlers::{
-    chat_handler, chat_stream, image_handler, list_skills, list_sessions, upload_knowledge, 
-    list_documents, get_document_chunks, search_knowledge, list_api_keys, 
+    chat_handler, chat_stream, image_handler, list_skills, list_sessions as list_chat_sessions, upload_knowledge,
+    list_documents, get_document_chunks, search_knowledge, list_api_keys,
     create_api_key, revoke_api_key, list_audit_logs, get_routing_settings, update_routing_settings, get_routing_report,
-    get_swarm_state, list_agents, cancel_task, delete_session, get_session_history,
+    get_swarm_state, list_agents, cancel_task, delete_session as delete_chat_session, get_session_history as get_chat_session_history,
     get_dashboard_stats, get_swarm_stats, get_swarm_tasks, toggle_skill,
     search_registry_skills, install_skill, batch_test_skills, get_mcp_overview, list_swarm_reviews, decide_swarm_review,
-    get_skills_sh_top, get_system_config, update_system_config
+    get_skills_sh_top, get_system_config, update_system_config,
+    semantic_search_skills, run_skill, get_skill_logs, get_all_skill_logs
 };
+use crate::gateway::observability_handlers as obs;
+use crate::gateway::workflow_handlers;
 use crate::gateway::ratelimit::{create_limiter, GlobalRateLimiter};
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::StreamExt as _;
@@ -90,6 +93,9 @@ async fn sse_handler(
 }
 
 use crate::cognitive::router::CognitiveRouter;
+use crate::workflow::engine::WorkflowEngine;
+use crate::workflow::registry::WorkflowRegistry;
+use crate::workflow::executor::NodeExecutorRegistry;
 
 #[derive(Clone)]
 pub struct CrabletGateway {
@@ -101,6 +107,8 @@ pub struct CrabletGateway {
     pub canvas: CanvasManager,
     pub config: GatewayConfig,
     pub rate_limiter: Arc<GlobalRateLimiter>,
+    pub workflow_engine: Arc<WorkflowEngine>,
+    pub workflow_registry: Arc<WorkflowRegistry>,
     #[cfg(feature = "knowledge")]
     pub ingestion: Option<Arc<IngestionService>>,
 }
@@ -108,7 +116,7 @@ pub struct CrabletGateway {
 impl CrabletGateway {
     pub fn new(config: GatewayConfig, router: Arc<CognitiveRouter>) -> Self {
         let event_bus = crate::events::EventBus::new(100);
-        
+
         // Parse auth mode from config
         let auth_mode = match config.auth_mode.to_lowercase().as_str() {
             "off" => AuthMode::Off,
@@ -119,28 +127,25 @@ impl CrabletGateway {
             "jwt" => AuthMode::JWT,
             _ => AuthMode::Token, // Default to Token
         };
-        
+
         // Extract pool from MemoryManager
         let pool = router.memory_mgr.episodic.as_ref().map(|m| m.pool.clone());
-        
+
         // Start Audit Worker if pool is available
         if let Some(p) = &pool {
             crate::audit::start_audit_worker(p.clone(), Arc::new(event_bus.clone()));
         }
 
         let auth = AuthManager::new(auth_mode, pool);
-        
+
         // Load existing keys
-        // We need to spawn this as new() is sync but load is async.
-        // Or we can just do it lazily or make new async.
-        // For simplicity, let's spawn a task to load keys.
         let auth_clone = auth.clone();
         tokio::spawn(async move {
             if let Err(e) = auth_clone.load_keys_from_db().await {
                 tracing::warn!("Failed to load API keys: {}", e);
             }
         });
-        
+
         // Generate admin token if using Token auth and no tokens exist
         if matches!(auth.mode(), AuthMode::Token) && !auth.has_tokens() {
             let token = auth.generate_token("admin", "admin");
@@ -153,6 +158,11 @@ impl CrabletGateway {
             Arc::new(IngestionService::new(vs.clone()))
         });
 
+        // Initialize workflow system
+        let executor_registry = Arc::new(NodeExecutorRegistry::new());
+        let workflow_engine = Arc::new(WorkflowEngine::new(executor_registry));
+        let workflow_registry = Arc::new(WorkflowRegistry::new());
+
         Self {
             router,
             rpc: RpcDispatcher::new(),
@@ -162,6 +172,8 @@ impl CrabletGateway {
             event_bus,
             config,
             rate_limiter: create_limiter(),
+            workflow_engine,
+            workflow_registry,
             #[cfg(feature = "knowledge")]
             ingestion,
         }
@@ -180,9 +192,9 @@ impl CrabletGateway {
                 .route("/chat", post(chat_handler))
                 .route("/images", post(image_handler))
                 .route("/chat/stream", post(chat_stream))
-                .route("/sessions", get(list_sessions))
-                .route("/sessions/:id", delete(delete_session))
-                .route("/sessions/:id/history", get(get_session_history))
+                .route("/sessions", get(list_chat_sessions))
+                .route("/sessions/:id", delete(delete_chat_session))
+                .route("/sessions/:id/history", get(get_chat_session_history))
                 .route("/dashboard", get(get_dashboard_stats))
                 .route("/swarm/stats", get(get_swarm_stats))
                 .route("/swarm/tasks", get(get_swarm_tasks))
@@ -193,7 +205,11 @@ impl CrabletGateway {
                 .route("/swarm/reviews/:task_id/decision", post(decide_swarm_review))
                 .route("/skills", get(list_skills))
                 .route("/skills/:name/toggle", post(toggle_skill))
+                .route("/skills/:name/run", post(run_skill))
+                .route("/skills/:name/logs", get(get_skill_logs))
+                .route("/skills/logs", get(get_all_skill_logs))
                 .route("/skills/registry/search", get(search_registry_skills))
+                .route("/skills/semantic-search", post(semantic_search_skills))
                 .route("/skills/top", get(get_skills_sh_top))
                 .route("/skills/install", post(install_skill))
                 .route("/skills/test/batch", post(batch_test_skills))
@@ -208,10 +224,29 @@ impl CrabletGateway {
                 .route("/settings/routing/report", get(get_routing_report))
                 .route("/settings/system/config", get(get_system_config).post(update_system_config))
                 .route("/logs", get(list_audit_logs))
+                // Workflow routes
+                .route("/workflows", get(workflow_handlers::list_workflows).post(workflow_handlers::create_workflow))
+                .route("/workflows/:id", get(workflow_handlers::get_workflow).put(workflow_handlers::update_workflow).delete(workflow_handlers::delete_workflow))
+                .route("/workflows/:id/execute", post(workflow_handlers::execute_workflow))
+                .route("/workflows/:id/run", post(workflow_handlers::run_workflow_stream))
+                .route("/workflows/:id/executions", get(workflow_handlers::list_executions))
+                .route("/workflows/validate", post(workflow_handlers::validate_workflow))
+                .route("/workflows/node-types", get(workflow_handlers::get_node_types))
+                .route("/executions/:id", get(workflow_handlers::get_execution).delete(workflow_handlers::cancel_execution))
+                // Observability routes
+                .route("/observability/sessions", get(obs::list_sessions))
+                .route("/observability/sessions/:id", get(obs::get_session).delete(obs::delete_session))
+                .route("/observability/sessions/:id/events", get(obs::stream_session_events))
+                .route("/observability/sessions/:id/metrics", get(obs::get_metrics))
+                .route("/observability/breakpoints", get(obs::list_breakpoints).post(obs::create_breakpoint))
+                .route("/observability/breakpoints/:id", delete(obs::delete_breakpoint))
+                .route("/observability/paused", get(obs::get_paused_sessions))
+                .route("/observability/intervene/:id", post(obs::intervene))
+                .route("/observability/events", get(obs::stream_events))
             )
-            .route("/api/sessions", get(list_sessions))
-            .route("/api/sessions/:id", delete(delete_session))
-            .route("/api/sessions/:id/history", get(get_session_history))
+            .route("/api/sessions", get(list_chat_sessions))
+            .route("/api/sessions/:id", delete(delete_chat_session))
+            .route("/api/sessions/:id/history", get(get_chat_session_history))
             .route("/api/dashboard", get(get_dashboard_stats))
             .route("/api/swarm/stats", get(get_swarm_stats))
             .route("/api/swarm/tasks", get(get_swarm_tasks))

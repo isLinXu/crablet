@@ -53,6 +53,7 @@ impl OpenClawSkillLoader {
             permissions: vec![],
             conflicts: vec![],
             min_crablet_version: None,
+            author: None,
         };
         
         Ok(Skill {

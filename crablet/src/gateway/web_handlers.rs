@@ -1125,6 +1125,373 @@ pub async fn batch_test_skills(
     })))
 }
 
+// ==================== 新增 Skills API ====================
+
+#[derive(Deserialize)]
+pub struct SemanticSearchRequest {
+    pub query: String,
+    #[serde(default = "default_limit")]
+    pub limit: usize,
+    #[serde(default = "default_min_similarity")]
+    pub min_similarity: f32,
+}
+
+fn default_limit() -> usize { 10 }
+fn default_min_similarity() -> f32 { 0.5 }
+
+#[derive(Serialize)]
+pub struct SemanticSearchResult {
+    pub skill_name: String,
+    pub description: String,
+    pub version: String,
+    pub similarity_score: f32,
+    pub match_type: String,
+    pub tags: Vec<String>,
+    pub author: String,
+    pub category: String,
+}
+
+/// 语义搜索技能
+pub async fn semantic_search_skills(
+    State(gateway): State<Arc<CrabletGateway>>,
+    Json(req): Json<SemanticSearchRequest>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let _skills_dir = std::path::PathBuf::from("./skills");
+    
+    // 创建嵌入服务（使用简单的基于关键词的回退方案）
+    let results = perform_semantic_search(&gateway, &req.query, req.limit, req.min_similarity).await;
+    
+    match results {
+        Ok(items) => Ok(Json(serde_json::json!({
+            "status": "ok",
+            "query": req.query,
+            "results": items
+        }))),
+        Err(e) => {
+            tracing::warn!("Semantic search failed: {}, falling back to keyword search", e);
+            // 回退到关键词搜索
+            let fallback = perform_keyword_search(&gateway, &req.query, req.limit).await;
+            Ok(Json(serde_json::json!({
+                "status": "fallback",
+                "query": req.query,
+                "results": fallback,
+                "note": "Semantic search unavailable, using keyword search"
+            })))
+        }
+    }
+}
+
+async fn perform_semantic_search(
+    gateway: &Arc<CrabletGateway>,
+    query: &str,
+    limit: usize,
+    min_similarity: f32,
+) -> anyhow::Result<Vec<SemanticSearchResult>> {
+    let registry = gateway.router.shared_skills.read().await;
+    let all_skills = registry.list_skills();
+    let query_lower = query.to_lowercase();
+    let query_words: Vec<&str> = query_lower.split_whitespace().collect();
+    
+    let mut results: Vec<(SemanticSearchResult, f32)> = Vec::new();
+    
+    for skill in all_skills {
+        let name_lower = skill.name.to_lowercase();
+        let desc_lower = skill.description.to_lowercase();
+        
+        // 计算关键词匹配分数
+        let mut keyword_score = 0.0f32;
+        let mut matched_keywords = 0;
+        
+        for word in &query_words {
+            if name_lower.contains(word) {
+                keyword_score += 0.4; // 名称匹配权重高
+                matched_keywords += 1;
+            }
+            if desc_lower.contains(word) {
+                keyword_score += 0.2; // 描述匹配权重中等
+                matched_keywords += 1;
+            }
+        }
+        
+        // 计算语义相似度（基于字符 n-gram 的简单实现）
+        let semantic_score = calculate_semantic_similarity(&query_lower, &desc_lower);
+        
+        // 综合分数
+        let total_score = (keyword_score * 0.6 + semantic_score * 0.4).min(1.0);
+        
+        if total_score >= min_similarity || matched_keywords > 0 {
+            results.push((SemanticSearchResult {
+                skill_name: skill.name.clone(),
+                description: skill.description.clone(),
+                version: skill.version.clone(),
+                similarity_score: total_score,
+                match_type: if matched_keywords > 0 && semantic_score > 0.3 {
+                    "hybrid".to_string()
+                } else if matched_keywords > 0 {
+                    "keyword".to_string()
+                } else {
+                    "semantic".to_string()
+                },
+                tags: Vec::new(), // 可以从 manifest 中提取
+                author: skill.author.clone().unwrap_or_else(|| "Unknown".to_string()),
+                category: "General".to_string(),
+            }, total_score));
+        }
+    }
+    
+    // 按分数排序
+    results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    results.truncate(limit);
+    
+    Ok(results.into_iter().map(|(r, _)| r).collect())
+}
+
+async fn perform_keyword_search(
+    gateway: &Arc<CrabletGateway>,
+    query: &str,
+    limit: usize,
+) -> Vec<SemanticSearchResult> {
+    let registry = gateway.router.shared_skills.read().await;
+    let all_skills = registry.list_skills();
+    let query_lower = query.to_lowercase();
+    
+    let mut results: Vec<(SemanticSearchResult, f32)> = Vec::new();
+    
+    for skill in all_skills {
+        let name_lower = skill.name.to_lowercase();
+        let desc_lower = skill.description.to_lowercase();
+        
+        let mut score = 0.0f32;
+        if name_lower.contains(&query_lower) {
+            score += 1.0;
+        }
+        if desc_lower.contains(&query_lower) {
+            score += 0.5;
+        }
+        
+        // 部分匹配
+        for word in query_lower.split_whitespace() {
+            if name_lower.contains(word) {
+                score += 0.3;
+            }
+            if desc_lower.contains(word) {
+                score += 0.15;
+            }
+        }
+        
+        if score > 0.0 {
+            results.push((SemanticSearchResult {
+                skill_name: skill.name.clone(),
+                description: skill.description.clone(),
+                version: skill.version.clone(),
+                similarity_score: score.min(1.0),
+                match_type: "keyword".to_string(),
+                tags: Vec::new(),
+                author: skill.author.clone().unwrap_or_else(|| "Unknown".to_string()),
+                category: "General".to_string(),
+            }, score));
+        }
+    }
+    
+    results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    results.truncate(limit);
+    
+    results.into_iter().map(|(r, _)| r).collect()
+}
+
+fn calculate_semantic_similarity(a: &str, b: &str) -> f32 {
+    // 简单的基于字符 n-gram 的相似度计算
+    let a_chars: Vec<char> = a.chars().collect();
+    let b_chars: Vec<char> = b.chars().collect();
+    
+    if a_chars.len() < 2 || b_chars.len() < 2 {
+        return if a == b { 1.0 } else { 0.0 };
+    }
+    
+    // 生成 2-gram
+    let mut a_ngrams: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut b_ngrams: std::collections::HashSet<String> = std::collections::HashSet::new();
+    
+    for i in 0..a_chars.len() - 1 {
+        let ngram: String = a_chars[i..i + 2].iter().collect();
+        a_ngrams.insert(ngram);
+    }
+    
+    for i in 0..b_chars.len() - 1 {
+        let ngram: String = b_chars[i..i + 2].iter().collect();
+        b_ngrams.insert(ngram);
+    }
+    
+    // 计算 Jaccard 相似度
+    let intersection: std::collections::HashSet<_> = a_ngrams.intersection(&b_ngrams).collect();
+    let union: std::collections::HashSet<_> = a_ngrams.union(&b_ngrams).collect();
+    
+    if union.is_empty() {
+        0.0
+    } else {
+        intersection.len() as f32 / union.len() as f32
+    }
+}
+
+#[derive(Deserialize)]
+pub struct RunSkillRequest {
+    pub args: Option<serde_json::Value>,
+    #[serde(default = "default_timeout")]
+    pub timeout_secs: u64,
+}
+
+fn default_timeout() -> u64 { 30 }
+
+#[derive(Serialize)]
+pub struct RunSkillResult {
+    pub skill_name: String,
+    pub success: bool,
+    pub output: String,
+    pub execution_time_ms: u64,
+    pub timestamp: String,
+}
+
+/// 执行单个技能
+pub async fn run_skill(
+    State(gateway): State<Arc<CrabletGateway>>,
+    axum::extract::Path(name): axum::extract::Path<String>,
+    Json(req): Json<RunSkillRequest>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let start_time = std::time::Instant::now();
+    let args = req.args.unwrap_or_else(|| serde_json::json!({}));
+    
+    // 检查技能是否存在且启用
+    let registry = gateway.router.shared_skills.read().await;
+    let skill = registry.get_skill(&name);
+    
+    if skill.is_none() {
+        return Ok(Json(serde_json::json!({
+            "status": "error",
+            "error": format!("Skill '{}' not found", name)
+        })));
+    }
+    drop(registry); // 释放读锁
+    
+    // 执行技能
+    let registry = gateway.router.shared_skills.read().await;
+    let result = registry.execute(&name, args).await;
+    let execution_time = start_time.elapsed().as_millis() as u64;
+    
+    // 记录执行日志
+    let log_entry = SkillExecutionLog {
+        skill_name: name.clone(),
+        timestamp: chrono::Utc::now(),
+        success: result.is_ok(),
+        output: result.as_ref().ok().cloned().unwrap_or_default(),
+        error: result.as_ref().err().map(|e| e.to_string()),
+        execution_time_ms: execution_time,
+    };
+    
+    // 存储日志
+    store_execution_log(log_entry).await;
+    
+    match result {
+        Ok(output) => Ok(Json(serde_json::json!({
+            "status": "ok",
+            "result": RunSkillResult {
+                skill_name: name,
+                success: true,
+                output,
+                execution_time_ms: execution_time,
+                timestamp: chrono::Utc::now().to_rfc3339(),
+            }
+        }))),
+        Err(e) => Ok(Json(serde_json::json!({
+            "status": "error",
+            "error": e.to_string(),
+            "result": RunSkillResult {
+                skill_name: name,
+                success: false,
+                output: e.to_string(),
+                execution_time_ms: execution_time,
+                timestamp: chrono::Utc::now().to_rfc3339(),
+            }
+        }))),
+    }
+}
+
+#[derive(Clone, Serialize)]
+struct SkillExecutionLog {
+    skill_name: String,
+    timestamp: chrono::DateTime<chrono::Utc>,
+    success: bool,
+    output: String,
+    error: Option<String>,
+    execution_time_ms: u64,
+}
+
+// 全局执行日志存储（使用内存存储，生产环境应使用数据库）
+static EXECUTION_LOGS: OnceLock<RwLock<Vec<SkillExecutionLog>>> = OnceLock::new();
+
+async fn store_execution_log(log: SkillExecutionLog) {
+    let logs = EXECUTION_LOGS.get_or_init(|| RwLock::new(Vec::new()));
+    let mut logs_guard = logs.write().await;
+    logs_guard.push(log);
+    // 限制日志数量，保留最近 1000 条
+    if logs_guard.len() > 1000 {
+        logs_guard.remove(0);
+    }
+}
+
+/// 获取技能执行日志
+pub async fn get_skill_logs(
+    State(_gateway): State<Arc<CrabletGateway>>,
+    axum::extract::Path(name): axum::extract::Path<String>,
+    Query(query): Query<GetSkillLogsQuery>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let limit = query.limit.unwrap_or(50).min(100);
+    
+    let logs = EXECUTION_LOGS.get_or_init(|| RwLock::new(Vec::new()));
+    let logs_guard = logs.read().await;
+    
+    let skill_logs: Vec<&SkillExecutionLog> = logs_guard
+        .iter()
+        .rev() // 最新的在前
+        .filter(|log| log.skill_name == name)
+        .take(limit)
+        .collect();
+    
+    Ok(Json(serde_json::json!({
+        "status": "ok",
+        "skill_name": name,
+        "logs": skill_logs,
+        "total": skill_logs.len()
+    })))
+}
+
+#[derive(Deserialize)]
+pub struct GetSkillLogsQuery {
+    limit: Option<usize>,
+}
+
+/// 获取所有执行日志（用于日志查看器）
+pub async fn get_all_skill_logs(
+    State(_gateway): State<Arc<CrabletGateway>>,
+    Query(query): Query<GetSkillLogsQuery>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let limit = query.limit.unwrap_or(100).min(200);
+    
+    let logs = EXECUTION_LOGS.get_or_init(|| RwLock::new(Vec::new()));
+    let logs_guard = logs.read().await;
+    
+    let all_logs: Vec<&SkillExecutionLog> = logs_guard
+        .iter()
+        .rev()
+        .take(limit)
+        .collect();
+    
+    Ok(Json(serde_json::json!({
+        "status": "ok",
+        "logs": all_logs,
+        "total": all_logs.len()
+    })))
+}
+
 pub async fn get_mcp_overview(
     State(gateway): State<Arc<CrabletGateway>>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {

@@ -10,6 +10,8 @@ pub mod canvas_manager;
 pub mod web_handlers;
 pub mod feishu_handler;
 pub mod ratelimit;
+pub mod workflow_handlers;
+pub mod observability_handlers;
 
 pub use server::CrabletGateway;
 pub use canvas_manager::CanvasManager;
