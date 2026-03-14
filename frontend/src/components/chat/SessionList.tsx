@@ -1,7 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useChatStore } from '../../store/chatStore';
 import { Button } from '../ui/Button';
-import { MessageSquare, Plus, Trash2, Pencil, Download, CheckSquare, Square } from 'lucide-react';
+import { MessageSquare, Plus, Trash2, Pencil, Download, CheckSquare, Square, ChevronDown, ChevronUp } from 'lucide-react';
 import { cn } from '../ui/Button';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
 import { format } from 'date-fns';
@@ -70,6 +70,7 @@ export const SessionList: React.FC<SessionListProps> = ({ className, onSelect })
   const [selectedIds, setSelectedIds] = React.useState<string[]>([]);
   const [renamingId, setRenamingId] = React.useState<string | null>(null);
   const [renameText, setRenameText] = React.useState('');
+  const [isBatchExpanded, setIsBatchExpanded] = useState(false);
 
   const handleSelectSession = (id: string) => {
     if (id === sessionId) {
@@ -167,19 +168,40 @@ export const SessionList: React.FC<SessionListProps> = ({ className, onSelect })
           <Plus className="mr-2 h-4 w-4" />
           New Chat
         </Button>
-        <div className="grid grid-cols-3 gap-2">
-          <Button onClick={toggleSelectAll} variant="secondary" size="sm" className="flex-1 justify-center">
-            {selectedIds.length === sessions.length && sessions.length > 0 ? <CheckSquare className="mr-1 h-4 w-4" /> : <Square className="mr-1 h-4 w-4" />}
-            全选
-          </Button>
-          <Button onClick={exportSelected} disabled={selectedIds.length === 0} variant="secondary" size="sm" className="flex-1 justify-center">
-            <Download className="mr-1 h-4 w-4" />
-            导出MD
-          </Button>
-          <Button onClick={handleBatchDelete} disabled={selectedIds.length === 0} variant="danger" size="sm" className="flex-1 justify-center">
-            <Trash2 className="mr-1 h-4 w-4" />
-            删除
-          </Button>
+        
+        {/* 批量操作折叠区域 */}
+        <div className="border border-zinc-800 rounded-lg overflow-hidden">
+          <button
+            onClick={() => setIsBatchExpanded(!isBatchExpanded)}
+            className="w-full flex items-center justify-between px-3 py-2 text-xs text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/50 transition-colors"
+          >
+            <span className="flex items-center gap-2">
+              <span>批量操作</span>
+              {selectedIds.length > 0 && (
+                <span className="px-1.5 py-0.5 bg-blue-500/20 text-blue-400 rounded text-[10px]">
+                  {selectedIds.length}
+                </span>
+              )}
+            </span>
+            {isBatchExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+          </button>
+          
+          {isBatchExpanded && (
+            <div className="grid grid-cols-3 gap-2 p-2 border-t border-zinc-800 animate-in slide-in-from-top-2 duration-200">
+              <Button onClick={toggleSelectAll} variant="secondary" size="sm" className="flex-1 justify-center">
+                {selectedIds.length === sessions.length && sessions.length > 0 ? <CheckSquare className="mr-1 h-4 w-4" /> : <Square className="mr-1 h-4 w-4" />}
+                全选
+              </Button>
+              <Button onClick={exportSelected} disabled={selectedIds.length === 0} variant="secondary" size="sm" className="flex-1 justify-center">
+                <Download className="mr-1 h-4 w-4" />
+                导出MD
+              </Button>
+              <Button onClick={handleBatchDelete} disabled={selectedIds.length === 0} variant="danger" size="sm" className="flex-1 justify-center">
+                <Trash2 className="mr-1 h-4 w-4" />
+                删除
+              </Button>
+            </div>
+          )}
         </div>
       </div>
 

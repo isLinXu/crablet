@@ -15,6 +15,7 @@ const routeLoaders = {
   '/memory': () => import('./components/memory/MemoryCenter'),
   '/knowledge': () => import('./components/knowledge/KnowledgeBase'),
   '/settings': () => import('./components/settings/SettingsPanel'),
+  '/observability': () => import('./components/observability/TraceViewer'),
 } as const;
 
 const ChatLayout = lazy(() =>
@@ -43,6 +44,9 @@ const KnowledgeBase = lazy(() =>
 );
 const SettingsPanel = lazy(() =>
   routeLoaders['/settings']().then((m) => ({ default: m.SettingsPanel }))
+);
+const TraceViewer = lazy(() =>
+  routeLoaders['/observability']().then((m) => ({ default: m.TraceViewer }))
 );
 
 function App() {
@@ -85,6 +89,7 @@ function App() {
                 <Route path="/memory" element={<MemoryCenter />} />
                 <Route path="/knowledge" element={<KnowledgeBase />} />
                 <Route path="/settings" element={<SettingsPanel />} />
+                <Route path="/observability" element={<TraceViewer />} />
               </Routes>
             </Suspense>
           </main>

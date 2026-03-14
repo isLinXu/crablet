@@ -13,6 +13,7 @@ pub mod llm;
 pub mod multimodal;
 pub mod planner;
 pub mod react;
+pub mod react_observable;
 pub mod middleware;
 pub mod classifier;
 pub mod intent_classifier;
@@ -23,6 +24,7 @@ pub mod meta_router;
 pub mod unified_router;
 pub mod streaming_pipeline;
 pub mod routing;
+pub mod thought_graph;
 
 #[async_trait]
 pub trait CognitiveSystem: Send + Sync {

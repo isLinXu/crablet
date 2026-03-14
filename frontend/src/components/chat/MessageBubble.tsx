@@ -5,14 +5,24 @@ import type { ExtendedMessage } from '@/store/chatStore';
 import { CodeBlock } from './CodeBlock';
 import { Bot, User, Copy, Check, Download, Pencil, Trash2, X } from 'lucide-react';
 import { cognitiveLayerLabel } from '@/utils/cognitive';
+import { AgentThinkingVisualization, type ThinkingProcess } from './AgentThinkingVisualization';
+import { CrabThinking } from '../ui/CrabElements';
 
 interface MessageBubbleProps {
   message: ExtendedMessage;
   onEdit?: (id: string, newContent: string) => void;
   onDelete?: (id: string) => void;
+  thinkingProcess?: ThinkingProcess;
+  isThinking?: boolean;
 }
 
-export const MessageBubble: React.FC<MessageBubbleProps> = ({ message, onEdit, onDelete }) => {
+export const MessageBubble: React.FC<MessageBubbleProps> = ({ 
+  message, 
+  onEdit, 
+  onDelete, 
+  thinkingProcess, 
+  isThinking,
+}) => {
   const isUser = message.role === 'user';
   const [copied, setCopied] = React.useState(false);
   const [isEditing, setIsEditing] = React.useState(false);
@@ -157,6 +167,69 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message, onEdit, o
   const knowledgeJump = (source: string, snippet?: string) =>
     `/knowledge?q=${encodeURIComponent(source)}&source=${encodeURIComponent(source)}${snippet ? `&snippet=${encodeURIComponent(snippet.slice(0, 160))}` : ''}`;
 
+  // 步骤类型标签映射
+  const stepLabels: Record<string, string> = {
+    reasoning: '推理思考',
+    search: '知识检索',
+    code: '代码分析',
+    insight: '洞察发现',
+  };
+  
+  // 从消息中构建思考过程
+  const messageThinkingProcess: ThinkingProcess | undefined = React.useMemo(() => {
+    if (isUser) return undefined;
+    
+    // 如果有外部传入的思考过程（当前正在思考的消息），使用外部过程
+    if (thinkingProcess) {
+      return thinkingProcess;
+    }
+    
+    // 否则从消息的 traceSteps 构建
+    if (message.traceSteps && message.traceSteps.length > 0) {
+      const steps = message.traceSteps.map((trace, index) => {
+        const text = (trace.thought + ' ' + trace.action).toLowerCase();
+        let type: any = 'reasoning';
+        if (text.includes('search') || text.includes('检索') || text.includes('查找') || text.includes('query') || text.includes('rag')) {
+          type = 'search';
+        } else if (text.includes('code') || text.includes('代码') || text.includes('program') || text.includes('function')) {
+          type = 'code';
+        } else if (text.includes('insight') || text.includes('发现') || text.includes('realize') || text.includes('understand')) {
+          type = 'insight';
+        }
+        
+        return {
+          id: `trace-${index}`,
+          type,
+          title: stepLabels[type] || '思考',
+          content: trace.thought || trace.action || 'Processing...',
+          timestamp: new Date(message.timestamp || Date.now()).getTime() - (message.traceSteps!.length - index) * 500,
+          duration: trace.observation ? 500 : undefined,
+          details: {
+            thought: trace.thought,
+            action: trace.action,
+            observation: trace.observation,
+          },
+        };
+      });
+      
+      return {
+        steps,
+        systemSwitches: [],
+        paradigmSwitches: [],
+        callStack: [],
+        currentLayer: message.cognitiveLayer || 'unknown',
+        currentParadigm: 'unknown',
+        startTime: new Date(message.timestamp || Date.now()).getTime(),
+        confidence: 0,
+      };
+    }
+    
+    return undefined;
+  }, [message.traceSteps, message.timestamp, message.cognitiveLayer, thinkingProcess, isUser]);
+  
+  // 判断是否是最后一条正在思考的消息
+  const showThinking = !!isThinking;
+  
   return (
     <div className={cn("flex w-full gap-4 max-w-4xl mx-auto group", isUser ? "flex-row-reverse" : "flex-row")}>
       <div className={cn(
@@ -172,8 +245,22 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message, onEdit, o
         )}
       </div>
 
+      <div className="flex-1 min-w-0 space-y-3">
+        {/* 思考过程 - 在每条 assistant 消息前显示 */}
+        {!isUser && messageThinkingProcess && (
+          <AgentThinkingVisualization
+            process={messageThinkingProcess}
+            isThinking={showThinking || false}
+          />
+        )}
+        
+        {/* 正在思考指示器 - 仅在最后一条消息且正在思考时显示 */}
+        {showThinking && (
+          <CrabThinking message="小螃蟹正在努力思考..." />
+        )}
+
       <div className={cn(
-        "flex-1 min-w-0 rounded-2xl px-6 py-4 shadow-sm relative transition-all duration-200",
+        "rounded-2xl px-6 py-4 shadow-sm relative transition-all duration-200",
         isUser
           ? "bg-blue-600 text-white rounded-tr-sm"
           : "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100 border border-zinc-200 dark:border-zinc-700 shadow-md shadow-zinc-200/50 dark:shadow-black/20 rounded-tl-sm"
@@ -245,6 +332,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message, onEdit, o
             ))}
           </div>
         )}
+      </div>
       </div>
     </div>
   );

@@ -22,7 +22,8 @@ use crate::cognitive::planner::TaskPlanner;
 #[cfg(feature = "knowledge")]
 use crate::memory::consolidator::MemoryConsolidator;
 use crate::memory::episodic::EpisodicMemory;
-use crate::cognitive::react::ReActEngine;
+use crate::cognitive::react_observable::ObservableReActEngine;
+use crate::observability::{ObservabilityManager, InMemoryStorage};
 use crate::skills::watcher::SkillWatcher;
 use crate::config::Config;
 use crate::tools::manager::SkillManagerTool;
@@ -64,8 +65,9 @@ pub struct System2 {
     planner: Arc<TaskPlanner>,
     #[cfg(feature = "knowledge")]
     consolidator: Option<Arc<MemoryConsolidator>>,
-    react_engine: Arc<ReActEngine>,
+    react_engine: Arc<ObservableReActEngine>,
     skill_watcher: Option<Arc<SkillWatcher>>,
+    pub observability: Arc<ObservabilityManager>,
     event_bus: Arc<EventBus>,
     pipeline: Arc<MiddlewarePipeline>,
     hierarchical_config: Arc<RwLock<HierarchicalReasoningConfig>>,
@@ -144,7 +146,17 @@ impl System2 {
         // Register Native Plugins
         Self::register_plugins(skills.clone(), skill_manager.clone(), oracle.clone(), llm_arc.clone()).await;
 
-        let react_engine = Arc::new(ReActEngine::new(llm_arc.clone(), skills.clone(), event_bus.clone()));
+        // Initialize observability
+        let storage = Arc::new(InMemoryStorage::new());
+        let observability = Arc::new(ObservabilityManager::new(storage));
+        
+        let react_engine = Arc::new(ObservableReActEngine::new(
+            llm_arc.clone(), 
+            skills.clone(), 
+            event_bus.clone(),
+            observability.tracer(),
+            observability.breakpoint_manager()
+        ));
 
         // Initialize Middleware Pipeline
         let pipeline = MiddlewarePipeline::new()
@@ -175,6 +187,7 @@ impl System2 {
             hierarchical_stats: Arc::new(RwLock::new(HierarchicalReasoningStats::default())),
             #[cfg(feature = "knowledge")]
             graph_rag_entity_mode: Arc::new(RwLock::new(EntityExtractorMode::Hybrid)),
+            observability,
         }
     }
     
@@ -206,7 +219,13 @@ impl System2 {
         // Also update React Engine if possible, but it holds a clone.
         // We should recreate React Engine or update its reference.
         // Recreating is safer.
-        self.react_engine = Arc::new(ReActEngine::new(self.llm.clone(), self.skills.clone(), self.event_bus.clone()));
+        self.react_engine = Arc::new(ObservableReActEngine::new(
+            self.llm.clone(), 
+            self.skills.clone(), 
+            self.event_bus.clone(),
+            self.observability.tracer(),
+            self.observability.breakpoint_manager()
+        ));
         self
     }
 
@@ -331,7 +350,17 @@ impl System2 {
             registry.register_plugin(Box::new(CreateSkillPlugin::new(skill_manager.clone())));
         }
 
-        let react_engine = Arc::new(ReActEngine::new(llm_arc.clone(), skills.clone(), event_bus.clone()));
+        // Initialize observability
+        let storage = Arc::new(InMemoryStorage::new());
+        let observability = Arc::new(ObservabilityManager::new(storage));
+        
+        let react_engine = Arc::new(ObservableReActEngine::new(
+            llm_arc.clone(), 
+            skills.clone(), 
+            event_bus.clone(),
+            observability.tracer(),
+            observability.breakpoint_manager()
+        ));
 
         // Initialize Middleware Pipeline
         let pipeline = Arc::new(MiddlewarePipeline::new()
@@ -362,6 +391,7 @@ impl System2 {
             hierarchical_stats: Arc::new(RwLock::new(HierarchicalReasoningStats::default())),
             #[cfg(feature = "knowledge")]
             graph_rag_entity_mode: Arc::new(RwLock::new(EntityExtractorMode::Hybrid)),
+            observability,
         }
     }
 
@@ -520,8 +550,14 @@ impl CognitiveSystem for System2 {
             }
         }
 
+        // Generate execution ID for observability
+        let execution_id = uuid::Uuid::new_v4().to_string();
+        
+        // Start trace session
+        self.observability.start_session(execution_id.clone(), "system2".to_string()).await;
+        
         // ReAct Loop (Execution Engine)
-        let result = match self.react_engine.execute(&final_context, max_steps).await {
+        let result = match self.react_engine.execute(&execution_id, &final_context, max_steps).await {
             Ok((response, traces)) => {
                 if hierarchical_cfg.enabled && needs_meta_switch(&response, &traces) {
                     self.event_bus.publish(AgentEvent::CognitiveLayerChanged { layer: "meta_reasoning_switch".to_string() });
@@ -531,7 +567,7 @@ impl CognitiveSystem for System2 {
                     }
                     let mut retry_context = final_context.clone();
                     retry_context.push(Message::system("当前策略效果不佳，请切换思路：避免重复工具调用，优先综合已有观察给出结论。"));
-                    match self.react_engine.execute(&retry_context, (max_steps + 2).min(12)).await {
+                    match self.react_engine.execute(&execution_id, &retry_context, (max_steps + 2).min(12)).await {
                         Ok((retry_response, mut retry_traces)) => {
                             let mut combined = meta_traces.clone();
                             combined.extend(traces);

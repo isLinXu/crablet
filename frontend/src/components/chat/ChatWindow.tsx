@@ -1,13 +1,16 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { useChatStore } from '../../store/chatStore';
+import type { ExtendedMessage } from '../../store/chatStore';
 import { useWebSocket } from '../../hooks/useWebSocket';
 import { useStreamingChat } from '../../hooks/useStreamingChat';
 import { useKeyboard } from '../../hooks/useKeyboard';
-import { Send, Bot, Loader2, StopCircle, History, X, PlusCircle, Upload } from 'lucide-react';
+import { Send, Bot, Loader2, StopCircle, History, X, PlusCircle, Upload, Workflow as WorkflowIcon, Download, Upload as UploadIcon, Settings } from 'lucide-react';
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 import { Button } from '../ui/Button';
 import { MessageBubble } from './MessageBubble';
 import { SessionList } from './SessionList';
+import { SkillSlots } from './SkillSlots';
+import { CrabEmptyState, CrabThinking } from '../ui/CrabElements';
 import clsx from 'clsx';
 import { cognitiveLayerLabel, inferCognitiveLayer, type CognitiveLayer } from '@/utils/cognitive';
 import { useModelStore } from '@/store/modelStore';
@@ -16,6 +19,11 @@ import { knowledgeService } from '@/services/knowledgeService';
 import { archiveIndexService } from '@/services/archiveIndexService';
 import toast from 'react-hot-toast';
 import { LOCAL_STORAGE_KEYS } from '@/utils/constants';
+import { convertChatToCanvas, downloadWorkflow, readWorkflowFromFile } from '@/utils/chatToCanvas';
+import type { Workflow } from '@/utils/chatToCanvas';
+import { useNavigate } from 'react-router-dom';
+import { useAgentThinking } from '@/hooks/useAgentThinking';
+import type { ThinkingProcess } from './AgentThinkingVisualization';
 
 interface PendingAttachment {
   id: string;
@@ -32,7 +40,7 @@ interface RetrievalHit {
 
 export const ChatWindow = () => {
   const { messages, isConnected, isThinking, createSession, currentCognitiveLayer, sessionId, deleteMessage, editMessage } = useChatStore();
-  const { systemLogs = [] } = useWebSocket() as any;
+  const { systemLogs = [] } = useWebSocket('ws://localhost:8080/ws/logs') as any;
   const { sendMessage } = useStreamingChat();
   const [input, setInput] = useState('');
   const [showMobileHistory, setShowMobileHistory] = useState(false);
@@ -89,6 +97,73 @@ export const ChatWindow = () => {
     setInput('');
   };
 
+  const navigate = useNavigate();
+  const fileInputWorkflowRef = useRef<HTMLInputElement>(null);
+
+  // Convert current chat to Canvas workflow
+  const handleConvertToCanvas = () => {
+    if (messages.length === 0) {
+      toast.error('No messages to convert');
+      return;
+    }
+
+    try {
+      const workflow = convertChatToCanvas(messages, {
+        workflowName: sessionId ? `Chat Workflow - ${sessionId.slice(0, 8)}` : 'Chat Workflow',
+      });
+      
+      // Store workflow in localStorage for Canvas to pick up
+      localStorage.setItem('pendingWorkflow', JSON.stringify(workflow));
+      
+      toast.success('Chat converted to workflow! Opening Canvas...');
+      navigate('/canvas');
+    } catch (error) {
+      toast.error(`Failed to convert: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
+
+  // Export current chat as workflow JSON
+  const handleExportChat = () => {
+    if (messages.length === 0) {
+      toast.error('No messages to export');
+      return;
+    }
+
+    try {
+      const workflow = convertChatToCanvas(messages, {
+        workflowName: sessionId ? `Chat Workflow - ${sessionId.slice(0, 8)}` : 'Chat Workflow',
+      });
+      downloadWorkflow(workflow);
+      toast.success('Workflow exported successfully');
+    } catch (error) {
+      toast.error(`Failed to export: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
+
+  // Import workflow from file
+  const handleImportWorkflow = async (files: FileList | null) => {
+    if (!files?.length) return;
+    
+    const file = files[0];
+    if (!file.name.endsWith('.json')) {
+      toast.error('Please select a JSON file');
+      return;
+    }
+
+    try {
+      const workflow = await readWorkflowFromFile(file);
+      localStorage.setItem('pendingWorkflow', JSON.stringify(workflow));
+      toast.success('Workflow imported! Opening Canvas...');
+      navigate('/canvas');
+    } catch (error) {
+      toast.error(`Failed to import: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+    
+    if (fileInputWorkflowRef.current) {
+      fileInputWorkflowRef.current.value = '';
+    }
+  };
+
   useKeyboard({
     'Enter': (e) => {
        // Only send if not holding Shift (allow multiline)
@@ -119,7 +194,41 @@ export const ChatWindow = () => {
     return ((lastAssistant as any)?.cognitiveLayer || 'unknown') as CognitiveLayer;
   })();
   const currentLayer = currentCognitiveLayer !== 'unknown' ? currentCognitiveLayer : inferredLayer;
-  const resolvedModel = resolveForPrompt(sessionId, input || 'general', priority);
+  
+  // 使用 useMemo 缓存 resolvedModel，避免每次渲染都创建新对象
+  const resolvedModel = useMemo(() => 
+    resolveForPrompt(sessionId, input || 'general', priority),
+    [sessionId, priority, resolveForPrompt] // 注意：不依赖 input，避免输入时频繁重新计算
+  );
+  
+  // 使用新的 Agent Thinking Hook
+  const {
+    process: thinkingProcess,
+    isThinking: isAgentThinking,
+    isManualMode,
+    manualLayer,
+    manualParadigm,
+    startThinking,
+    endThinking,
+    addRoutingStep,
+    addSystemStep,
+    addParadigmStep,
+    addReasoningStep,
+    addToolCallStep,
+    completeToolCall,
+    addConfidenceStep,
+    switchLayer,
+    switchParadigm,
+    pushStack,
+    popStack,
+    toggleManualMode,
+    setManualLayerSelected,
+    setManualParadigmSelected,
+  } = useAgentThinking({
+    sessionId,
+    model: resolvedModel?.model || 'unknown',
+    vendor: resolvedModel?.vendor || 'unknown',
+  });
 
   const handlePickFiles = async (files: FileList | null) => {
     if (!files?.length) return;
@@ -206,6 +315,97 @@ export const ChatWindow = () => {
     return () => clearTimeout(timer);
   }, [input]);
 
+  // 使用新的 Agent Thinking Hook 生成思考过程
+  useEffect(() => {
+    if (isThinking && messages.length > 0) {
+      const lastMessage = messages[messages.length - 1];
+      if (lastMessage?.role === 'assistant') {
+        // 开始新的思考过程
+        startThinking();
+        
+        // 添加路由选择步骤
+        if (resolvedModel) {
+          addRoutingStep(
+            resolvedModel.providerId,
+            resolvedModel.model,
+            resolvedModel.vendor,
+            resolvedModel.reason,
+            0.5 // 复杂度评分
+          );
+        }
+        
+        // 添加系统选择步骤 - 手动模式下使用手动选择的值
+        const effectiveLayer = isManualMode ? manualLayer : (currentLayer !== 'unknown' ? currentLayer : 'system2');
+        const systemPrompts: Record<string, string> = {
+          system1: '快速直觉响应模式 - 适用于简单直接的问题',
+          system2: '深度分析推理模式 - 适用于需要逻辑思考的问题',
+          system3: '元认知反思模式 - 适用于复杂的多步骤任务',
+        };
+        addSystemStep(
+          effectiveLayer,
+          systemPrompts[effectiveLayer] || '默认系统提示',
+          isManualMode ? '手动选择' : (currentLayer !== 'unknown' ? '基于问题复杂度自动选择' : '使用默认系统')
+        );
+        
+        // 切换认知层
+        switchLayer(
+          effectiveLayer,
+          isManualMode ? `手动切换至 ${effectiveLayer}` : (currentLayer !== 'unknown' ? `自动切换至 ${effectiveLayer}` : `默认使用 ${effectiveLayer}`),
+          isManualMode ? 'manual-override' : 'complexity-analysis',
+          0.85
+        );
+        
+        // 添加范式选择步骤 - 手动模式下使用手动选择的值
+        const paradigm: any = isManualMode ? manualParadigm : (
+                            effectiveLayer === 'system1' ? 'single-turn' : 
+                            effectiveLayer === 'system2' ? 'react' : 
+                            effectiveLayer === 'system3' ? 'reflexion' : 'react'
+        );
+        addParadigmStep(
+          paradigm,
+          isManualMode ? `手动选择 ${paradigm} 范式` : `基于 ${effectiveLayer} 认知层选择对应范式`
+        );
+        switchParadigm(paradigm, isManualMode ? '手动选择范式' : `切换至 ${paradigm} 范式`, isManualMode ? 'manual-override' : 'layer-paradigm-mapping');
+        
+        // 添加调用栈帧 - 模拟函数调用过程
+        const processMessageFrame = pushStack('processMessage', { 
+          sessionId, 
+          messageLength: lastMessage.content?.length || 0,
+          layer: effectiveLayer,
+          paradigm,
+          isManualMode,
+          manualLayer,
+          manualParadigm
+        });
+        
+        const inferenceFrame = pushStack('inference.generate', { 
+          model: resolvedModel?.model,
+          provider: resolvedModel?.providerId,
+          temperature: 0.7,
+          maxTokens: 2048
+        });
+        
+        // 添加来自 trace 的步骤
+        if (lastMessage.traceSteps) {
+          lastMessage.traceSteps.forEach((trace) => {
+            addReasoningStep(
+              trace.thought,
+              trace.action,
+              trace.observation
+            );
+          });
+        }
+        
+        // 完成调用栈帧
+        popStack(inferenceFrame, { tokens: lastMessage.content?.length || 0, status: 'success' });
+        popStack(processMessageFrame, { completed: true, totalSteps: lastMessage.traceSteps?.length || 0 });
+      }
+    } else if (!isThinking && isAgentThinking) {
+      // 思考结束
+      endThinking();
+    }
+  }, [isThinking, messages, resolvedModel, currentLayer, isManualMode, manualLayer, manualParadigm, startThinking, endThinking, addRoutingStep, addSystemStep, addParadigmStep, addReasoningStep, switchLayer, switchParadigm, isAgentThinking, pushStack, popStack]);
+
   return (
     <div className="flex flex-col h-full bg-zinc-50 dark:bg-zinc-950 transition-colors duration-200 relative">
       {/* Mobile History Drawer */}
@@ -240,19 +440,65 @@ export const ChatWindow = () => {
                 <Bot className="w-5 h-5 text-white" />
             </div>
             <div>
-                <h1 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 leading-none tracking-tight">Crablet Agent</h1>
+                <h1 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 leading-none tracking-tight">Crablet</h1>
                 <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1 flex items-center gap-1.5 font-medium">
                     <span className={clsx("w-2 h-2 rounded-full", isConnected ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]" : "bg-rose-500")}></span>
-                    {isConnected ? 'Online' : 'Offline'} · {cognitiveLayerLabel(currentLayer)}
-                </p>
-                <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-1">
-                    {resolvedModel.vendor} · {resolvedModel.model} · {resolvedModel.version}
+                    {isConnected ? 'Online' : 'Offline'} · {cognitiveLayerLabel(currentLayer)} · {resolvedModel.vendor}
                 </p>
             </div>
           </div>
         </div>
         
         <div className="flex items-center gap-2">
+            {/* Hidden file input for workflow import */}
+            <input 
+                ref={fileInputWorkflowRef} 
+                type="file" 
+                accept=".json" 
+                className="hidden" 
+                onChange={(e) => handleImportWorkflow(e.target.files)} 
+            />
+            
+            {/* Import Workflow Button */}
+            <Button 
+                variant="ghost" 
+                size="sm" 
+                onClick={() => fileInputWorkflowRef.current?.click()}
+                className="text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition-all"
+                title="Import Workflow"
+            >
+                <UploadIcon className="w-4 h-4 mr-2" />
+                Import
+            </Button>
+            
+            {/* Export Chat as Workflow Button */}
+            <Button 
+                variant="ghost" 
+                size="sm" 
+                onClick={handleExportChat}
+                disabled={messages.length === 0}
+                className="text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition-all disabled:opacity-50"
+                title="Export as Workflow JSON"
+            >
+                <Download className="w-4 h-4 mr-2" />
+                Export
+            </Button>
+            
+            {/* Convert to Canvas Button */}
+            <Button 
+                variant="ghost" 
+                size="sm" 
+                onClick={handleConvertToCanvas}
+                disabled={messages.length === 0}
+                className="text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-all disabled:opacity-50"
+                title="Convert Chat to Canvas Workflow"
+            >
+                <WorkflowIcon className="w-4 h-4 mr-2" />
+                To Canvas
+            </Button>
+            
+            <div className="w-px h-6 bg-zinc-300 dark:bg-zinc-700 mx-1" />
+            
             <Button 
                 variant="ghost" 
                 size="sm" 
@@ -269,13 +515,23 @@ export const ChatWindow = () => {
       <div className="flex-1 relative bg-zinc-50 dark:bg-zinc-950">
         <div className="absolute inset-0 max-w-5xl mx-auto w-full">
             {messages.length === 0 ? (
-                <div className="h-full flex flex-col items-center justify-center text-zinc-400 dark:text-zinc-600 p-8 text-center animate-in fade-in duration-500">
-                    <div className="w-20 h-20 bg-white dark:bg-zinc-900 rounded-3xl shadow-xl shadow-zinc-200/50 dark:shadow-black/20 flex items-center justify-center mb-8 border border-zinc-100 dark:border-zinc-800">
-                        <Bot className="w-10 h-10 text-blue-600 dark:text-blue-500" />
-                    </div>
-                    <h3 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-100 mb-3 tracking-tight">How can I help you today?</h3>
-                    <p className="text-base text-zinc-500 max-w-md mx-auto leading-relaxed">I'm Crablet, your AI assistant. I can help you write code, answer questions, and analyze data.</p>
-                </div>
+                <CrabEmptyState
+                    title="小螃蟹准备好了"
+                    description="我是 Crablet，你的 AI 助手。我可以帮你写代码、解答问题、分析数据。开始你的第一次对话吧！"
+                    action={
+                        <div className="flex flex-wrap justify-center gap-2 mt-4">
+                            {['解释代码', '生成文档', '调试错误', '优化性能'].map((suggestion) => (
+                                <button
+                                    key={suggestion}
+                                    onClick={() => setInput(suggestion)}
+                                    className="px-3 py-1.5 text-xs bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-300 rounded-lg transition-colors"
+                                >
+                                    {suggestion}
+                                </button>
+                            ))}
+                        </div>
+                    }
+                />
             ) : (
                 <Virtuoso
                 ref={virtuosoRef}
@@ -283,39 +539,134 @@ export const ChatWindow = () => {
                 data={messages}
                 followOutput="auto"
                 className="scroller-content"
-                itemContent={(_, msg) => (
+                itemContent={(index, msg) => (
                     <div className="py-8 px-4 md:px-8">
                         <MessageBubble 
                             message={msg} 
                             onDelete={deleteMessage} 
                             onEdit={editMessage}
+                            thinkingProcess={index === messages.length - 1 && msg.role === 'assistant' ? thinkingProcess : undefined}
+                            isThinking={index === messages.length - 1 && msg.role === 'assistant' ? isThinking : false}
                         />
                     </div>
                 )}
                 components={{
-                    Footer: () => isThinking ? (
-                    <div className="py-8 px-4 md:px-8">
-                        <div className="flex gap-4 max-w-4xl mx-auto pl-2">
-                            <div className="w-8 h-8 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center shrink-0">
-                                <Bot className="w-5 h-5 text-zinc-400 dark:text-zinc-500" />
-                            </div>
-                            <div className="flex items-center gap-2 text-zinc-500 dark:text-zinc-400 text-sm h-8">
-                                <Loader2 className="w-4 h-4 animate-spin" />
-                                <span>Thinking...</span>
-                            </div>
-                        </div>
-                    </div>
-                    ) : <div className="h-8" />
+                    Footer: () => <div className="h-8" />
                 }}
                 />
             )}
         </div>
       </div>
 
-      {/* Input Area */}
-      <div className="p-6 bg-transparent shrink-0 z-10">
-        <div className="max-w-4xl mx-auto">
-            <div className="relative flex flex-col gap-2 bg-zinc-100/95 dark:bg-zinc-900/95 border border-zinc-300 dark:border-zinc-700 rounded-2xl p-3 shadow-2xl shadow-zinc-200/50 dark:shadow-black/50 focus-within:ring-2 focus-within:ring-blue-500/20 focus-within:border-blue-500/50 transition-all">
+      {/* Input Area - 分离布局 */}
+      <div className="p-4 bg-transparent shrink-0 z-10">
+        <div className="max-w-4xl mx-auto space-y-3">
+            {/* 技能插槽预览 */}
+            <SkillSlots
+                skills={[
+                    { id: '1', name: '代码审查', icon: 'code', description: '分析代码质量和潜在问题', color: 'blue' },
+                    { id: '2', name: '文档生成', icon: 'file', description: '自动生成代码文档', color: 'emerald' },
+                    { id: '3', name: '智能搜索', icon: 'search', description: '深度检索知识库', color: 'amber' },
+                ]}
+                onSkillAdd={() => toast('技能选择器开发中...', { icon: '🔧' })}
+            />
+            
+            {/* 设置条 - 独立显示在输入框上方 */}
+            <div className="flex items-center justify-between px-1">
+                <div className="flex items-center gap-2">
+                    <input ref={fileInputRef} type="file" multiple className="hidden" onChange={(e) => handlePickFiles(e.target.files)} />
+                    <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        onClick={() => fileInputRef.current?.click()}
+                        className="text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
+                    >
+                        <Upload className="w-4 h-4 mr-1.5" />
+                        上传文件
+                    </Button>
+                    <div className="h-4 w-px bg-zinc-300 dark:bg-zinc-700" />
+                    <select
+                        className="h-7 rounded-md border-0 bg-transparent text-xs text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200 cursor-pointer focus:ring-0"
+                        value={sessionId ? (manualMap[sessionId] || '') : ''}
+                        onChange={(e) => sessionId && setSessionManualProvider(sessionId, e.target.value || null)}
+                    >
+                        <option value="">自动路由</option>
+                        {providers.map((p) => (
+                            <option key={p.id} value={p.id}>
+                                {p.vendor} · {p.model}
+                            </option>
+                        ))}
+                    </select>
+                    <div className="h-4 w-px bg-zinc-300 dark:bg-zinc-700" />
+                    <select
+                        className="h-7 rounded-md border-0 bg-transparent text-xs text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200 cursor-pointer focus:ring-0"
+                        value={priority}
+                        onChange={(e) => setPriority(e.target.value as any)}
+                    >
+                        <option value="balanced">平衡</option>
+                        <option value="speed">速度优先</option>
+                        <option value="quality">质量优先</option>
+                    </select>
+                    <div className="h-4 w-px bg-zinc-300 dark:bg-zinc-700" />
+                    
+                    {/* 手动控制开关 */}
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={() => toggleManualMode(!isManualMode)}
+                            className={clsx(
+                                "flex items-center gap-1.5 px-2 py-1 rounded-md text-xs transition-colors",
+                                isManualMode 
+                                    ? "bg-blue-500/20 text-blue-600 dark:text-blue-400" 
+                                    : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
+                            )}
+                            title="手动选择思考系统和Agent范式"
+                        >
+                            <Settings className="w-3.5 h-3.5" />
+                            <span>手动</span>
+                            <span className={clsx(
+                                "w-1.5 h-1.5 rounded-full",
+                                isManualMode ? "bg-blue-500" : "bg-zinc-400"
+                            )} />
+                        </button>
+                        
+                        {/* 手动模式下的系统选择 */}
+                        {isManualMode && (
+                            <>
+                                <select
+                                    className="h-7 rounded-md border-0 bg-transparent text-xs cursor-pointer focus:ring-0"
+                                    value={manualLayer}
+                                    onChange={(e) => setManualLayerSelected(e.target.value as any)}
+                                    style={{
+                                        color: manualLayer === 'system1' ? '#eab308' : manualLayer === 'system2' ? '#3b82f6' : manualLayer === 'system3' ? '#a855f7' : '#6b7280'
+                                    }}
+                                >
+                                    <option value="system1">System 1</option>
+                                    <option value="system2">System 2</option>
+                                    <option value="system3">System 3</option>
+                                </select>
+                                
+                                <select
+                                    className="h-7 rounded-md border-0 bg-transparent text-xs text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200 cursor-pointer focus:ring-0"
+                                    value={manualParadigm}
+                                    onChange={(e) => setManualParadigmSelected(e.target.value as any)}
+                                >
+                                    <option value="single-turn">Single-Turn</option>
+                                    <option value="react">ReAct</option>
+                                    <option value="reflexion">Reflexion</option>
+                                    <option value="plan-and-execute">Plan & Execute</option>
+                                    <option value="swarm">Swarm</option>
+                                </select>
+                            </>
+                        )}
+                    </div>
+                </div>
+                <span className="text-[10px] text-zinc-400 font-medium hidden sm:inline-block">
+                    Shift + Enter 换行
+                </span>
+            </div>
+            
+            {/* 输入框 - 独立容器 */}
+            <div className="relative bg-zinc-100/95 dark:bg-zinc-900/95 border border-zinc-300 dark:border-zinc-700 rounded-2xl shadow-xl shadow-zinc-200/30 dark:shadow-black/30 focus-within:ring-2 focus-within:ring-blue-500/20 focus-within:border-blue-500/50 transition-all">
                 <textarea
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
@@ -327,59 +678,31 @@ export const ChatWindow = () => {
                     }}
                     placeholder="Message Crablet..."
                     disabled={isThinking}
-                    className="flex-1 bg-transparent border-none text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-500 dark:placeholder:text-zinc-500 focus:ring-0 resize-none max-h-48 min-h-[44px] py-2 px-2 text-[15px] leading-relaxed scrollbar-thin scrollbar-thumb-zinc-400 dark:scrollbar-thumb-zinc-700"
+                    className="w-full bg-transparent border-none text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-500 dark:placeholder:text-zinc-500 focus:ring-0 resize-none max-h-48 min-h-[56px] py-4 px-4 text-[15px] leading-relaxed scrollbar-thin scrollbar-thumb-zinc-400 dark:scrollbar-thumb-zinc-700 rounded-2xl"
                     rows={1}
-                    style={{ height: 'auto', minHeight: '44px' }} 
+                    style={{ height: 'auto', minHeight: '56px' }} 
                 />
-                <div className="flex justify-between items-center px-2 pt-2 border-t border-zinc-300/80 dark:border-zinc-800/80">
-                    <div className="flex gap-2">
-                        <input ref={fileInputRef} type="file" multiple className="hidden" onChange={(e) => handlePickFiles(e.target.files)} />
-                        <Button variant="secondary" size="sm" onClick={() => fileInputRef.current?.click()}>
-                            <Upload className="w-4 h-4 mr-1" />
-                            上传文件
-                        </Button>
-                        <select
-                            className="h-8 rounded-md border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-xs px-2"
-                            value={sessionId ? (manualMap[sessionId] || '') : ''}
-                            onChange={(e) => sessionId && setSessionManualProvider(sessionId, e.target.value || null)}
-                        >
-                            <option value="">自动路由</option>
-                            {providers.map((p) => (
-                                <option key={p.id} value={p.id}>
-                                    {p.vendor} / {p.model} / {p.version}
-                                </option>
-                            ))}
-                        </select>
-                        <select
-                            className="h-8 rounded-md border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-xs px-2"
-                            value={priority}
-                            onChange={(e) => setPriority(e.target.value as any)}
-                        >
-                            <option value="balanced">平衡</option>
-                            <option value="speed">速度优先</option>
-                            <option value="quality">质量优先</option>
-                        </select>
-                    </div>
-                    <div className="flex items-center gap-3">
-                         <span className="text-[10px] text-zinc-400 font-medium hidden sm:inline-block">Use Shift + Enter for new line</span>
-                         <Button
-                            onClick={handleSend}
-                            disabled={isThinking || !input.trim()}
-                            size="icon"
-                            className={clsx(
-                                "h-8 w-8 rounded-lg transition-all duration-200",
-                                input.trim() 
-                                    ? "bg-blue-600 hover:bg-blue-700 text-white shadow-md shadow-blue-500/20" 
-                                    : "bg-zinc-100 dark:bg-zinc-800 text-zinc-400 dark:text-zinc-500"
-                            )}
-                        >
-                            {isThinking ? <StopCircle className="w-4 h-4" /> : <Send className="w-4 h-4" />}
-                        </Button>
-                    </div>
+                {/* 发送按钮 - 绝对定位在右下角 */}
+                <div className="absolute bottom-3 right-3">
+                    <Button
+                        onClick={handleSend}
+                        disabled={isThinking || !input.trim()}
+                        size="icon"
+                        className={clsx(
+                            "h-9 w-9 rounded-xl transition-all duration-200",
+                            input.trim() 
+                                ? "bg-blue-600 hover:bg-blue-700 text-white shadow-md shadow-blue-500/20" 
+                                : "bg-zinc-200 dark:bg-zinc-800 text-zinc-400 dark:text-zinc-500"
+                        )}
+                    >
+                        {isThinking ? <StopCircle className="w-4 h-4" /> : <Send className="w-4 h-4" />}
+                    </Button>
                 </div>
             </div>
+            
+            {/* 附件列表 */}
             {attachments.length > 0 && (
-              <div className="mt-2 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white/70 dark:bg-zinc-900/60 p-2 space-y-1">
+              <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white/70 dark:bg-zinc-900/60 p-2 space-y-1">
                 {attachments.map((a) => (
                   <div key={a.id} className="flex items-center justify-between gap-2 text-xs">
                     <div className="truncate">{a.file.name}</div>
@@ -397,8 +720,10 @@ export const ChatWindow = () => {
                 ))}
               </div>
             )}
+            
+            {/* 知识检索结果 */}
             {(retrieving || retrievalHits.length > 0) && (
-              <div className="mt-2 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white/70 dark:bg-zinc-900/60 p-2 space-y-1">
+              <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white/70 dark:bg-zinc-900/60 p-2 space-y-1">
                 <div className="text-[11px] text-zinc-500 font-medium">
                   {retrieving ? '检索知识库中...' : `检索命中 ${retrievalHits.length} 条（可勾选注入，最多发送3条）`}
                 </div>
@@ -433,7 +758,9 @@ export const ChatWindow = () => {
                 ))}
               </div>
             )}
-            <div className="text-center mt-3 text-[11px] text-zinc-400 dark:text-zinc-600 font-medium">
+            
+            {/* 底部提示 */}
+            <div className="text-center text-[11px] text-zinc-400 dark:text-zinc-600 font-medium">
                 Crablet can make mistakes. Consider checking important information.
             </div>
         </div>

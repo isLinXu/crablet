@@ -4,10 +4,13 @@ use tokio::time::Duration;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use chrono::{DateTime, Utc};
-use super::{SkillType, SkillRegistry};
+use std::sync::Arc;
+use super::{SkillType, SkillRegistry, OpenClawEngine};
 use crate::sandbox::docker::DockerExecutor;
 use crate::sandbox::local::LocalSandbox;
 use crate::sandbox::{Sandbox, Language};
+use crate::cognitive::llm::LlmClient;
+use crate::tools::manager::ToolManager;
 
 /// 安全等级定义
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -41,9 +44,23 @@ pub struct ExecutionAudit {
     pub duration_ms: u64,
 }
 
-pub struct SkillExecutor;
+pub struct SkillExecutor {
+    openclaw_engine: Option<Arc<OpenClawEngine>>,
+}
 
 impl SkillExecutor {
+    pub fn new() -> Self {
+        Self {
+            openclaw_engine: None,
+        }
+    }
+
+    /// 使用 LLM 客户端初始化（用于 OpenClaw 执行）
+    pub fn with_llm_client(mut self, llm_client: Arc<dyn LlmClient>, tool_manager: Arc<ToolManager>) -> Self {
+        self.openclaw_engine = Some(Arc::new(OpenClawEngine::new(llm_client, tool_manager)));
+        self
+    }
+
     pub async fn execute(registry: &SkillRegistry, name: &str, args: Value) -> Result<String> {
         let skill_type = registry.skills.get(name).context(format!("Skill not found: {}", name))?;
         
@@ -215,5 +232,11 @@ impl SkillExecutor {
         } else {
             Ok(format!("### SKILL INSTRUCTION\n{}", prompt))
         }
+    }
+}
+
+impl Default for SkillExecutor {
+    fn default() -> Self {
+        Self::new()
     }
 }

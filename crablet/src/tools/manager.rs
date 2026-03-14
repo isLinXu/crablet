@@ -3,6 +3,63 @@ use std::process::Command;
 use std::path::{Path, PathBuf};
 use std::fs;
 use tracing::info;
+use serde_json::Value;
+use async_trait::async_trait;
+
+/// 工具管理器
+pub struct ToolManager {
+    // 工具列表
+    tools: Vec<Box<dyn Tool>>,
+}
+
+/// 工具 trait
+#[async_trait]
+pub trait Tool: Send + Sync {
+    fn name(&self) -> &str;
+    fn description(&self) -> &str;
+    fn parameters(&self) -> Value;
+    async fn execute(&self, command: &str, args: Value) -> Result<String>;
+}
+
+impl ToolManager {
+    /// 创建新的工具管理器
+    pub fn new() -> Self {
+        Self {
+            tools: Vec::new(),
+        }
+    }
+
+    /// 添加工具
+    pub fn add_tool(&mut self, tool: Box<dyn Tool>) {
+        self.tools.push(tool);
+    }
+
+    /// 获取工具列表
+    pub fn list_tools(&self) -> &[Box<dyn Tool>] {
+        &self.tools
+    }
+
+    /// 执行工具
+    pub async fn execute(&self, name: &str, args: Value) -> Result<String> {
+        for tool in &self.tools {
+            if tool.name() == name {
+                return tool.execute(name, args).await;
+            }
+        }
+        Err(anyhow!("Tool not found: {}", name))
+    }
+
+    /// 检查是否为空
+    pub fn is_empty(&self) -> bool {
+        self.tools.is_empty()
+    }
+}
+
+impl Default for ToolManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 pub struct SkillManagerTool {
     skills_dir: PathBuf,

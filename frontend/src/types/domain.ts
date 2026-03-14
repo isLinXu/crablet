@@ -56,6 +56,37 @@ export interface BatchTestResult {
   passed: boolean;
 }
 
+// 语义搜索结果
+export interface SemanticSearchResult {
+  skill_name: string;
+  description: string;
+  version: string;
+  similarity_score: number;
+  match_type: 'semantic' | 'keyword' | 'hybrid';
+  tags: string[];
+  author: string;
+  category: string;
+}
+
+// 技能执行日志
+export interface SkillExecutionLog {
+  skill_name: string;
+  timestamp: string;
+  success: boolean;
+  output: string;
+  error?: string;
+  execution_time_ms: number;
+}
+
+// 技能运行结果
+export interface SkillRunResult {
+  skill_name: string;
+  success: boolean;
+  output: string;
+  execution_time_ms: number;
+  timestamp: string;
+}
+
 export interface ApiKeyInfo {
   id: string;
   name: string;

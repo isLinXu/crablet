@@ -15,6 +15,15 @@ pub mod dsl;
 pub mod visualization;
 pub mod semantic_matcher;
 pub mod hybrid_matcher;
+pub mod openclaw_executor;
+pub mod atomic_installer;
+pub mod signature;
+pub mod environment;
+pub mod installer_ui;
+pub mod semantic_search;
+pub mod version_manager;
+pub mod interactive_wizard;
+pub mod dev_tools;
 
 // Re-export core types
 pub use registry::SkillRegistry;
@@ -25,6 +34,16 @@ pub use chain::{SkillChain, SkillChainEngine, ChainStep, StepType, StepConnectio
 pub use dsl::{WorkflowDefinition, WorkflowCompiler};
 pub use orchestrator::{SkillOrchestrator, OrchestratorConfig, ExecutionRequest, ExecutionResponse, ExecutionStatus};
 pub use visualization::{GraphExporter, GraphFormat};
+pub use openclaw_executor::{OpenClawEngine, OpenClawResult, ExecutionContext};
+pub use atomic_installer::{AtomicInstaller, InstallResult};
+pub use signature::{SkillSignatureVerifier, VerificationResult};
+pub use environment::{SkillEnvironment, VirtualEnv};
+pub use installer_ui::{InstallProgress, SkillInfoDisplay, UserPrompt, ErrorDisplay, LogDisplay};
+pub use semantic_search::{SkillSearchManager, SkillSearchResult, SkillSearchMetadata, SkillSearchIndex, SkillCategory, SearchQuery, SearchFilters, MatchType};
+pub use semantic_matcher::{SemanticMatcher, SemanticMatch, SkillMetadata};
+pub use version_manager::{VersionManager, SemVer, VersionConstraint, VersionDiff, UpdateInfo, UpdateStats};
+pub use interactive_wizard::{InteractiveWizard, QuickInstallWizard, WizardStep, WizardState, SkillConfiguration, InstallOptions};
+pub use dev_tools::{DevTools, InitResult, ValidationResult, TestResult, BuildResult, PublishResult, DocsResult};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SkillParameter {
@@ -68,6 +87,8 @@ pub struct SkillManifest {
     pub conflicts: Vec<String>, // Conflicting skills
     #[serde(default)]
     pub min_crablet_version: Option<String>, // Minimum Crablet version
+    #[serde(default)]
+    pub author: Option<String>, // Author of the skill
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -96,4 +117,21 @@ pub enum SkillType {
     Plugin(SkillManifest, Arc<Box<dyn crate::plugins::Plugin>>),
     // OpenClaw Prompt Skill
     OpenClaw(Skill, String), // Skill + Instructions
+}
+
+impl std::fmt::Debug for SkillType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SkillType::Local(_) => write!(f, "SkillType::Local"),
+            SkillType::Mcp(manifest, _, tool_name) => {
+                write!(f, "SkillType::Mcp({:?}, _, {:?})", manifest.name, tool_name)
+            }
+            SkillType::Plugin(manifest, _) => {
+                write!(f, "SkillType::Plugin({:?}, _)", manifest.name)
+            }
+            SkillType::OpenClaw(skill, _) => {
+                write!(f, "SkillType::OpenClaw({:?}, _)", skill.manifest.name)
+            }
+        }
+    }
 }
