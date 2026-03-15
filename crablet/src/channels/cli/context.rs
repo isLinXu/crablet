@@ -98,7 +98,11 @@ impl AppContext {
             }
         };
 
-        let mut router = CognitiveRouter::new(&config, memory.clone(), event_bus.clone()).await;
+        let router = CognitiveRouter::new(&config, memory.clone(), event_bus.clone()).await;
+        
+        // Initialize Fusion Memory System if enabled
+        // Note: Temporarily disabled due to config type mismatch
+        let mut router = router;
         
         #[cfg(feature = "knowledge")]
         {

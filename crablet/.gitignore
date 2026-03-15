@@ -32,6 +32,7 @@ Cargo.lock
 .env.development
 .env.production
 .env.test
+.env
 
 # =============================================================================
 # Config Files with Secrets

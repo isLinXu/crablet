@@ -1,11 +1,11 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { cn } from '../ui/Button';
 import type { ExtendedMessage } from '@/store/chatStore';
 import { CodeBlock } from './CodeBlock';
 import { Bot, User, Copy, Check, Download, Pencil, Trash2, X } from 'lucide-react';
 import { cognitiveLayerLabel } from '@/utils/cognitive';
-import { AgentThinkingVisualization, type ThinkingProcess } from './AgentThinkingVisualization';
+import { EnhancedThinkingVisualization, type ThinkingProcess } from './EnhancedThinkingVisualization';
 import { CrabThinking } from '../ui/CrabElements';
 
 interface MessageBubbleProps {
@@ -14,14 +14,21 @@ interface MessageBubbleProps {
   onDelete?: (id: string) => void;
   thinkingProcess?: ThinkingProcess;
   isThinking?: boolean;
+  onSendMessage?: (message: string) => void; // 新增：发送消息回调
+  conversationHistory?: Array<{ role: string; content: string }>; // 新增：对话历史
+  lastUserMessage?: string; // 新增：最后一条用户消息
 }
 
-export const MessageBubble: React.FC<MessageBubbleProps> = ({ 
+// 使用 React.memo 避免不必要的重渲染
+export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(({ 
   message, 
   onEdit, 
   onDelete, 
   thinkingProcess, 
   isThinking,
+  onSendMessage,
+  conversationHistory = [],
+  lastUserMessage = '',
 }) => {
   const isUser = message.role === 'user';
   const [copied, setCopied] = React.useState(false);
@@ -84,7 +91,8 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
       }
   };
 
-  const renderContent = () => {
+  // 使用 useMemo 缓存 Markdown 渲染结果，避免流式输出时的频繁重渲染
+  const renderedContent = useMemo(() => {
     if (isEditing) {
         return (
             <div className="flex flex-col gap-2 w-full">
@@ -162,7 +170,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
         )}
       </>
     );
-  };
+  }, [message.content, isEditing, editValue]);
 
   const knowledgeJump = (source: string, snippet?: string) =>
     `/knowledge?q=${encodeURIComponent(source)}&source=${encodeURIComponent(source)}${snippet ? `&snippet=${encodeURIComponent(snippet.slice(0, 160))}` : ''}`;
@@ -186,7 +194,71 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
     
     // 否则从消息的 traceSteps 构建
     if (message.traceSteps && message.traceSteps.length > 0) {
-      const steps = message.traceSteps.map((trace, index) => {
+      const steps: any[] = [];
+      
+      // 1. 添加意图识别步骤（基于第一条 trace）
+      const firstTrace = message.traceSteps[0];
+      const firstText = (firstTrace.thought + ' ' + firstTrace.action).toLowerCase();
+      
+      // 检测意图类型
+      let intentType = 'General';
+      let intentDescription = '通用查询';
+      
+      if (firstText.includes('greeting') || firstText.includes('你好') || firstText.includes('hello') || firstText.includes('hi')) {
+        intentType = 'Greeting';
+        intentDescription = '问候/打招呼';
+      } else if (firstText.includes('code') || firstText.includes('代码') || firstText.includes('function') || firstText.includes('programming')) {
+        intentType = 'Coding';
+        intentDescription = '代码相关';
+      } else if (firstText.includes('search') || firstText.includes('检索') || firstText.includes('查找') || firstText.includes('query')) {
+        intentType = 'Search';
+        intentDescription = '知识检索';
+      } else if (firstText.includes('analyze') || firstText.includes('分析') || firstText.includes('compare')) {
+        intentType = 'Analysis';
+        intentDescription = '数据分析';
+      } else if (firstText.includes('help') || firstText.includes('帮助')) {
+        intentType = 'Help';
+        intentDescription = '寻求帮助';
+      }
+      
+      steps.push({
+        id: 'intent-recognition',
+        type: 'intent',
+        title: '意图识别',
+        content: `识别用户意图: ${intentDescription} (${intentType})`,
+        timestamp: new Date(message.timestamp || Date.now()).getTime() - message.traceSteps.length * 500 - 200,
+        duration: 50,
+        details: {
+          intentType,
+          intentDescription,
+          confidence: 0.95,
+        },
+      });
+      
+      // 2. 添加系统选择步骤
+      const currentLayer = message.cognitiveLayer || 'unknown';
+      const layerNames: Record<string, string> = {
+        'system1': 'System 1 (快速直觉)',
+        'system2': 'System 2 (深度分析)',
+        'system3': 'System 3 (元认知)',
+        'unknown': '自动选择',
+      };
+      
+      steps.push({
+        id: 'system-selection',
+        type: 'system',
+        title: '系统选择',
+        content: `路由到: ${layerNames[currentLayer] || currentLayer}`,
+        timestamp: new Date(message.timestamp || Date.now()).getTime() - message.traceSteps.length * 500 - 100,
+        duration: 30,
+        details: {
+          selectedLayer: currentLayer,
+          reason: intentType === 'Greeting' ? '简单问候，使用快速响应' : '基于复杂度评估',
+        },
+      });
+      
+      // 3. 添加原始 traceSteps
+      message.traceSteps.forEach((trace, index) => {
         const text = (trace.thought + ' ' + trace.action).toLowerCase();
         let type: any = 'reasoning';
         if (text.includes('search') || text.includes('检索') || text.includes('查找') || text.includes('query') || text.includes('rag')) {
@@ -197,7 +269,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
           type = 'insight';
         }
         
-        return {
+        steps.push({
           id: `trace-${index}`,
           type,
           title: stepLabels[type] || '思考',
@@ -209,7 +281,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
             action: trace.action,
             observation: trace.observation,
           },
-        };
+        });
       });
       
       return {
@@ -248,9 +320,15 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
       <div className="flex-1 min-w-0 space-y-3">
         {/* 思考过程 - 在每条 assistant 消息前显示 */}
         {!isUser && messageThinkingProcess && (
-          <AgentThinkingVisualization
+          <EnhancedThinkingVisualization
             process={messageThinkingProcess}
             isThinking={showThinking || false}
+            onIntervene={(request) => console.log('Intervention:', request)}
+            onSuggestionClick={(suggestion) => console.log('Suggestion:', suggestion)}
+            onSendMessage={onSendMessage}
+            lastUserMessage={lastUserMessage}
+            lastAssistantMessage={typeof message.content === 'string' ? message.content : ''}
+            conversationHistory={conversationHistory}
           />
         )}
         
@@ -312,7 +390,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                 ? "prose-p:text-white prose-headings:text-white prose-strong:text-white prose-li:text-white prose-code:text-white prose-code:bg-blue-700" 
                 : "prose-p:text-zinc-800 dark:prose-p:text-zinc-100 prose-headings:text-zinc-900 dark:prose-headings:text-zinc-100 prose-strong:text-zinc-900 dark:prose-strong:text-zinc-100 prose-li:text-zinc-800 dark:prose-li:text-zinc-200 prose-code:text-zinc-900 dark:prose-code:text-zinc-100 prose-code:bg-zinc-200 dark:prose-code:bg-zinc-700"
         )}>
-          {renderContent()}
+          {renderedContent}
         </div>
         {!isUser && Array.isArray(message.citations) && message.citations.length > 0 && (
           <div className="mt-3 space-y-2">
@@ -336,4 +414,4 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
       </div>
     </div>
   );
-};
+});

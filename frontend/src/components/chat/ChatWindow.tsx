@@ -4,7 +4,7 @@ import type { ExtendedMessage } from '../../store/chatStore';
 import { useWebSocket } from '../../hooks/useWebSocket';
 import { useStreamingChat } from '../../hooks/useStreamingChat';
 import { useKeyboard } from '../../hooks/useKeyboard';
-import { Send, Bot, Loader2, StopCircle, History, X, PlusCircle, Upload, Workflow as WorkflowIcon, Download, Upload as UploadIcon, Settings } from 'lucide-react';
+import { Send, Bot, Loader2, StopCircle, History, X, PlusCircle, Upload, Workflow as WorkflowIcon, Download, Upload as UploadIcon, Settings, BookOpen } from 'lucide-react';
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 import { Button } from '../ui/Button';
 import { MessageBubble } from './MessageBubble';
@@ -15,6 +15,7 @@ import clsx from 'clsx';
 import { cognitiveLayerLabel, inferCognitiveLayer, type CognitiveLayer } from '@/utils/cognitive';
 import { useModelStore } from '@/store/modelStore';
 import { validateFile, heuristicSecurityScan, computeFileHash, extractTagsByName } from '@/utils/filePipeline';
+import { extractFileContent, getFileTypeDescription } from '@/utils/fileContentExtractor';
 import { knowledgeService } from '@/services/knowledgeService';
 import { archiveIndexService } from '@/services/archiveIndexService';
 import toast from 'react-hot-toast';
@@ -23,14 +24,20 @@ import { convertChatToCanvas, downloadWorkflow, readWorkflowFromFile } from '@/u
 import type { Workflow } from '@/utils/chatToCanvas';
 import { useNavigate } from 'react-router-dom';
 import { useAgentThinking } from '@/hooks/useAgentThinking';
-import type { ThinkingProcess } from './AgentThinkingVisualization';
+import type { ThinkingProcess } from './EnhancedThinkingVisualization';
+import { EnhancedThinkingVisualization } from './EnhancedThinkingVisualization';
+import type { InterventionRequest } from '../cognitive/ThinkingIntervention';
+import type { Suggestion } from '../cognitive/SmartSuggestions';
+import { RagConfigPanel, type RagConfig } from '../rag/RagConfigPanel';
 
 interface PendingAttachment {
   id: string;
   file: File;
   progress: number;
-  status: 'pending' | 'uploading' | 'uploaded' | 'failed';
+  status: 'pending' | 'uploading' | 'uploaded' | 'failed' | 'processing';
   hash?: string;
+  isOcr?: boolean; // 标记是否使用了OCR
+  ocrProgress?: number; // OCR进度
 }
 interface RetrievalHit {
   content: string;
@@ -49,6 +56,8 @@ export const ChatWindow = () => {
   const [retrievalHits, setRetrievalHits] = useState<RetrievalHit[]>([]);
   const [retrieving, setRetrieving] = useState(false);
   const [selectedRetrieval, setSelectedRetrieval] = useState<number[]>([]);
+  const [showRagConfig, setShowRagConfig] = useState(false);
+  const [ragConfig, setRagConfig] = useState<RagConfig | null>(null);
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const allProviders = useModelStore((s) => s.providers);
@@ -64,9 +73,55 @@ export const ChatWindow = () => {
     // Note: Actual addMessage is handled by store/hook, but for "real-time" feel we rely on store update.
     // useStreamingChat calls addMessage internally.
     
-    const attachmentSummary = attachments
-      .filter((a) => a.status === 'uploaded')
-      .map((a) => `[文件] ${a.file.name}`)
+    // 读取已上传文件的内容（最大约 100万 tokens ≈ 5MB 文本内容）
+    // 包含所有附件，无论是否已归档到知识库
+    const allAttachments = attachments.filter((a) => a.status !== 'failed');
+    let fileContents = '';
+    const MAX_FILE_CONTENT_LENGTH = 5 * 1024 * 1024; // 5MB，约支持 100万+ tokens
+    
+    console.log(`[Chat] 处理 ${allAttachments.length} 个附件...`);
+    
+    for (const attachment of allAttachments) {
+      try {
+        // 更新状态为处理中
+        setAttachments(prev => prev.map(a => 
+          a.id === attachment.id ? { ...a, status: 'processing' } : a
+        ));
+
+        console.log(`[Chat] 提取文件内容: ${attachment.file.name} (${attachment.file.size} bytes)`);
+        
+        const result = await extractFileContent(attachment.file, {
+          maxLength: MAX_FILE_CONTENT_LENGTH,
+          onOcrStart: () => {
+            setAttachments(prev => prev.map(a => 
+              a.id === attachment.id ? { ...a, isOcr: true } : a
+            ));
+          },
+          onProgress: (progress) => {
+            setAttachments(prev => prev.map(a => 
+              a.id === attachment.id ? { ...a, ocrProgress: progress } : a
+            ));
+          },
+        });
+
+        console.log(`[Chat] 文件提取结果: success=${result.success}, length=${result.text.length}, isOcr=${result.isOcr}`);
+
+        if (result.success) {
+          const fileType = getFileTypeDescription(attachment.file.name);
+          const archiveStatus = attachment.status === 'uploaded' ? '' : ' (未归档)';
+          const ocrStatus = result.isOcr ? ' (OCR)' : '';
+          fileContents += `\n\n[${fileType}: ${attachment.file.name}]${archiveStatus}${ocrStatus}${result.truncated ? ' (内容已截断)' : ''}\n${result.text}`;
+        } else {
+          fileContents += `\n\n[文件: ${attachment.file.name}] (无法读取内容: ${result.error || '未知错误'})`;
+        }
+      } catch (e) {
+        console.error(`[Chat] 文件提取失败:`, e);
+        fileContents += `\n\n[文件: ${attachment.file.name}] (无法读取内容)`;
+      }
+    }
+    
+    const attachmentSummary = allAttachments
+      .map((a) => `[文件${a.status === 'uploaded' ? '' : ' (未归档)'}] ${a.file.name}`)
       .join('\n');
     const picked = selectedRetrieval
       .map((idx) => retrievalHits[idx])
@@ -75,8 +130,28 @@ export const ChatWindow = () => {
     const retrievalSummary = picked
       .map((r, idx) => `[检索片段${idx + 1}] source=${r.metadata?.source || r.metadata?.source_trace || 'unknown'} score=${Number(r.score || 0).toFixed(3)}\n${String(r.content || '').slice(0, 400)}`)
       .join('\n\n');
-    const finalPromptBase = attachmentSummary ? `${input}\n\n${attachmentSummary}` : input;
-    const finalPrompt = retrievalSummary ? `${finalPromptBase}\n\n[知识检索上下文]\n${retrievalSummary}` : finalPromptBase;
+    
+    // 构建最终 prompt，包含文件内容
+    let finalPrompt = input;
+    if (attachmentSummary) {
+      finalPrompt += `\n\n[附件列表]\n${attachmentSummary}`;
+    }
+    if (fileContents) {
+      finalPrompt += `\n\n[文件内容]${fileContents}`;
+    }
+    if (retrievalSummary) {
+      finalPrompt += `\n\n[知识检索上下文]\n${retrievalSummary}`;
+    }
+    
+    // 调试：输出最终prompt的长度和结构
+    console.log(`[Chat] 最终Prompt长度: ${finalPrompt.length} 字符`);
+    console.log(`[Chat] 文件内容长度: ${fileContents.length} 字符`);
+    console.log(`[Chat] 检索上下文长度: ${retrievalSummary.length} 字符`);
+    
+    // 显示文件内容预览（前500字符）
+    if (fileContents) {
+      console.log(`[Chat] 文件内容预览:\n${fileContents.slice(0, 500)}...`);
+    }
     
     setInput(''); // Clear input immediately for responsiveness
     setAttachments([]); // Clear attachments
@@ -335,7 +410,51 @@ export const ChatWindow = () => {
         }
         
         // 添加系统选择步骤 - 手动模式下使用手动选择的值
-        const effectiveLayer = isManualMode ? manualLayer : (currentLayer !== 'unknown' ? currentLayer : 'system2');
+        // 如果没有明确的认知层，基于消息内容推断
+        const inferLayerFromMessage = (msg: string): CognitiveLayer => {
+          const lower = msg.toLowerCase();
+          // 问候语检测
+          const greetings = ['你好', '您好', '嗨', 'hello', 'hi', 'hey', '早上好', '下午好', '晚上好', '在吗', '在么'];
+          if (greetings.some(g => lower.trim() === g || lower.startsWith(g + ' '))) {
+            return 'system1';
+          }
+          // 人设/身份查询
+          const personaPatterns = [
+            '你是谁', '你是什么', '你叫什么', '介绍一下', '你是干嘛的', '你是做什么的',
+            '你的身份', '你的角色', '你是ai吗', '你是人工智能吗', '你是机器人吗',
+            'who are you', 'what are you', 'your name', 'introduce yourself', 'tell me about yourself'
+          ];
+          if (personaPatterns.some(p => lower.includes(p))) {
+            return 'system1';
+          }
+          // 闲聊/社交对话
+          const chatPatterns = [
+            '你好吗', '最近怎么样', '很高兴认识你', '谢谢', '多谢', '哈哈', '呵呵', '嘿嘿',
+            'how are you', 'what\'s up', 'how\'s it going', 'nice to meet you', 'thank you', 'thanks'
+          ];
+          if (chatPatterns.some(p => lower.trim() === p || lower.startsWith(p))) {
+            return 'system1';
+          }
+          // 简单个人问题
+          const personalPatterns = [
+            '你多大了', '你几岁了', '你喜欢什么', '你的爱好', '你喜欢', 'how old are you',
+            'where are you from', 'what do you like', 'your favorite'
+          ];
+          if (personalPatterns.some(p => lower.includes(p))) {
+            return 'system1';
+          }
+          // 简单帮助请求
+          if (lower.includes('help') || lower.includes('帮助') || lower.includes('怎么用') || lower.includes('如何使用')) {
+            return 'system1';
+          }
+          // 默认使用 system2
+          return 'system2';
+        };
+        
+        const lastUserMsg = messages[messages.length - 2]?.content as string || '';
+        const effectiveLayer = isManualMode 
+          ? manualLayer 
+          : (currentLayer !== 'unknown' ? currentLayer : inferLayerFromMessage(lastUserMsg));
         const systemPrompts: Record<string, string> = {
           system1: '快速直觉响应模式 - 适用于简单直接的问题',
           system2: '深度分析推理模式 - 适用于需要逻辑思考的问题',
@@ -539,17 +658,27 @@ export const ChatWindow = () => {
                 data={messages}
                 followOutput="auto"
                 className="scroller-content"
-                itemContent={(index, msg) => (
-                    <div className="py-8 px-4 md:px-8">
-                        <MessageBubble 
-                            message={msg} 
-                            onDelete={deleteMessage} 
-                            onEdit={editMessage}
-                            thinkingProcess={index === messages.length - 1 && msg.role === 'assistant' ? thinkingProcess : undefined}
-                            isThinking={index === messages.length - 1 && msg.role === 'assistant' ? isThinking : false}
-                        />
-                    </div>
-                )}
+                itemContent={(index, msg) => {
+                    // 使用 useMemo 缓存计算结果，避免每次渲染都重新计算
+                    const isLastMessage = index === messages.length - 1;
+                    const isAssistant = msg.role === 'assistant';
+                    
+                    return (
+                        <div className="py-8 px-4 md:px-8">
+                            <MessageBubble 
+                                message={msg} 
+                                onDelete={deleteMessage} 
+                                onEdit={editMessage}
+                                thinkingProcess={isLastMessage && isAssistant ? thinkingProcess : undefined}
+                                isThinking={isLastMessage && isAssistant ? isThinking : false}
+                                onSendMessage={sendMessage}
+                                // 只传递必要的历史记录，避免传递整个 messages 数组
+                                conversationHistory={[]}
+                                lastUserMessage=""
+                            />
+                        </div>
+                    );
+                }}
                 components={{
                     Footer: () => <div className="h-8" />
                 }}
@@ -607,6 +736,24 @@ export const ChatWindow = () => {
                         <option value="speed">速度优先</option>
                         <option value="quality">质量优先</option>
                     </select>
+                    <div className="h-4 w-px bg-zinc-300 dark:bg-zinc-700" />
+                    
+                    {/* RAG配置按钮 */}
+                    <button
+                        onClick={() => setShowRagConfig(true)}
+                        className={clsx(
+                            "flex items-center gap-1.5 px-2 py-1 rounded-md text-xs transition-colors",
+                            ragConfig 
+                                ? "bg-amber-500/20 text-amber-600 dark:text-amber-400" 
+                                : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
+                        )}
+                        title="配置RAG检索策略"
+                    >
+                        <BookOpen className="w-3.5 h-3.5" />
+                        <span>RAG</span>
+                        {ragConfig && <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />}
+                    </button>
+                    
                     <div className="h-4 w-px bg-zinc-300 dark:bg-zinc-700" />
                     
                     {/* 手动控制开关 */}
@@ -705,12 +852,30 @@ export const ChatWindow = () => {
               <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white/70 dark:bg-zinc-900/60 p-2 space-y-1">
                 {attachments.map((a) => (
                   <div key={a.id} className="flex items-center justify-between gap-2 text-xs">
-                    <div className="truncate">{a.file.name}</div>
-                    <div className="flex items-center gap-2">
-                      <span className={clsx(a.status === 'failed' ? 'text-red-500' : 'text-zinc-500')}>
-                        {a.status === 'uploading' ? `${a.progress}%` : a.status}
+                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                      <div className="truncate">{a.file.name}</div>
+                      {a.isOcr && (
+                        <span className="px-1.5 py-0.5 bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 rounded text-[10px]">
+                          OCR
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {a.status === 'processing' && a.ocrProgress !== undefined && (
+                        <span className="text-amber-600 dark:text-amber-400">
+                          OCR {a.ocrProgress}%
+                        </span>
+                      )}
+                      <span className={clsx(
+                        a.status === 'failed' ? 'text-red-500' : 
+                        a.status === 'processing' ? 'text-amber-500' :
+                        'text-zinc-500'
+                      )}>
+                        {a.status === 'uploading' ? `${a.progress}%` : 
+                         a.status === 'processing' ? '处理中' :
+                         a.status}
                       </span>
-                      {a.status !== 'uploaded' && (
+                      {a.status !== 'uploaded' && a.status !== 'processing' && (
                         <Button size="sm" variant="secondary" onClick={() => archiveAttachment(a)}>
                           添加到知识库
                         </Button>
@@ -765,6 +930,16 @@ export const ChatWindow = () => {
             </div>
         </div>
       </div>
+      
+      {/* RAG配置面板 */}
+      <RagConfigPanel
+        isOpen={showRagConfig}
+        onClose={() => setShowRagConfig(false)}
+        onConfigChange={(config) => {
+          setRagConfig(config);
+          toast.success('RAG配置已保存');
+        }}
+      />
     </div>
   );
 };

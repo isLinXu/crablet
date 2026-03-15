@@ -11,6 +11,7 @@
 .env.development
 .env.production
 .env.test
+./crablet/.env
 
 # =============================================================================
 # Database Files
