@@ -11,6 +11,9 @@ use notify::{Watcher, RecursiveMode, RecommendedWatcher};
 
 use validator::Validate;
 
+// Fusion configuration module (OpenClaw-style)
+pub mod fusion;
+
 #[derive(Clone, Debug, Serialize, Deserialize, Validate)]
 pub struct Config {
     #[validate(url)]

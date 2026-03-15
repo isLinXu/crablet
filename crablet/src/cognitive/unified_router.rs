@@ -382,11 +382,17 @@ impl UnifiedRouter {
 
         // 根据意图选择系统
         match intent_result.intent {
-            Intent::Greeting | Intent::Help | Intent::Status => {
+            Intent::Greeting | Intent::Help | Intent::Status | Intent::Persona | Intent::Chat => {
+                // 问候、帮助、状态查询、人设查询、闲聊应该优先使用 System1（快速响应）
+                // 这些是非推理类问题，不需要深度分析
                 if intent_result.confidence >= config.system1_threshold {
                     candidates.push(RoutingTarget::System1);
+                    // System1 优先，System2 作为后备
+                    candidates.push(RoutingTarget::System2);
+                } else {
+                    // 置信度不够高，直接使用 System2
+                    candidates.push(RoutingTarget::System2);
                 }
-                candidates.push(RoutingTarget::System2);
             }
             Intent::Coding | Intent::Analysis | Intent::Math => {
                 if intent_result.confidence >= config.system2_threshold {

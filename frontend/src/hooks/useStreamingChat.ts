@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useRef } from 'react';
 import { useChatStore } from '../store/chatStore';
 import type { CitationItem } from '../store/chatStore';
 import { LOCAL_STORAGE_KEYS, getApiBaseUrl } from '../utils/constants';
@@ -10,6 +10,27 @@ type StreamEvent = {
   payload?: any;
   session_id?: string;
 };
+
+// 节流函数：限制函数执行频率
+function throttle<T extends (...args: any[]) => void>(func: T, limit: number): T {
+  let inThrottle: boolean;
+  let lastArgs: Parameters<T> | null = null;
+  return ((...args: Parameters<T>) => {
+    if (!inThrottle) {
+      func(...args);
+      inThrottle = true;
+      setTimeout(() => {
+        inThrottle = false;
+        if (lastArgs) {
+          func(...lastArgs);
+          lastArgs = null;
+        }
+      }, limit);
+    } else {
+      lastArgs = args;
+    }
+  }) as T;
+}
 
 const buildHeaders = () => {
   const token = localStorage.getItem(LOCAL_STORAGE_KEYS.AUTH_TOKEN);
@@ -169,6 +190,12 @@ export function useStreamingChat() {
       let buffer = '';
       let full = '';
       let receivedDone = false;
+      
+      // 创建节流的更新函数，每 50ms 最多更新一次
+      const throttledUpdate = throttle((content: string) => {
+        updateLastMessage(content);
+      }, 50);
+      
       while (true) {
         const { value, done } = await reader.read();
         if (done) break;
@@ -187,7 +214,8 @@ export function useStreamingChat() {
           if (event.type === 'delta') {
             const chunk = typeof event.content === 'string' ? event.content : '';
             full += chunk;
-            updateLastMessage(full);
+            // 使用节流函数更新，减少渲染频率
+            throttledUpdate(full);
           } else if (event.type === 'trace') {
             const step = event.payload?.step;
             if (step) {
@@ -224,12 +252,15 @@ export function useStreamingChat() {
           }
         }
       }
+      // 确保最终内容被更新
       if (full) {
         updateLastMessage(full);
       } else if (receivedDone) {
         updateLastMessage('模型未返回文本结果，请切换为聊天模型后重试。');
       }
-      setCurrentCognitiveLayer('system2');
+      // 不再强制设置为 system2，而是保持从流中接收到的认知层
+      // 如果从未收到认知层事件，则基于输入内容推断
+      // 注意：实际的认知层应该在流处理过程中已经被设置
     } catch (error: any) {
       updateLastMessage(error?.message || '流式发送失败，请稍后重试');
     } finally {

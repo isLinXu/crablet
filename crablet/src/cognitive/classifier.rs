@@ -6,6 +6,8 @@ pub enum Intent {
     Greeting,
     Help,
     Status,
+    Persona, // 人设/身份查询
+    Chat,    // 闲聊/社交对话
     DeepResearch,
     MultiStep,
     Coding,
@@ -32,6 +34,28 @@ impl Classifier {
         }
         if input_lower.contains("status") || input_lower.contains("system info") || input_lower.contains("状态") {
             return Intent::Status;
+        }
+        
+        // Persona / Identity queries - 人设/身份查询
+        if input_lower.contains("who are you") || input_lower.contains("what are you") || 
+           input_lower.contains("your name") || input_lower.contains("introduce yourself") ||
+           input_lower.contains("你是谁") || input_lower.contains("你是什么") || 
+           input_lower.contains("你叫什么") || input_lower.contains("介绍一下") ||
+           input_lower.contains("你是干嘛") || input_lower.contains("你是做什么") ||
+           input_lower.contains("你的身份") || input_lower.contains("你的角色") ||
+           input_lower.contains("你是ai") || input_lower.contains("你是人工智能") ||
+           input_lower.contains("谁创造了你") || input_lower.contains("谁开发了") {
+            return Intent::Persona;
+        }
+        
+        // Chat / Social - 闲聊/社交对话
+        if input_lower.contains("how are you") || input_lower.contains("what's up") || 
+           input_lower.contains("how's it going") || input_lower.contains("nice to meet") ||
+           input_lower.contains("你好吗") || input_lower.contains("最近怎么样") ||
+           input_lower.contains("很高兴认识") || input_lower.contains("谢谢") ||
+           input_lower.contains("你多大了") || input_lower.contains("你几岁了") ||
+           input_lower.contains("你喜欢什么") || input_lower.contains("你的爱好") {
+            return Intent::Chat;
         }
         
         // 2. Deep Research (System 3)

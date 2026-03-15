@@ -98,7 +98,7 @@ impl System1 {
 
         rules.push(CommandRule {
             primary_command: "hello".to_string(),
-            aliases: vec!["hi".to_string(), "hey".to_string(), "你好".to_string(), "您好".to_string()],
+            aliases: vec!["hi".to_string(), "hey".to_string(), "你好".to_string(), "您好".to_string(), "你好!".to_string(), "你好！".to_string()],
             description: "Say hello".to_string(),
             handler: greeting_handler.clone(),
         });

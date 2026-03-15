@@ -9,9 +9,11 @@ use std::pin::Pin;
 pub mod cache;
 pub mod kimi;
 pub mod zhipu;
+pub mod fallback;
 
 pub use kimi::KimiClient;
 pub use zhipu::ZhipuClient;
+pub use fallback::{FallbackLlmClient, FallbackConfig, ModelConfig};
 
 #[async_trait]
 pub trait LlmClient: Send + Sync {

@@ -13,6 +13,8 @@ pub enum Intent {
     Greeting,
     Help,
     Status,
+    Persona, // 人设/身份查询
+    Chat,    // 闲聊/社交对话
     DeepResearch,
     MultiStep,
     Coding,
@@ -65,6 +67,25 @@ impl IntentClassifier {
         patterns.insert(Intent::Status, vec![
             "status", "system info", "health", "check", "diagnostics",
             "状态", "系统信息", "健康检查", "诊断"
+        ].into_iter().map(String::from).collect());
+
+        // Persona patterns - 人设/身份查询
+        patterns.insert(Intent::Persona, vec![
+            "who are you", "what are you", "your name", "introduce yourself", "tell me about yourself",
+            "你是谁", "你是什么", "你叫什么", "介绍一下", "你是干嘛的", "你是做什么的",
+            "你的身份", "你的角色", "你是ai吗", "你是人工智能吗", "你是机器人吗",
+            "who created you", "who made you", "your creator", "your developer",
+            "谁创造了你", "谁开发了", "你的创造者", "你的开发者"
+        ].into_iter().map(String::from).collect());
+
+        // Chat patterns - 闲聊/社交对话
+        patterns.insert(Intent::Chat, vec![
+            "how are you", "what's up", "how's it going", "nice to meet you", "thank you", "thanks",
+            "你好吗", "最近怎么样", "很高兴认识你", "谢谢", "多谢", "哈哈", "呵呵", "嘿嘿",
+            "how old are you", "where are you from", "what do you like", "your favorite",
+            "你多大了", "你几岁了", "你喜欢什么", "你的爱好", "你喜欢",
+            "good job", "well done", "great", "awesome", "cool", "nice",
+            "做得好", "真棒", "厉害", "不错", "很好"
         ].into_iter().map(String::from).collect());
 
         // Deep research patterns

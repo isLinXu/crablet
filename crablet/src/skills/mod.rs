@@ -24,6 +24,9 @@ pub mod semantic_search;
 pub mod version_manager;
 pub mod interactive_wizard;
 pub mod dev_tools;
+pub mod trigger;
+pub mod context;
+pub mod discovery;
 
 // Re-export core types
 pub use registry::SkillRegistry;
@@ -44,6 +47,8 @@ pub use semantic_matcher::{SemanticMatcher, SemanticMatch, SkillMetadata};
 pub use version_manager::{VersionManager, SemVer, VersionConstraint, VersionDiff, UpdateInfo, UpdateStats};
 pub use interactive_wizard::{InteractiveWizard, QuickInstallWizard, WizardStep, WizardState, SkillConfiguration, InstallOptions};
 pub use dev_tools::{DevTools, InitResult, ValidationResult, TestResult, BuildResult, PublishResult, DocsResult};
+pub use trigger::{SkillTrigger, SkillTriggerEngine, TriggerMatch};
+pub use context::{SkillContext, ExecutionRecord, MemoryContext};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SkillParameter {
@@ -89,6 +94,9 @@ pub struct SkillManifest {
     pub min_crablet_version: Option<String>, // Minimum Crablet version
     #[serde(default)]
     pub author: Option<String>, // Author of the skill
+    /// Triggers for automatic skill activation
+    #[serde(default)]
+    pub triggers: Vec<SkillTrigger>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

@@ -1,4 +1,4 @@
-use crate::cognitive::system1::System1;
+use crate::cognitive::system1_enhanced::System1Enhanced;
 use crate::cognitive::system2::System2;
 use crate::cognitive::system3::System3;
 use crate::memory::episodic::EpisodicMemory;
@@ -63,7 +63,7 @@ impl Default for RouterConfig {
 #[derive(Clone)]
 pub struct CognitiveRouter {
     pub shared_skills: Arc<RwLock<SkillRegistry>>, // Shared Registry
-    pub sys1: System1,
+    pub sys1: System1Enhanced,
     pub sys2: System2,       // Cloud (OpenAI)
     pub sys2_local: System2, // Local (Ollama) - Permanent instance
     pub sys3: System3,
@@ -72,6 +72,12 @@ pub struct CognitiveRouter {
     pub config: Arc<RwLock<RouterConfig>>,
     pub meta_router: Arc<RwLock<MetaCognitiveRouter>>,
     pub complexity_analyzer: Arc<crate::cognitive::routing::complexity::ComplexityAnalyzer>,
+    /// Fusion Memory System (optional, for OpenClaw-style memory)
+    pub fusion_memory: Option<Arc<crate::memory::fusion::FusionMemorySystem>>,
+    /// Skill trigger engine for automatic skill activation
+    pub skill_trigger_engine: Option<Arc<crate::skills::SkillTriggerEngine>>,
+    /// Skill execution enabled flag
+    pub skill_execution_enabled: bool,
 }
 
 use crate::config::Config;
@@ -143,7 +149,7 @@ impl CognitiveRouter {
         meta.set_exploration(initial_config.bandit_exploration);
         Self {
             shared_skills,
-            sys1: System1::new(),
+            sys1: System1Enhanced::new(),
             sys2,
             sys2_local,
             sys3: System3::new(llm_arc, event_bus.clone(), pool).await,
@@ -152,6 +158,49 @@ impl CognitiveRouter {
             config: Arc::new(RwLock::new(initial_config)),
             meta_router: Arc::new(RwLock::new(meta)),
             complexity_analyzer: Arc::new(crate::cognitive::routing::complexity::ComplexityAnalyzer::new()),
+            fusion_memory: None,
+            skill_trigger_engine: None,
+            skill_execution_enabled: true,
+        }
+    }
+
+    /// Initialize with Fusion Memory System
+    pub async fn with_fusion_memory(
+        mut self,
+        fusion_config: Arc<crate::memory::fusion::FusionConfig>,
+    ) -> crate::error::Result<Self> {
+        let fusion = Arc::new(
+            crate::memory::fusion::FusionMemorySystem::initialize(fusion_config).await
+                .map_err(|e| crate::error::CrabletError::Config(format!("Failed to initialize Fusion Memory: {}", e)))?
+        );
+        self.fusion_memory = Some(fusion);
+        Ok(self)
+    }
+
+    /// Initialize with Skill Trigger Engine
+    pub fn with_skill_trigger_engine(
+        mut self,
+        engine: Arc<crate::skills::SkillTriggerEngine>,
+    ) -> Self {
+        self.skill_trigger_engine = Some(engine);
+        self
+    }
+
+    /// Enable or disable skill execution
+    pub fn set_skill_execution_enabled(mut self, enabled: bool) -> Self {
+        self.skill_execution_enabled = enabled;
+        self
+    }
+
+    /// Refresh skill triggers from the registry
+    pub async fn refresh_skill_triggers(&mut self) {
+        if let Some(ref engine) = self.skill_trigger_engine {
+            let registry = self.shared_skills.read().await;
+            let engine = Arc::clone(engine);
+            // Note: This requires SkillTriggerEngine to be mutable, which it isn't with Arc
+            // In practice, we'd need to use RwLock or similar for the engine
+            drop(registry);
+            drop(engine);
         }
     }
 
@@ -182,7 +231,7 @@ impl CognitiveRouter {
         meta.set_exploration(initial_config.bandit_exploration);
         Self {
             shared_skills,
-            sys1: System1::new(),
+            sys1: System1Enhanced::new(),
             sys2,
             sys2_local,
             sys3: System3::new(llm_arc, event_bus.clone(), pool).await,
@@ -191,6 +240,9 @@ impl CognitiveRouter {
             config: Arc::new(RwLock::new(initial_config)),
             meta_router: Arc::new(RwLock::new(meta)),
             complexity_analyzer: Arc::new(crate::cognitive::routing::complexity::ComplexityAnalyzer::new()),
+            fusion_memory: None,
+            skill_trigger_engine: None,
+            skill_execution_enabled: true,
         }
     }
     
@@ -365,15 +417,56 @@ impl CognitiveRouter {
     pub async fn process(&self, input: &str, session_id: &str) -> Result<(String, Vec<TraceStep>)> {
         self.event_bus.publish(AgentEvent::UserInput(input.to_string()));
 
+        // 0. Check for Skill Trigger match first (before cognitive routing)
+        if self.skill_execution_enabled {
+            if let Some(ref engine) = self.skill_trigger_engine {
+                if let Some(trigger_match) = engine.match_best(input, 0.7) {
+                    info!("Skill trigger matched: {} (confidence: {})", trigger_match.skill_name, trigger_match.confidence);
+                    return self.execute_skill_route(&trigger_match, input, session_id).await;
+                }
+            }
+        }
+
         // 0. Save User Input (via MemoryManager)
         self.memory_mgr.save_message(session_id, "user", input).await;
 
+        // 0.5. Create or get Fusion Memory session if available
+        let fusion_context: Option<Arc<crate::memory::fusion::layer_session::SessionLayer>> = None;
+        // Note: Fusion Memory integration temporarily disabled due to API changes
+        // if let Some(ref fusion) = self.fusion_memory {
+        //     match fusion.get_session(session_id) {
+        //         Some(session) => {
+        //             // Session exists, add user message
+        //             Some(session)
+        //         }
+        //         None => {
+        //             // Create new session
+        //             match fusion.create_session(session_id.to_string()).await {
+        //                 Ok(session) => {
+        //                     Some(session)
+        //                 }
+        //                 Err(e) => {
+        //                     tracing::warn!("Failed to create Fusion session: {}", e);
+        //                     None
+        //                 }
+        //             }
+        //         }
+        //     }
+        // } else {
+        //     None
+        // };
+
         let start = std::time::Instant::now();
-        let (response, traces, system_choice) = self.route_and_process(input, session_id).await?;
+        let (response, traces, system_choice) = self.route_and_process(input, session_id, fusion_context.clone()).await?;
         let latency = start.elapsed();
 
         // 1. Save Assistant Response (via MemoryManager)
         self.memory_mgr.save_message(session_id, "assistant", &response).await;
+
+        // 1.5. Save to Fusion Memory if available
+        // Note: Temporarily disabled
+        // if let Some(ref session) = fusion_context {
+        // }
 
         // Adaptive Routing Feedback (Simple Implementation)
         {
@@ -409,8 +502,79 @@ impl CognitiveRouter {
         score.min(0.95)
     }
 
-    #[instrument(skip(self), fields(session.id = %session_id))]
-    async fn route_and_process(&self, input: &str, session_id: &str) -> Result<(String, Vec<TraceStep>, SystemChoice)> {
+    /// Execute a skill-based route
+    async fn execute_skill_route(
+        &self,
+        trigger_match: &crate::skills::TriggerMatch,
+        input: &str,
+        session_id: &str,
+    ) -> Result<(String, Vec<TraceStep>)> {
+        use crate::skills::context::SkillContext;
+        
+        let start_time = std::time::Instant::now();
+        
+        // Create skill context
+        let mut context = SkillContext::new(session_id, input)
+            .with_args(trigger_match.extracted_args.clone().unwrap_or(serde_json::json!({})));
+        
+        // Execute the skill
+        let registry = self.shared_skills.read().await;
+        let skill_name = trigger_match.skill_name.clone();
+        
+        let result = match registry.execute(&skill_name, context.extracted_args.clone()).await {
+            Ok(output) => {
+                let duration = start_time.elapsed();
+                context.record_execution(
+                    &skill_name,
+                    context.extracted_args.clone(),
+                    &output,
+                    true,
+                    duration.as_millis() as u64,
+                );
+                
+                let trace = vec![TraceStep {
+                    step: 1,
+                    thought: format!("Executed skill '{}' via {} trigger", skill_name, trigger_match.trigger_type),
+                    action: Some(skill_name.clone()),
+                    action_input: Some(serde_json::to_string(&context.extracted_args).unwrap_or_default()),
+                    observation: Some(output.clone()),
+                }];
+                
+                self.event_bus.publish(AgentEvent::CognitiveLayerChanged { layer: "skill".to_string() });
+                
+                Ok((output, trace))
+            }
+            Err(e) => {
+                let error_msg = format!("Skill execution failed: {}", e);
+                tracing::error!("{}", error_msg);
+                
+                // Fallback to cognitive routing if skill fails
+                drop(registry);
+                let msg = format!("Skill '{}' failed, falling back to cognitive routing", skill_name);
+                info!("{}", msg);
+                self.event_bus.publish(AgentEvent::SystemLog(msg));
+                
+                // Continue with normal routing
+                let fusion_context = if let Some(ref fusion) = self.fusion_memory {
+                    fusion.get_session(session_id)
+                } else {
+                    None
+                };
+                
+                let (response, traces, _) = self.route_and_process(input, session_id, fusion_context).await?;
+                Ok((response, traces))
+            }
+        };
+        
+        result
+    }
+
+    async fn route_and_process(
+        &self,
+        input: &str,
+        session_id: &str,
+        _fusion_context: Option<Arc<crate::memory::fusion::layer_session::SessionLayer>>,
+    ) -> crate::error::Result<(String, Vec<TraceStep>, SystemChoice)> {
         let mut input_text = input;
         let mut force_cloud = false;
         let mut force_local = false;
@@ -429,7 +593,7 @@ impl CognitiveRouter {
         
         if !force_cloud && !force_local {
             match intent {
-                Intent::Greeting | Intent::Help | Intent::Status => {
+                Intent::Greeting | Intent::Help | Intent::Status | Intent::Persona | Intent::Chat => {
                     if let Ok((response, traces)) = self.sys1.process(input_text, &[]).await {
                         info!("System 1 hit (Intent: {:?}): {:?}", intent, input_text);
                         self.event_bus.publish(AgentEvent::CognitiveLayerChanged { layer: "system1".to_string() });
