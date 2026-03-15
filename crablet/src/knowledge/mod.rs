@@ -8,3 +8,5 @@ pub mod graph_rag;
 pub mod ingestion;
 pub mod graph;
 pub mod multimodal;
+pub mod query_analyzer;
+pub mod enhanced_rag;

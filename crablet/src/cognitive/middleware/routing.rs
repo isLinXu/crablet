@@ -113,6 +113,10 @@ impl CognitiveMiddleware for RoutingMiddleware {
                 // Default behavior or specific prompts if needed
                 MiddlewarePipeline::ensure_system_prompt(context, "You are Crablet. Use your reasoning capabilities to solve the user's problem step-by-step.");
             },
+            Intent::Persona | Intent::Chat => {
+                // Persona and Chat are conversational intents - use friendly, concise responses
+                MiddlewarePipeline::ensure_system_prompt(context, "You are Crablet, a helpful AI assistant. The user is engaging in casual conversation. Be friendly, warm, and concise.");
+            },
         }
         
         Ok(None)

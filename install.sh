@@ -127,7 +127,7 @@ if [ ! -f crablet.db ]; then
 fi
 
 echo "Compiling Release Build..."
-cargo build --release
+cargo build --release --features knowledge
 cd ..
 
 # 4. Install Frontend Dependencies

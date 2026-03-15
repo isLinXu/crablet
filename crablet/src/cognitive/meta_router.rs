@@ -206,7 +206,7 @@ impl MetaCognitiveRouter {
         let features = self.extract_features(input, context, complexity_score);
         let choice = if matches!(intent, Intent::DeepResearch) || features.has_research_keyword {
             SystemChoice::System3
-        } else if matches!(intent, Intent::Greeting | Intent::Help | Intent::Status) && !features.has_code {
+        } else if matches!(intent, Intent::Greeting | Intent::Help | Intent::Status | Intent::Persona | Intent::Chat) && !features.has_code {
             SystemChoice::System1
         } else {
             let (prior_means, prior_strengths) = cold_start_priors(&intent, &features);
@@ -343,7 +343,7 @@ fn cold_start_priors(intent: &Intent, features: &InputFeatures) -> ([f32; 3], [f
     let mut means = [0.35, 0.55, 0.45];
     let mut strengths = [1.5, 2.5, 2.0];
     match intent {
-        Intent::Greeting | Intent::Help | Intent::Status => {
+        Intent::Greeting | Intent::Help | Intent::Status | Intent::Persona | Intent::Chat => {
             means = [0.85, 0.3, 0.2];
             strengths = [6.0, 1.5, 1.0];
         }

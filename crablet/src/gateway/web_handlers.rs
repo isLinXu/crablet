@@ -12,8 +12,8 @@ use std::sync::OnceLock;
 use std::collections::HashSet;
 use std::fs;
 use std::path::PathBuf;
-use futures::stream::Stream;
-use futures::StreamExt;
+use futures::stream::StreamExt;
+use futures::stream::BoxStream;
 use crate::gateway::server::CrabletGateway;
 use crate::agent::hitl::HumanDecision;
 use crate::cognitive::router::RouterConfig;
@@ -580,13 +580,189 @@ pub async fn chat_handler(
     }
 }
 
+/// 根据输入内容推断认知层
+fn infer_cognitive_layer_from_input(input: &str) -> &'static str {
+    let input_lower = input.to_lowercase();
+    
+    // 问候语检测 - 应该使用 System 1
+    let greeting_patterns = [
+        "hi", "hello", "hey", "greetings", "good morning", "good afternoon", "good evening",
+        "你好", "嗨", "您好", "早上好", "下午好", "晚上好", "在吗", "在么",
+    ];
+    for pattern in &greeting_patterns {
+        if input_lower.trim() == *pattern || input_lower.starts_with(pattern) {
+            return "system1";
+        }
+    }
+    
+    // 人设/身份查询 - 应该使用 System 1（闲聊类）
+    let persona_patterns = [
+        "who are you", "what are you", "your name", "introduce yourself", "tell me about yourself",
+        "你是谁", "你是什么", "你叫什么", "介绍一下", "你是干嘛的", "你是做什么的",
+        "你的身份", "你的角色", "你是ai吗", "你是人工智能吗", "你是机器人吗",
+    ];
+    for pattern in &persona_patterns {
+        if input_lower.contains(pattern) {
+            return "system1";
+        }
+    }
+    
+    // 闲聊/社交对话 - 应该使用 System 1
+    let chat_patterns = [
+        "how are you", "what's up", "how's it going", "nice to meet you", "thank you", "thanks",
+        "你好吗", "最近怎么样", "很高兴认识你", "谢谢", "多谢", "哈哈", "呵呵", "嘿嘿",
+        "好的", "ok", "okay", "嗯", "哦", "啊", "呢", "吧", "吗",
+    ];
+    for pattern in &chat_patterns {
+        if input_lower.trim() == *pattern || input_lower.starts_with(pattern) {
+            return "system1";
+        }
+    }
+    
+    // 简单个人问题 - 应该使用 System 1
+    let personal_patterns = [
+        "how old are you", "where are you from", "what do you like", "your favorite",
+        "你多大了", "你几岁了", "你喜欢什么", "你的爱好", "你喜欢", "你的",
+    ];
+    for pattern in &personal_patterns {
+        if input_lower.contains(pattern) {
+            return "system1";
+        }
+    }
+    
+    // 简单帮助请求
+    let help_patterns = [
+        "help", "assist", "support", "how to", "what can you do",
+        "帮助", "怎么用", "如何使用", "你能做什么", "有什么功能",
+    ];
+    for pattern in &help_patterns {
+        if input_lower.contains(pattern) {
+            return "system1";
+        }
+    }
+    
+    // 状态查询
+    let status_patterns = [
+        "status", "system info", "health", "check", "diagnostics",
+        "状态", "系统信息", "健康检查", "诊断",
+    ];
+    for pattern in &status_patterns {
+        if input_lower.contains(pattern) {
+            return "system1";
+        }
+    }
+    
+    // 深度研究检测 - 应该使用 System 3
+    let research_patterns = [
+        "research", "deep research", "investigate", "explore in depth", "comprehensive analysis",
+        "研究", "深度研究", "深入分析", "全面调查", "详细探讨",
+    ];
+    for pattern in &research_patterns {
+        if input_lower.contains(pattern) {
+            return "system3";
+        }
+    }
+    
+    // 多步骤任务检测
+    let multistep_patterns = [
+        "first", "then", "next", "after", "finally", "step by step",
+        "首先", "然后", "接着", "最后", "一步步", "步骤",
+    ];
+    let multistep_count = multistep_patterns.iter().filter(|p| input_lower.contains(*p)).count();
+    if multistep_count >= 2 {
+        return "system3";
+    }
+    
+    // 代码/分析任务 - 使用 System 2
+    let code_patterns = [
+        "code", "function", "implement", "program", "debug", "refactor", "algorithm",
+        "代码", "编写", "实现", "函数", "调试", "程序", "算法",
+        "analyze", "compare", "evaluate", "assess", "review", "examine",
+        "分析", "比较", "评估", "评价", "优缺点",
+    ];
+    for pattern in &code_patterns {
+        if input_lower.contains(pattern) {
+            return "system2";
+        }
+    }
+    
+    // 默认使用 System 2
+    "system2"
+}
+
 pub async fn chat_stream(
     State(gateway): State<Arc<CrabletGateway>>,
     Json(payload): Json<ChatRequest>,
-) -> Sse<impl Stream<Item = Result<Event, axum::Error>>> {
+) -> Sse<BoxStream<'static, Result<Event, axum::Error>>> {
     let session_id = payload.session_id.clone().unwrap_or_else(|| "default".to_string());
     let session_id_for_event = session_id.clone();
     let message = payload.message.clone();
+    // 调试日志：记录接收到的消息信息
+    tracing::info!("[chat_stream] 收到消息，长度: {} 字符", message.len());
+    if message.contains("[文件内容]") {
+        let file_content_start = message.find("[文件内容]").unwrap_or(0);
+        let preview = &message[file_content_start..message.len().min(file_content_start + 200)];
+        tracing::info!("[chat_stream] 检测到文件内容: {}", preview);
+    }
+    if message.contains("[知识检索上下文]") {
+        tracing::info!("[chat_stream] 检测到知识检索上下文");
+    }
+
+    // 首先尝试使用 CognitiveRouter 进行路由（支持 System 1 快速响应）
+    // 注意：这里使用原始消息，不带 persona，让 router 自己决定
+    let router_result = gateway.router.process(&message, &session_id).await;
+    
+    // 如果 System 1 成功处理（返回 Ok），直接返回快速响应
+    if let Ok((response, traces)) = &router_result {
+        let cognitive_layer = infer_cognitive_layer(response, traces);
+        // 如果是 System 1 响应，直接返回，不走 LLM
+        if cognitive_layer == "system1" {
+            tracing::info!("[chat_stream] System 1 快速响应: {}", response.chars().take(50).collect::<String>());
+            let response = response.clone();
+            let traces = traces.clone();
+            let session_id_for_stream = session_id_for_event.clone();
+            let source_stream = async_stream::stream! {
+                // 发送认知层事件
+                yield StreamChunk {
+                    chunk_type: "cognitive_layer".to_string(),
+                    content: None,
+                    payload: Some(serde_json::json!({ "layer": "system1" })),
+                };
+                // 发送 trace
+                for (i, step) in traces.iter().enumerate() {
+                    yield StreamChunk {
+                        chunk_type: "trace".to_string(),
+                        content: None,
+                        payload: Some(serde_json::json!({ "step": step, "index": i })),
+                    };
+                }
+                // 发送完整响应（System 1 响应通常较短，一次性发送）
+                yield StreamChunk::delta(response);
+            };
+            let pipeline = StreamingPipeline::new(vec![
+                Arc::new(EmptyDeltaFilterMiddleware),
+                Arc::new(MetricsMiddleware),
+                Arc::new(FinalizeSummaryMiddleware),
+            ]);
+            let stream: BoxStream<'static, Result<Event, axum::Error>> = pipeline.process(source_stream)
+                .map(move |chunk| {
+                    let data = serde_json::json!({
+                        "type": chunk.chunk_type,
+                        "content": chunk.content,
+                        "payload": chunk.payload,
+                        "session_id": session_id_for_stream.clone()
+                    });
+                    Ok(Event::default().data(data.to_string()))
+                })
+                .boxed();
+            return Sse::new(stream).keep_alive(axum::response::sse::KeepAlive::default());
+        }
+    }
+    
+    // System 1 未匹配或返回错误，回退到 LLM 流式输出
+    let cognitive_layer = infer_cognitive_layer_from_input(&message);
+    tracing::info!("[chat_stream] 推断认知层: {}", cognitive_layer);
+
     let enhanced_input = with_identity_persona_input(&message);
     let llm = llm_from_route(payload.route.as_ref()).unwrap_or_else(|| gateway.router.sys2.llm.clone());
     let gateway_for_stream = gateway.clone();
@@ -595,7 +771,15 @@ pub async fn chat_stream(
         Arc::new(MetricsMiddleware),
         Arc::new(FinalizeSummaryMiddleware),
     ]);
+    let cognitive_layer_for_stream = cognitive_layer.to_string();
     let source_stream = async_stream::stream! {
+        // 首先发送认知层事件
+        yield StreamChunk {
+            chunk_type: "cognitive_layer".to_string(),
+            content: None,
+            payload: Some(serde_json::json!({ "layer": cognitive_layer_for_stream })),
+        };
+        
         let mut messages = Vec::new();
         // System Prompt is now injected into the input message by `with_identity_persona_input`
         // But for better LLM handling, we should ideally put it in System role.
@@ -673,15 +857,17 @@ pub async fn chat_stream(
             }
         }
     };
-    let stream = pipeline.process(source_stream).map(move |chunk| {
-        let data = serde_json::json!({
-            "type": chunk.chunk_type,
-            "content": chunk.content,
-            "payload": chunk.payload,
-            "session_id": session_id_for_event.clone()
-        });
-        Ok(Event::default().data(data.to_string()))
-    });
+    let stream: BoxStream<'static, Result<Event, axum::Error>> = pipeline.process(source_stream)
+        .map(move |chunk| {
+            let data = serde_json::json!({
+                "type": chunk.chunk_type,
+                "content": chunk.content,
+                "payload": chunk.payload,
+                "session_id": session_id_for_event.clone()
+            });
+            Ok(Event::default().data(data.to_string()))
+        })
+        .boxed();
     Sse::new(stream).keep_alive(axum::response::sse::KeepAlive::default())
 }
 

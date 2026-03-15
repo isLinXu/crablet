@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 pub mod router;
 pub mod system1;
+pub mod system1_enhanced;
 pub mod system2;
 pub mod system3;
 pub mod system4;
@@ -25,6 +26,12 @@ pub mod unified_router;
 pub mod streaming_pipeline;
 pub mod routing;
 pub mod thought_graph;
+
+// Fusion Memory System integration
+pub mod fusion_router;
+
+// Re-export fusion router types
+pub use fusion_router::{FusionRouter, SessionFusionRouter, RouterConfig, FusionRoutingContext};
 
 #[async_trait]
 pub trait CognitiveSystem: Send + Sync {

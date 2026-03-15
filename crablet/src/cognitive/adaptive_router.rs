@@ -187,11 +187,11 @@ impl AdaptiveRouter {
 
         // Route based on intent
         match &intent_result.intent {
-            Intent::Greeting | Intent::Help | Intent::Status => {
+            Intent::Greeting | Intent::Help | Intent::Status | Intent::Persona | Intent::Chat => {
                 RoutingDecision {
                     target_system: TargetSystem::System1,
                     confidence: intent_result.confidence,
-                    reasoning: format!("Simple intent: {:?}", intent_result.intent),
+                    reasoning: format!("Simple conversational intent: {:?}", intent_result.intent),
                     estimated_latency_ms: 200,
                     fallback_system: None,
                     requires_confirmation: false,
