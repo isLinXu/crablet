@@ -30,8 +30,16 @@ pub mod thought_graph;
 // Fusion Memory System integration
 pub mod fusion_router;
 
+// Meta-Cognitive System
+pub mod meta_controller;
+
 // Re-export fusion router types
 pub use fusion_router::{FusionRouter, SessionFusionRouter, RouterConfig, FusionRoutingContext};
+
+// Re-export meta-cognitive types
+pub use meta_controller::{
+    MetaCognitiveController, MetaConfig, ExecutionRequest, ExecutionResult, MetaStatistics,
+};
 
 #[async_trait]
 pub trait CognitiveSystem: Send + Sync {
@@ -43,24 +51,33 @@ pub trait CognitiveSystem: Send + Sync {
 }
 
 pub async fn create_llm_client(config: &Config) -> Result<Arc<Box<dyn llm::LlmClient>>> {
-    let client: Box<dyn llm::LlmClient> = if config.model_name.contains("mock") {
-         Box::new(llm::MockClient)
-    } else if config.model_name.contains("kimi") {
-         Box::new(llm::KimiClient::new(&config.model_name)?)
-    } else if config.model_name.contains("glm") {
-         Box::new(llm::ZhipuClient::new(&config.model_name)?)
-    } else if config.model_name.starts_with("ollama:") || config.ollama_model != "qwen2.5:14b" { 
-         // If model name starts with ollama: or ollama_model is set (default is set in config, so this condition is tricky)
-         // Let's simplify: if model_name is "ollama" or starts with "ollama:", use Ollama
-         let model = if config.model_name.starts_with("ollama:") {
-             config.model_name.trim_start_matches("ollama:")
-         } else {
-             &config.ollama_model
-         };
-         Box::new(llm::OllamaClient::new(model))
-    } else {
-         Box::new(llm::OpenAiClient::new(&config.model_name)?)
+    let vendor = config.llm_vendor.as_deref().unwrap_or("openai").to_lowercase();
+    
+    let client: Box<dyn llm::LlmClient> = match vendor.as_str() {
+        "mock" => Box::new(llm::MockClient),
+        "kimi" | "moonshot" => Box::new(llm::KimiClient::new(&config.model_name)?),
+        "zhipu" | "glm" => Box::new(llm::ZhipuClient::new(&config.model_name)?),
+        "ollama" => Box::new(llm::OllamaClient::new(&config.ollama_model)),
+        "aliyun" | "dashscope" => {
+            Box::new(llm::OpenAiClient::new(&config.model_name)?)
+        },
+        _ => {
+            if config.model_name.contains("mock") {
+                Box::new(llm::MockClient)
+            } else if config.model_name.contains("kimi") {
+                Box::new(llm::KimiClient::new(&config.model_name)?)
+            } else if config.model_name.contains("glm") {
+                Box::new(llm::ZhipuClient::new(&config.model_name)?)
+            } else if config.model_name.starts_with("ollama:") {
+                let model = config.model_name.trim_start_matches("ollama:");
+                Box::new(llm::OllamaClient::new(model))
+            } else {
+                Box::new(llm::OpenAiClient::new(&config.model_name)?)
+            }
+        }
     };
 
-    Ok(Arc::new(client))
+    // Wrap in cache
+    let cached: Box<dyn llm::LlmClient> = Box::new(llm::cache::CachedLlmClient::new(client, 100));
+    Ok(Arc::new(cached))
 }

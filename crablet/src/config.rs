@@ -21,6 +21,7 @@ pub struct Config {
     pub skills_dir: PathBuf,
     #[validate(length(min = 1))]
     pub model_name: String,
+    pub llm_vendor: Option<String>,
     #[serde(default = "default_ollama_model")]
     pub ollama_model: String,
     pub log_level: String,
@@ -91,6 +92,7 @@ impl Default for Config {
             database_url: "sqlite:crablet.db?mode=rwc".to_string(),
             skills_dir: PathBuf::from("skills"),
             model_name: "gpt-4o-mini".to_string(),
+            llm_vendor: None,
             ollama_model: default_ollama_model(),
             log_level: "info".to_string(),
             mcp_servers: HashMap::new(),
@@ -190,6 +192,7 @@ struct ConfigFile {
     database_url: Option<String>,
     skills_dir: Option<PathBuf>,
     model_name: Option<String>,
+    llm_vendor: Option<String>,
     log_level: Option<String>,
     mcp_servers: Option<HashMap<String, McpServerConfig>>,
     channels: Option<Vec<String>>,
@@ -228,6 +231,7 @@ impl Config {
         let mut database_url = "sqlite:crablet.db?mode=rwc".to_string();
         let mut skills_dir = PathBuf::from("skills");
         let mut model_name = "gpt-4o-mini".to_string();
+        let mut llm_vendor = None;
         let mut ollama_model = default_ollama_model();
         let mut log_level = "info".to_string();
         let mut mcp_servers = HashMap::new();
@@ -269,6 +273,7 @@ impl Config {
                 if let Some(db) = toml_config.database_url { database_url = db; }
                 if let Some(skills) = toml_config.skills_dir { skills_dir = skills; }
                 if let Some(model) = toml_config.model_name { model_name = model; }
+                if let Some(vendor) = toml_config.llm_vendor { llm_vendor = Some(vendor); }
                 if let Some(log) = toml_config.log_level { log_level = log; }
                 if let Some(mcp) = toml_config.mcp_servers { mcp_servers = mcp; }
                 if let Some(chans) = toml_config.channels { channels = chans; }
@@ -302,6 +307,7 @@ impl Config {
             if let Some(db) = toml_config.database_url { database_url = db; }
             if let Some(skills) = toml_config.skills_dir { skills_dir = skills; }
             if let Some(model) = toml_config.model_name { model_name = model; }
+            if let Some(vendor) = toml_config.llm_vendor { llm_vendor = Some(vendor); }
             if let Some(log) = toml_config.log_level { log_level = log; }
             if let Some(mcp) = toml_config.mcp_servers { mcp_servers = mcp; }
             if let Some(chans) = toml_config.channels { channels = chans; }
@@ -328,6 +334,7 @@ impl Config {
         if let Ok(env_db) = std::env::var("DATABASE_URL") { database_url = env_db; }
         if let Ok(env_skills) = std::env::var("CRABLET_SKILLS_DIR") { skills_dir = PathBuf::from(env_skills); }
         if let Ok(env_model) = std::env::var("OPENAI_MODEL_NAME") { model_name = env_model; }
+        if let Ok(env_vendor) = std::env::var("LLM_VENDOR") { llm_vendor = Some(env_vendor); }
         if let Ok(env_ollama) = std::env::var("OLLAMA_MODEL") { ollama_model = env_ollama; }
         if let Ok(env_log) = std::env::var("RUST_LOG") { log_level = env_log; }
         if let Ok(env_serper) = std::env::var("SERPER_API_KEY") { serper_api_key = Some(env_serper); }
@@ -437,6 +444,7 @@ impl Config {
             database_url,
             skills_dir,
             model_name,
+            llm_vendor,
             log_level,
             mcp_servers,
             channels,

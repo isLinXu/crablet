@@ -3,6 +3,7 @@ use anyhow::Result;
 use uuid::Uuid;
 use serde::Serialize;
 use async_trait::async_trait;
+use std::collections::HashMap;
 #[cfg(feature = "knowledge")]
 use neo4rs::{Graph, query};
 use std::sync::Arc;
@@ -34,6 +35,7 @@ pub trait KnowledgeGraph: Send + Sync {
     async fn add_entity(&self, name: &str, type_: &str) -> Result<String>;
     async fn add_relation(&self, source: &str, target: &str, relation: &str) -> Result<()>;
     async fn find_related(&self, entity_name: &str) -> Result<Vec<(String, String, String)>>;
+    async fn find_related_batch(&self, entity_names: &[String]) -> Result<HashMap<String, Vec<(String, String, String)>>>;
     async fn find_entities_batch(&self, names: &[String]) -> Result<Vec<(String, String)>>;
     async fn export_d3_json(&self) -> Result<String>;
 }
@@ -153,6 +155,85 @@ impl KnowledgeGraph for SqliteKnowledgeGraph {
                 row.get::<String, _>("relation"), 
                 row.get::<String, _>("source_name")
             ));
+        }
+
+        Ok(results)
+    }
+
+    async fn find_related_batch(&self, entity_names: &[String]) -> Result<HashMap<String, Vec<(String, String, String)>>> {
+        if entity_names.is_empty() {
+            return Ok(HashMap::new());
+        }
+
+        let placeholders = entity_names.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+
+        // Find outgoing relations for all entities
+        let outgoing_query = format!(
+            r#"
+            SELECT e.name as entity_name, r.relation, t.name as target_name
+            FROM entities e
+            JOIN relations r ON e.id = r.source_id
+            JOIN entities t ON r.target_id = t.id
+            WHERE e.name IN ({})
+            "#,
+            placeholders
+        );
+
+        let mut outgoing_query_builder = sqlx::query(&outgoing_query);
+        for name in entity_names {
+            outgoing_query_builder = outgoing_query_builder.bind(name);
+        }
+
+        let outgoing_rows = outgoing_query_builder.fetch_all(&self.pool).await?;
+
+        // Find incoming relations for all entities
+        let incoming_query = format!(
+            r#"
+            SELECT e.name as entity_name, r.relation, t.name as source_name
+            FROM entities e
+            JOIN relations r ON e.id = r.target_id
+            JOIN entities t ON r.source_id = t.id
+            WHERE e.name IN ({})
+            "#,
+            placeholders
+        );
+
+        let mut incoming_query_builder = sqlx::query(&incoming_query);
+        for name in entity_names {
+            incoming_query_builder = incoming_query_builder.bind(name);
+        }
+
+        let incoming_rows = incoming_query_builder.fetch_all(&self.pool).await?;
+
+        // Aggregate results by entity name
+        let mut results: HashMap<String, Vec<(String, String, String)>> = HashMap::new();
+
+        for name in entity_names {
+            results.insert(name.clone(), Vec::new());
+        }
+
+        // Add outgoing relations
+        for row in outgoing_rows {
+            let entity_name = row.get::<String, _>("entity_name");
+            let relation = row.get::<String, _>("relation");
+            let target_name = row.get::<String, _>("target_name");
+
+            results
+                .entry(entity_name)
+                .or_insert_with(Vec::new)
+                .push(("->".to_string(), relation, target_name));
+        }
+
+        // Add incoming relations
+        for row in incoming_rows {
+            let entity_name = row.get::<String, _>("entity_name");
+            let relation = row.get::<String, _>("relation");
+            let source_name = row.get::<String, _>("source_name");
+
+            results
+                .entry(entity_name)
+                .or_insert_with(Vec::new)
+                .push(("<-".to_string(), relation, source_name));
         }
 
         Ok(results)
@@ -286,6 +367,46 @@ impl KnowledgeGraph for Neo4jKnowledgeGraph {
             results.push((dir, rel_name, other_name));
         }
         
+        Ok(results)
+    }
+
+    async fn find_related_batch(&self, entity_names: &[String]) -> Result<HashMap<String, Vec<(String, String, String)>>> {
+        if entity_names.is_empty() {
+            return Ok(HashMap::new());
+        }
+
+        let q = query(
+            r#"
+            MATCH (n:Entity {name: $name})-[r]-(m:Entity)
+            WHERE n.name IN $names
+            RETURN n.name as entity_name, type(r) as rel_type, r.type as rel_name,
+                   startNode(r) = n as is_outgoing, m.name as other_name
+            "#
+        )
+        .param("names", entity_names.to_vec());
+
+        let mut stream = self.graph.execute(q).await?;
+        let mut results: HashMap<String, Vec<(String, String, String)>> = HashMap::new();
+
+        // Initialize result map with empty vectors
+        for name in entity_names {
+            results.insert(name.clone(), Vec::new());
+        }
+
+        while let Some(row) = stream.next().await? {
+            let entity_name: String = row.get("entity_name").unwrap_or_default();
+            let rel_name: String = row.get("rel_name").unwrap_or_else(|_| "RELATED".to_string());
+            let is_outgoing: bool = row.get("is_outgoing").unwrap_or(true);
+            let other_name: String = row.get("other_name").unwrap_or_default();
+
+            let dir = if is_outgoing { "->".to_string() } else { "<-".to_string() };
+
+            results
+                .entry(entity_name)
+                .or_insert_with(Vec::new)
+                .push((dir, rel_name, other_name));
+        }
+
         Ok(results)
     }
 

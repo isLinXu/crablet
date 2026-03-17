@@ -18,6 +18,7 @@ async fn main() -> anyhow::Result<()> {
             database_url: "sqlite:crablet.db?mode=rwc".to_string(),
             skills_dir: std::path::PathBuf::from("skills"),
             model_name: "gpt-4o-mini".to_string(),
+            llm_vendor: None,
             log_level: "info".to_string(),
             mcp_servers: std::collections::HashMap::new(),
             channels: vec![],

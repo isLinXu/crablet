@@ -99,26 +99,46 @@ impl CognitiveRouter {
     }
 
     // ... existing create_llm_client methods ...
-    fn create_llm_client(config: &Config, model_hint: Option<&str>) -> Arc<Box<dyn LlmClient>> {
-        let model = model_hint
-            .map(|s| s.to_string())
-            .unwrap_or_else(|| config.model_name.clone());
+    async fn create_llm_client(config: &Config, model_hint: Option<&str>) -> Arc<Box<dyn LlmClient>> {
+        let mut temp_config = config.clone();
+        if let Some(model) = model_hint {
+            temp_config.model_name = model.to_string();
+        }
 
-        let llm_inner: Box<dyn LlmClient> = match OpenAiClient::new(&model) {
-            Ok(client) => Box::new(client),
-            Err(_) => {
-                 let ollama_model = config.ollama_model.clone();
-                 Box::new(OllamaClient::new(&ollama_model))
+        match crate::cognitive::create_llm_client(&temp_config).await {
+            Ok(client) => client,
+            Err(e) => {
+                error!("Failed to create LLM client: {}. Falling back to default OpenAI.", e);
+                let llm_inner: Box<dyn LlmClient> = Box::new(OpenAiClient::new("gpt-4o-mini").expect("Default model must be valid"));
+                let cached: Box<dyn LlmClient> = Box::new(CachedLlmClient::new(llm_inner, 100));
+                Arc::new(cached)
             }
-        };
-        let llm: Box<dyn LlmClient> = Box::new(CachedLlmClient::new(llm_inner, 100));
-        Arc::new(llm)
+        }
     }
     
-    fn create_local_llm_client(config: &Config) -> Box<dyn LlmClient> {
-        let ollama_model = config.ollama_model.clone();
-        let local_llm_inner: Box<dyn LlmClient> = Box::new(OllamaClient::new(&ollama_model));
-        Box::new(CachedLlmClient::new(local_llm_inner, 100))
+    async fn create_local_llm_client(config: &Config) -> Box<dyn LlmClient> {
+        let mut temp_config = config.clone();
+        temp_config.llm_vendor = Some("ollama".to_string());
+        
+        match crate::cognitive::create_llm_client(&temp_config).await {
+            Ok(client) => {
+                struct ArcLlm(Arc<Box<dyn LlmClient>>);
+                #[async_trait::async_trait]
+                impl LlmClient for ArcLlm {
+                    async fn chat_complete(&self, m: &[crate::types::Message]) -> anyhow::Result<String> { self.0.chat_complete(m).await }
+                    async fn chat_complete_with_tools(&self, m: &[crate::types::Message], t: &[serde_json::Value]) -> anyhow::Result<crate::types::Message> { self.0.chat_complete_with_tools(m, t).await }
+                    fn model_name(&self) -> &str { self.0.model_name() }
+                }
+                let boxed: Box<dyn LlmClient> = Box::new(ArcLlm(client));
+                boxed
+            },
+            Err(_) => {
+                let ollama_model = config.ollama_model.clone();
+                let local_llm_inner: Box<dyn LlmClient> = Box::new(OllamaClient::new(&ollama_model));
+                let boxed: Box<dyn LlmClient> = Box::new(CachedLlmClient::new(local_llm_inner, 100));
+                boxed
+            }
+        }
     }
 
     pub async fn new(config: &Config, memory: Option<Arc<EpisodicMemory>>, event_bus: Arc<EventBus>) -> Self {
@@ -126,7 +146,7 @@ impl CognitiveRouter {
         let shared_skills = Arc::new(RwLock::new(SkillRegistry::new()));
 
         // Initialize LLM for System 3
-        let llm_arc = Self::create_llm_client(config, None);
+        let llm_arc = Self::create_llm_client(config, None).await;
         let memory_mgr = Arc::new(MemoryManager::new(
             memory.clone(), 
             100, // max entries
@@ -137,7 +157,7 @@ impl CognitiveRouter {
         let sys2 = System2::new(event_bus.clone()).await.with_shared_skills(shared_skills.clone());
         
         // Create System 2 Local (Ollama)
-        let local_llm_cached = Self::create_local_llm_client(config);
+        let local_llm_cached = Self::create_local_llm_client(config).await;
         let sys2_local = System2::with_client(local_llm_cached, event_bus.clone()).await.with_shared_skills(shared_skills.clone());
 
         let pool = memory.as_ref().map(|m| m.pool.clone());
@@ -209,7 +229,7 @@ impl CognitiveRouter {
         let shared_skills = Arc::new(RwLock::new(SkillRegistry::new()));
 
         // Initialize LLM for System 3
-        let llm_arc = Self::create_llm_client(config, None);
+        let llm_arc = Self::create_llm_client(config, None).await;
         let memory_mgr = Arc::new(MemoryManager::new(
             memory.clone(), 
             100, 
@@ -217,7 +237,7 @@ impl CognitiveRouter {
         ));
 
         // Create System 2 Local (Ollama)
-        let local_llm_cached = Self::create_local_llm_client(config);
+        let local_llm_cached = Self::create_local_llm_client(config).await;
         let sys2_local = System2::with_client(local_llm_cached, event_bus.clone()).await.with_shared_skills(shared_skills.clone());
         
         let sys2 = sys2.with_shared_skills(shared_skills.clone());
