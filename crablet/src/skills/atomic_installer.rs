@@ -347,9 +347,17 @@ impl AtomicInstaller {
 
     /// 验证版本格式
     fn is_valid_version(version: &str) -> bool {
-        // 简单的语义化版本检查
+        if version.is_empty() {
+            return false;
+        }
+        // 版本号必须以数字开头，不能以 'v' 开头
+        if version.starts_with('v') || version.starts_with('V') {
+            return false;
+        }
+        // 简单的语义化版本检查：支持 x.y.z-prerelease 格式
+        // 允许数字、点、连字符、加号以及字母（用于 prerelease 标识）
         version.split('.').count() >= 2 &&
-        version.chars().all(|c| c.is_numeric() || c == '.' || c == '-' || c == '+')
+        version.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '+')
     }
 }
 

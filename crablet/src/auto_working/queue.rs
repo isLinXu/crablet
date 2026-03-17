@@ -43,8 +43,16 @@ pub trait QueueBackend: Send + Sync {
 
 /// SQLite queue backend
 pub struct SqliteQueue {
-    pool: SqlitePool,
+    pub pool: SqlitePool,
     dlq_enabled: bool,
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct QueueStats {
+    pub pending_count: usize,
+    pub running_count: usize,
+    pub completed_count: usize,
+    pub failed_count: usize,
 }
 
 impl SqliteQueue {
@@ -155,6 +163,32 @@ impl SqliteQueue {
             scheduled_at: DateTime::parse_from_rfc3339(&scheduled_at_str)?.with_timezone(&Utc),
             visibility_timeout: visibility_timeout.map(|t| Duration::from_secs(t as u64)),
         })
+    }
+
+    pub async fn get_stats(&self) -> Result<QueueStats> {
+        let pending: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM work_queue WHERE processing = 0").fetch_one(&self.pool).await?;
+        let running: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM work_queue WHERE processing = 1").fetch_one(&self.pool).await?;
+        let failed: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM dead_letter_queue").fetch_one(&self.pool).await?;
+        
+        Ok(QueueStats {
+            pending_count: pending as usize,
+            running_count: running as usize,
+            completed_count: 0, // We delete on ack, so we don't track completed here
+            failed_count: failed as usize,
+        })
+    }
+
+    pub async fn list_pending(&self, limit: usize) -> Result<Vec<QueuedTask>> {
+        let rows = sqlx::query("SELECT * FROM work_queue WHERE processing = 0 ORDER BY priority DESC, scheduled_at ASC LIMIT ?1")
+            .bind(limit as i64)
+            .fetch_all(&self.pool)
+            .await?;
+            
+        let mut tasks = Vec::new();
+        for row in rows {
+            tasks.push(Self::deserialize_task(&row)?);
+        }
+        Ok(tasks)
     }
 }
 

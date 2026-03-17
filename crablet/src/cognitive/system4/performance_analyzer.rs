@@ -230,21 +230,18 @@ impl PerformanceAnalyzer {
         };
 
         // 计算吞吐量（每分钟）
-        let throughput = if !metrics.is_empty() {
-            let time_span = if metrics.len() >= 2 {
-                let first = metrics.iter().map(|m| m.timestamp).min().unwrap();
-                let last = metrics.iter().map(|m| m.timestamp).max().unwrap();
-                (last - first).num_seconds() as f64 / 60.0
-            } else {
-                1.0
-            };
+        let throughput = if metrics.len() >= 2 {
+            let timestamps: Vec<_> = metrics.iter().map(|m| m.timestamp).collect();
+            let first = timestamps.iter().min().copied().unwrap_or_else(Utc::now);
+            let last = timestamps.iter().max().copied().unwrap_or_else(Utc::now);
+            let time_span = (last - first).num_seconds() as f64 / 60.0;
             if time_span > 0.0 {
                 total as f64 / time_span
             } else {
                 total as f64
             }
         } else {
-            0.0
+            total as f64
         };
 
         PerformanceStats {

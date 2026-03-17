@@ -95,6 +95,9 @@ impl ResponseTemplate {
     }
 }
 
+/// Handler function type for commands
+type CommandHandler = Arc<dyn Fn(&str, &HashMap<String, String>, &[Message]) -> String + Send + Sync>;
+
 /// Command definition
 #[derive(Clone)]
 pub struct Command {
@@ -104,7 +107,7 @@ pub struct Command {
     pub response: ResponseTemplate,
     pub priority: i32,  // Higher = checked first
     pub context_aware: bool,
-    pub handler: Option<Arc<dyn Fn(&str, &HashMap<String, String>, &[Message]) -> String + Send + Sync>>,
+    pub handler: Option<CommandHandler>,
 }
 
 /// Pattern for matching
@@ -149,6 +152,12 @@ pub struct PatternMatcher {
     compiled_regexes: HashMap<String, Regex>,
 }
 
+impl Default for PatternMatcher {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PatternMatcher {
     pub fn new() -> Self {
         Self {
@@ -187,7 +196,7 @@ impl PatternMatcher {
             
             Pattern::Regex(pattern_str) => {
                 let regex = self.compiled_regexes.entry(pattern_str.clone())
-                    .or_insert_with(|| Regex::new(pattern_str).unwrap());
+                    .or_insert_with(|| Regex::new(pattern_str).expect("Failed to compile regex pattern"));
                 
                 if let Some(captures) = regex.captures(&input_lower) {
                     let mut params = HashMap::new();
@@ -324,6 +333,12 @@ pub struct System1Enhanced {
     fallback_handler: Arc<dyn Fn(&str) -> String + Send + Sync>,
 }
 
+impl Default for System1Enhanced {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl System1Enhanced {
     pub fn new() -> Self {
         let mut system = Self {
@@ -355,7 +370,10 @@ impl System1Enhanced {
                 Pattern::Prefix("hi ".to_string()),
                 Pattern::Prefix("hey ".to_string()),
                 Pattern::Fuzzy("hello".to_string(), 1),
-                Pattern::Fuzzy("hi".to_string(), 0),
+                Pattern::Fuzzy("hi".to_string(), 1),
+                Pattern::Regex(r"^(?i)hello[!?.]*$".to_string()),
+                Pattern::Regex(r"^(?i)hi[!?.]*$".to_string()),
+                Pattern::Regex(r"^(?i)hey[!?.]*$".to_string()),
             ],
             response: ResponseTemplate::new(vec![
                 "你好！我是小螃蟹🦀 —— 你的 AI 助手机器人。\n\n我可以帮你做很多事情，比如：\n• 回答问题和解释概念\n• 编写和调试代码\n• 搜索和整理信息\n• 分析数据和文档\n\n有什么我可以帮你的吗？",
@@ -418,7 +436,7 @@ impl System1Enhanced {
                 Pattern::Regex(r"^who (are|r) (u|you)".to_string()),
             ],
             response: ResponseTemplate::new(vec![
-                "你好！我是小螃蟹🦀 —— 你的 AI 助手机器人。\n\n我基于大语言模型技术，可以帮你：\n• 搜索和整理信息\n• 分析数据和文档\n• 编写和调试代码\n• 解答各类问题\n\n有什么想聊的吗？",
+                "你好！我是 Crablet（小螃蟹🦀）—— 你的 AI 助手机器人。\n\n我基于大语言模型技术，可以帮你：\n• 搜索和整理信息\n• 分析数据和文档\n• 编写和调试代码\n• 解答各类问题\n\n有什么想聊的吗？",
             ]),
             priority: 90,
             context_aware: false,

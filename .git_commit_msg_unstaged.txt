@@ -1,0 +1,36 @@
+feat: Enhance agent capabilities and frontend security
+
+Backend Improvements:
+- Extended agent roles: Added drafter, critic, planner, reviewer agents
+- Implemented Draft Mode in cognitive router for specialized drafting tasks
+- Enhanced HeartbeatEngine with proactive draft refinement
+- Refactored workflow handler to use real filesystem (workflows/)
+- Improved CLI task handler with better task management
+- Updated auto_working queue with enhanced scheduling
+- Strengthened swarm coordinator with better error handling
+
+Frontend Enhancements:
+- Fixed modelStore to properly handle backend LLM vendor config
+  - Now reads llm_vendor from backend config
+  - Supports Aliyun and OpenAI vendor detection
+  - Uses dynamic apiBaseUrl from backend settings
+- Enhanced MessageBubble with security improvements:
+  - Added remark-gfm for GitHub-flavored markdown
+  - Implemented URL sanitization to prevent XSS attacks
+  - Added safe link and image rendering
+- Improved ChatWindow with better message handling
+- Updated package.json dependencies
+
+Security:
+- Added URL sanitization utilities (sanitizeUrl, sanitizeHtml)
+- Prevented rendering of unsafe links and images
+- Implemented safe markdown rendering
+
+Documentation:
+- Updated README.md and README_zh.md with latest features
+
+Deployment:
+- Enhanced install.sh and one-click.sh scripts
+- Added better environment detection and setup
+
+Total: +793 lines, -420 lines across 38 files

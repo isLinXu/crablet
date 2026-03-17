@@ -1,0 +1,275 @@
+{
+  "metadata": {
+    "name": "Crablet",
+    "version": "2.0.0",
+    "edition": "fusion",
+    "created_at": "2026-03-15T00:00:00Z",
+    "updated_at": "2026-03-15T00:00:00Z"
+  },
+  "agent": {
+    "identity": {
+      "name": "小螃蟹",
+      "description": "你的智能伙伴，擅长深度思考、代码编写、知识检索和任务执行",
+      "role": "multimodal_ai_assistant",
+      "avatar": null
+    },
+    "capabilities": {
+      "rag": {
+        "enabled": true,
+        "backend": "hybrid",
+        "vector_store": "qdrant",
+        "graph_store": null
+      },
+      "memory": {
+        "layers": 4,
+        "daily_logs": true,
+        "consolidation": true,
+        "cross_session": true
+      },
+      "cognitive": {
+        "router": "adaptive",
+        "system1": true,
+        "system2": true,
+        "system3": true
+      },
+      "skills": {
+        "local": true,
+        "mcp": true,
+        "openclaw": true,
+        "plugin": true,
+        "hot_reload": true
+      },
+      "channels": ["web", "cli"]
+    },
+    "behavior": {
+      "proactivity": "balanced",
+      "response_style": "balanced",
+      "safety_level": "balanced"
+    }
+  },
+  "soul": {
+    "personality": {
+      "name": "小螃蟹",
+      "traits": ["friendly", "professional", "curious"],
+      "communication_style": "adaptive",
+      "thinking_pattern": "analytical"
+    },
+    "values": [
+      {
+        "name": "user_first",
+        "priority": 10,
+        "description": "用户至上"
+      },
+      {
+        "name": "honesty",
+        "priority": 9,
+        "description": "诚实透明"
+      },
+      {
+        "name": "efficiency",
+        "priority": 8,
+        "description": "高效专业"
+      },
+      {
+        "name": "safety",
+        "priority": 10,
+        "description": "安全隐私"
+      }
+    ],
+    "principles": [
+      {
+        "name": "do_no_harm",
+        "description": "绝不伤害用户或系统",
+        "immutable": true
+      },
+      {
+        "name": "privacy_protection",
+        "description": "严格保护用户隐私",
+        "immutable": true
+      },
+      {
+        "name": "honesty_boundary",
+        "description": "明确区分事实和推测",
+        "immutable": true
+      }
+    ],
+    "cognitive_profile": {
+      "system1": {
+        "enabled": true,
+        "intent_trie": "builtin",
+        "fuzzy_matching": true,
+        "openclaw_prompts": true
+      },
+      "system2": {
+        "enabled": true,
+        "react_engine": "enhanced",
+        "middleware_chain": ["safety", "planning", "rag"]
+      },
+      "system3": {
+        "enabled": true,
+        "swarm_coordinator": "default",
+        "max_agents": 10
+      }
+    }
+  },
+  "user": {
+    "profile": {
+      "user_id": "default",
+      "name": null,
+      "role": null,
+      "expertise": [],
+      "goals": []
+    },
+    "preferences": {
+      "language": "zh-CN",
+      "response_length": "moderate",
+      "format_preferences": {
+        "use_markdown": true,
+        "use_tables": true,
+        "use_code_blocks": true,
+        "use_emoji": false
+      },
+      "proactive_behavior": {
+        "suggest_related": true,
+        "ask_clarification": true,
+        "summarize_conversation": false,
+        "recommend_next": false
+      }
+    },
+    "privacy": {
+      "store_history": true,
+      "learn_preferences": true,
+      "share_anonymous_data": false,
+      "cross_session_identification": false
+    }
+  },
+  "memory": {
+    "working": {
+      "capacity_messages": 20,
+      "max_tokens": 8000,
+      "compression_strategy": "hybrid"
+    },
+    "episodic": {
+      "backend": "sqlite",
+      "database_url": "sqlite://./agent-workspace/memory/episodic.db",
+      "retention_days": 365
+    },
+    "semantic": {
+      "backend": "vector_only",
+      "vector_store": {
+        "provider": "memory",
+        "url": "memory",
+        "dimension": 1536,
+        "distance": "cosine"
+      },
+      "graph_store": null
+    },
+    "daily_logs": {
+      "enabled": true,
+      "log_dir": "agent-workspace/memory/daily_logs",
+      "format": "markdown",
+      "retention_days": 90,
+      "auto_extract_memories": true
+    }
+  },
+  "tools": {
+    "registry": {
+      "auto_load": true,
+      "hot_reload": true,
+      "scan_interval_secs": 30,
+      "skill_dirs": ["agent-workspace/skills", "skills"]
+    },
+    "permissions": {
+      "default_allow": ["read", "search"],
+      "default_deny": ["execute", "delete"],
+      "require_confirmation": ["write", "network"]
+    },
+    "orchestration": {
+      "max_parallel": 5,
+      "timeout_secs": 30,
+      "retry_attempts": 3,
+      "enable_chaining": true,
+      "enable_composition": true
+    }
+  },
+  "heartbeat": {
+    "enabled": true,
+    "timezone": "Asia/Shanghai",
+    "tasks": {
+      "daily": [
+        {
+          "name": "archive_logs",
+          "schedule": "0 0 * * *",
+          "action": "archive_daily_logs",
+          "enabled": true
+        },
+        {
+          "name": "extract_memories",
+          "schedule": "0 2 * * *",
+          "action": "extract_memories",
+          "enabled": true
+        }
+      ],
+      "weekly": [
+        {
+          "name": "consolidate_memories",
+          "schedule": "0 1 * * 0",
+          "action": "consolidate_memories",
+          "enabled": true
+        }
+      ],
+      "monthly": []
+    },
+    "health_checks": {
+      "enabled": true,
+      "interval_secs": 60,
+      "checks": [
+        {
+          "name": "database",
+          "check_type": "ping",
+          "parameters": {},
+          "alert_on_failure": true
+        }
+      ]
+    }
+  },
+  "engine": {
+    "performance": {
+      "max_concurrent_sessions": 100,
+      "message_queue_size": 1000,
+      "worker_threads": 4,
+      "enable_zero_copy": true
+    },
+    "safety": {
+      "oracle_enabled": true,
+      "sandbox_type": "none",
+      "rate_limiting": {
+        "enabled": true,
+        "requests_per_minute": 60,
+        "tokens_per_day": 100000
+      },
+      "content_filter": {
+        "enabled": true,
+        "filter_level": "moderate",
+        "custom_rules": []
+      }
+    },
+    "observability": {
+      "logging": {
+        "level": "info",
+        "format": "json",
+        "output": "stdout"
+      },
+      "metrics": {
+        "enabled": false,
+        "endpoint": null,
+        "interval_secs": 15
+      },
+      "tracing": {
+        "enabled": false,
+        "jaeger_endpoint": null,
+        "sampling_rate": 0.1
+      }
+    }
+  }
+}

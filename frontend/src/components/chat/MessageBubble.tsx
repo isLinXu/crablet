@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { cn } from '../ui/Button';
 import type { ExtendedMessage } from '@/store/chatStore';
 import { CodeBlock } from './CodeBlock';
@@ -7,6 +8,7 @@ import { Bot, User, Copy, Check, Download, Pencil, Trash2, X } from 'lucide-reac
 import { cognitiveLayerLabel } from '@/utils/cognitive';
 import { EnhancedThinkingVisualization, type ThinkingProcess } from './EnhancedThinkingVisualization';
 import { CrabThinking } from '../ui/CrabElements';
+import { sanitizeHtml, sanitizeUrl } from '@/utils/security';
 
 interface MessageBubbleProps {
   message: ExtendedMessage;
@@ -114,27 +116,111 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(({
     }
 
     if (typeof message.content === 'string') {
-      return <ReactMarkdown components={{
-        code({ node, inline, className, children, ...props }: any) {
-          const match = /language-(\w+)/.exec(className || '');
-          return !inline && match ? (
-            <CodeBlock language={match[1]} value={String(children).replace(/\n$/, '')} {...props} />
-          ) : (
-            <code className={cn(className, "bg-gray-200 dark:bg-gray-800 rounded px-1 py-0.5 text-sm font-mono")} {...props}>
-              {children}
-            </code>
-          );
-        }
-      }}>{message.content}</ReactMarkdown>;
+      return (
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm]}
+          components={{
+            // Safe code rendering
+            code({ node, inline, className, children, ...props }: any) {
+              const match = /language-(\w+)/.exec(className || '');
+              return !inline && match ? (
+                <CodeBlock language={match[1]} value={String(children).replace(/\n$/, '')} {...props} />
+              ) : (
+                <code className={cn(className, "bg-gray-200 dark:bg-gray-800 rounded px-1 py-0.5 text-sm font-mono")} {...props}>
+                  {children}
+                </code>
+              );
+            },
+            // Safe link rendering - validate and sanitize URLs
+            a({ node, href, children, ...props }: any) {
+              const safeHref = sanitizeUrl(href || '');
+              if (!safeHref) {
+                // If URL is unsafe, return just text without link
+                return <span className="text-gray-400">{children}</span>;
+              }
+              return (
+                <a
+                  href={safeHref}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 underline"
+                  {...props}
+                >
+                  {children}
+                </a>
+              );
+            },
+            // Safe image rendering
+            img({ node, src, alt, ...props }: any) {
+              const safeSrc = sanitizeUrl(src || '');
+              if (!safeSrc) {
+                // Don't render unsafe images
+                return null;
+              }
+              return (
+                <img
+                  src={safeSrc}
+                  alt={alt || 'Image'}
+                  className="max-w-full h-auto rounded-lg"
+                  loading="lazy"
+                  {...props}
+                />
+              );
+            },
+            // Prevent script execution through HTML sanitization
+            div({ node, children, ...props }: any) {
+              return <div {...props}>{children}</div>;
+            },
+          }}
+        >
+          {message.content}
+        </ReactMarkdown>
+      );
     }
     
     const textParts = message.content.filter((part) => part.type === 'text');
     const imageParts = message.content.filter((part) => part.type === 'image_url');
-    const imageUrls = imageParts.map((part) => part.image_url.url).filter(Boolean);
+    // Sanitize all image URLs
+    const imageUrls = imageParts.map((part) => part.image_url.url).filter(Boolean).map(sanitizeUrl).filter(Boolean);
     return (
       <>
         {textParts.map((part, index) => (
-          <ReactMarkdown key={`text-${index}`}>{part.text}</ReactMarkdown>
+          <ReactMarkdown 
+            key={`text-${index}`}
+            remarkPlugins={[remarkGfm]}
+            components={{
+              code({ node, inline, className, children, ...props }: any) {
+                const match = /language-(\w+)/.exec(className || '');
+                return !inline && match ? (
+                  <CodeBlock language={match[1]} value={String(children).replace(/\n$/, '')} {...props} />
+                ) : (
+                  <code className={cn(className, "bg-gray-200 dark:bg-gray-800 rounded px-1 py-0.5 text-sm font-mono")} {...props}>
+                    {children}
+                  </code>
+                );
+              },
+              // Safe link rendering
+              a({ node, href, children, ...props }: any) {
+                const safeHref = sanitizeUrl(href || '');
+                if (!safeHref) {
+                  return <span className="text-gray-400">{children}</span>;
+                }
+                return (
+                  <a
+                    href={safeHref}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 underline"
+                    {...props}
+                  >
+                    {children}
+                  </a>
+                );
+              },
+            }}
+          >
+            {part.text}
+          </ReactMarkdown>
         ))}
         {imageUrls.length > 0 && (
           <div className="mt-2 space-y-2">
@@ -154,7 +240,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(({
                 const ts = new Date(message.timestamp || Date.now()).getTime() || Date.now();
                 return (
                   <div key={`img-${index}`} className="relative group/image">
-                    <img src={url} alt={`Generated ${index + 1}`} className="w-full rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 object-cover" />
+                    <img src={url} alt={`Generated ${index + 1}`} className="w-full rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 object-cover" loading="lazy" />
                     <button
                       onClick={() => downloadImage(url, `crablet-image-${ts}-${index + 1}.png`)}
                       className="absolute top-2 right-2 opacity-0 group-hover/image:opacity-100 transition-opacity inline-flex items-center gap-1 text-xs px-2 py-1 rounded-md border border-zinc-300 dark:border-zinc-600 bg-white/90 dark:bg-zinc-900/90 hover:bg-white dark:hover:bg-zinc-900"

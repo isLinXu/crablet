@@ -1,0 +1,27 @@
+feat: Implement Meta-Cognitive System with self-improving capabilities
+
+This commit introduces a comprehensive meta-cognitive architecture that enables
+the agent to monitor, analyze, and optimize its own cognitive processes.
+
+Core Components:
+- Meta Controller: Central orchestrator for meta-cognitive operations
+  - Monitor: Real-time performance tracking and anomaly detection
+  - Learner: Pattern learning from execution history
+  - Reflector: Deep reflection on cognitive decisions
+  - Optimizer: Adaptive parameter tuning and strategy optimization
+
+Backend Enhancements:
+- Enhanced graph_rag with improved retrieval algorithms
+- Extended semantic memory for better knowledge persistence
+- Upgraded rate limiter with adaptive throttling
+- Updated cognitive router to support meta-cognitive routing
+
+Testing:
+- Added fusion_integration_test.rs for comprehensive integration tests
+- Added integration_meta_cognitive_test.rs for meta-cognitive validation
+- Added meta_simple_test.rs for basic functionality tests
+
+Breaking Changes:
+- Removed deprecated openclaw_executor.rs.new
+
+Total: +3399 lines, -471 lines across 16 files

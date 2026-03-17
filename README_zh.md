@@ -501,14 +501,32 @@ cd crablet
 ./one-click.sh
 ```
 
-常用参数：
+常用运维指令：
 
 ```bash
-# 跳过安装，仅启动服务
-./one-click.sh --start-only
+# 查看服务运行状态
+crablet status
 
-# 非交互模式（适合 CI/CD）
-./one-click.sh --non-interactive
+# 深度清理构建产物与缓存（释放空间）
+./clean.sh
+
+# 手动构建并安装 CLI
+./install.sh
+
+# 查看当前配置
+crablet config
+
+# 管理计划任务
+crablet task list
+
+# 管理工作流
+crablet workflow list
+
+# 开启调试模式启动服务（详细日志）
+./debug.sh
+
+# 完全卸载
+./uninstall.sh --full
 ```
 
 ### 方式二：本地构建

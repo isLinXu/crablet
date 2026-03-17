@@ -57,6 +57,7 @@ pub async fn run(router: Arc<CognitiveRouter>, port: u16, auth_config: Option<(S
 
     // API Router
     let api_router = Router::new()
+        .route("/health", get(|| async { Json(serde_json::json!({ "status": "ok" })) }))
         .route("/chat", post(chat))
         .route("/upload", post(upload_handler))
         .route("/knowledge", get(list_knowledge_handler).delete(delete_knowledge_handler))
@@ -933,7 +934,7 @@ async fn swarm_tasks_handler(
                             _ => GraphStatus::Active,
                         };
                         
-                        let graph_obj = crate::agent::swarm::TaskGraph { nodes, status };
+                        let graph_obj = crate::agent::swarm::TaskGraph { nodes, status, goal: String::new() };
                         let json_graph = serde_json::to_value(&graph_obj).unwrap();
                         if let serde_json::Value::Object(mut map) = json_graph {
                             map.insert("id".to_string(), serde_json::Value::String(id));

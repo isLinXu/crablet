@@ -48,6 +48,12 @@ impl SwarmCoordinator {
     }
 
     pub async fn decompose_and_execute(&self, goal: &str) -> Result<String> {
+        // Special case for Draft Mode
+        if goal.to_lowercase().starts_with("draft ") {
+            let topic = goal.chars().skip(6).collect::<String>();
+            return self.start_draft_swarm(&topic).await;
+        }
+
         // 1. Decompose goal into TaskGraph using LLM
         let graph = self.decompose_goal(goal).await?;
         
@@ -67,19 +73,53 @@ impl SwarmCoordinator {
         // Note: executor needs reference to active_graphs lock
         self.executor.execute_graph(graph, &graph_id, goal, self.active_graphs.clone()).await
     }
+
+    pub async fn start_draft_swarm(&self, topic: &str) -> Result<String> {
+        let mut graph = TaskGraph::new();
+        let t1 = "research_task".to_string();
+        let t2 = "draft_task".to_string();
+        let t3 = "critique_task".to_string();
+        let t4 = "polish_task".to_string();
+
+        graph.add_task(t1.clone(), "researcher".to_string(), format!("Deeply research the following topic and provide key facts and insights: {}", topic), vec![]);
+        graph.add_task(t2.clone(), "drafter".to_string(), format!("Write a comprehensive first draft about: {}. Use the research findings provided.", topic), vec![t1]);
+        graph.add_task(t3.clone(), "critic".to_string(), "Review the draft meticulously. Identify gaps, inconsistencies, and areas for improvement. Provide actionable feedback.".to_string(), vec![t2]);
+        graph.add_task(t4.clone(), "drafter".to_string(), "Refine and polish the draft based on the critic's feedback. Ensure the final version is high-quality and professional.".to_string(), vec![t3]);
+
+        let graph_id = Uuid::new_v4().to_string();
+        {
+            let mut graphs = self.active_graphs.write().await;
+            graphs.insert(graph_id.clone(), graph.clone());
+        }
+        
+        let goal = format!("Draft: {}", topic);
+        self.persister.persist_graph(&graph_id, &graph, &goal).await?;
+        
+        // Execute in background
+        let executor = self.executor.clone();
+        let active_graphs = self.active_graphs.clone();
+        let graph_id_str = graph_id.clone();
+        
+        tokio::spawn(async move {
+            let _ = executor.execute_graph(graph, &graph_id_str, &goal, active_graphs).await;
+        });
+
+        Ok(format!("Draft Mode Swarm started (Graph ID: {})", graph_id))
+    }
     
     async fn decompose_goal(&self, goal: &str) -> Result<TaskGraph> {
         let prompt = format!(
             "Decompose the following goal into a dependency graph of subtasks for a swarm of agents.\n\
             Goal: \"{}\"\n\
             \n\
-            Available Agent Roles: researcher, coder, analyst, reviewer, security, planner\n\
+            Available Agent Roles: researcher, coder, analyst, reviewer, security, planner, drafter, critic\n\
             \n\
             Output JSON format ONLY:\n\
             {{\n\
               \"tasks\": [\n\
                 {{ \"id\": \"t1\", \"role\": \"researcher\", \"prompt\": \"Search for...\", \"dependencies\": [] }},\n\
-                {{ \"id\": \"t2\", \"role\": \"analyst\", \"prompt\": \"Analyze...\", \"dependencies\": [\"t1\"] }}\n\
+                {{ \"id\": \"t2\", \"role\": \"drafter\", \"prompt\": \"Draft the content based on...\", \"dependencies\": [\"t1\"] }},\n\
+                {{ \"id\": \"t3\", \"role\": \"critic\", \"prompt\": \"Review the draft for...\", \"dependencies\": [\"t2\"] }}\n\
               ]\n\
             }}",
             goal

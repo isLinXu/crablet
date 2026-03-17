@@ -43,6 +43,7 @@ interface ChatState {
   messages: ExtendedMessage[];
   isConnected: boolean;
   isThinking: boolean;
+  isDraftMode: boolean;
   currentCognitiveLayer: CognitiveLayer;
   sessionId: string | null;
   sessions: ChatSessionItem[];
@@ -51,6 +52,7 @@ interface ChatState {
   addMessage: (msg: ExtendedMessage) => void;
   setConnected: (status: boolean) => void;
   setThinking: (status: boolean) => void;
+  setDraftMode: (status: boolean) => void;
   setCurrentCognitiveLayer: (layer: CognitiveLayer) => void;
   setSessionId: (id: string | null) => void;
   createSession: (title?: string) => string;
@@ -134,6 +136,7 @@ export const useChatStore = create<ChatState>()(
       messages: [],
       isConnected: false,
       isThinking: false,
+      isDraftMode: false,
       currentCognitiveLayer: 'unknown',
       sessionId: null,
       sessions: [],
@@ -147,6 +150,7 @@ export const useChatStore = create<ChatState>()(
       }),
       setConnected: (status) => set({ isConnected: status }),
       setThinking: (status) => set({ isThinking: status }),
+      setDraftMode: (status) => set({ isDraftMode: status }),
       setCurrentCognitiveLayer: (layer) => set({ currentCognitiveLayer: layer }),
       setSessionId: (id) => set((state) => {
         const legacy = materializeUnsavedSession(state.sessionId, state.messages, state.sessions, state.sessionMessages);
@@ -360,7 +364,8 @@ export const useChatStore = create<ChatState>()(
         messages: state.messages,
         sessionId: state.sessionId,
         sessions: state.sessions,
-        sessionMessages: state.sessionMessages
+        sessionMessages: state.sessionMessages,
+        isDraftMode: state.isDraftMode
       }),
       version: 3,
     }

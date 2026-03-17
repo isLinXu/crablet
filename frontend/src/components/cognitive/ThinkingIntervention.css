@@ -1,0 +1,532 @@
+.thinking-intervention {
+  background: linear-gradient(180deg, #1e293b 0%, #0f172a 100%);
+  border-radius: 12px;
+  border: 1px solid #334155;
+  overflow: hidden;
+}
+
+/* 工具确认弹窗 */
+.tool-confirmation-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.tool-confirmation-modal {
+  background: #1e293b;
+  border-radius: 12px;
+  width: 90%;
+  max-width: 500px;
+  max-height: 80vh;
+  overflow: hidden;
+  animation: slideUp 0.3s ease;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 20px;
+  background: rgba(245, 158, 11, 0.1);
+  border-bottom: 1px solid #334155;
+}
+
+.modal-icon {
+  font-size: 24px;
+}
+
+.modal-header h4 {
+  margin: 0;
+  color: #f8fafc;
+  font-size: 16px;
+}
+
+.modal-content {
+  padding: 20px;
+}
+
+.tool-description {
+  margin: 0 0 16px 0;
+  color: #e2e8f0;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.tool-details {
+  background: #0f172a;
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.tool-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.tool-name .label {
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.tool-name .value {
+  color: #fbbf24;
+  font-weight: 600;
+  font-family: monospace;
+}
+
+.tool-params .label {
+  display: block;
+  color: #94a3b8;
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+
+.tool-params pre {
+  background: #1e293b;
+  padding: 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  color: #e2e8f0;
+  overflow-x: auto;
+  margin: 0;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 12px;
+  padding: 16px 20px;
+  background: #0f172a;
+  border-top: 1px solid #334155;
+}
+
+/* 分支选择面板 */
+.branch-selection-panel {
+  padding: 16px;
+  background: rgba(139, 92, 246, 0.05);
+  border-bottom: 1px solid #334155;
+}
+
+.panel-header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 16px;
+}
+
+.panel-icon {
+  font-size: 20px;
+}
+
+.panel-header h4 {
+  margin: 0;
+  color: #f8fafc;
+  font-size: 15px;
+}
+
+.panel-subtitle {
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.branch-options {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.branch-option {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  background: rgba(51, 65, 85, 0.3);
+  border: 2px solid transparent;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: left;
+}
+
+.branch-option:hover {
+  background: rgba(139, 92, 246, 0.1);
+  border-color: rgba(139, 92, 246, 0.3);
+}
+
+.branch-option.selected {
+  background: rgba(139, 92, 246, 0.2);
+  border-color: #8b5cf6;
+}
+
+.branch-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.branch-label {
+  font-weight: 600;
+  color: #f8fafc;
+  font-size: 14px;
+}
+
+.branch-confidence {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.branch-confidence span {
+  font-size: 11px;
+  color: #94a3b8;
+  min-width: 35px;
+}
+
+.branch-confidence .confidence-bar {
+  width: 60px;
+  height: 4px;
+  background: #334155;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.branch-confidence .confidence-bar > div {
+  height: 100%;
+  background: linear-gradient(90deg, #8b5cf6, #a78bfa);
+  border-radius: 2px;
+}
+
+.branch-description {
+  margin: 0;
+  font-size: 13px;
+  color: #94a3b8;
+  line-height: 1.5;
+}
+
+.branch-preview {
+  display: flex;
+  gap: 6px;
+  font-size: 11px;
+}
+
+.preview-label {
+  color: #64748b;
+  flex-shrink: 0;
+}
+
+.preview-text {
+  color: #64748b;
+  font-style: italic;
+}
+
+.branch-actions {
+  display: flex;
+  gap: 12px;
+}
+
+/* 干预工具栏 */
+.intervention-toolbar {
+  padding: 12px 16px;
+  background: #0f172a;
+}
+
+.toolbar-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.toolbar-icon {
+  font-size: 16px;
+}
+
+.toolbar-title {
+  font-weight: 600;
+  color: #f8fafc;
+  font-size: 13px;
+}
+
+.current-thought-preview {
+  margin-left: auto;
+  font-size: 11px;
+  color: #64748b;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.toolbar-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.intervention-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  background: #334155;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: #e2e8f0;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 12px;
+}
+
+.intervention-btn:hover {
+  background: #475569;
+  transform: translateY(-1px);
+}
+
+.intervention-btn.active {
+  background: rgba(59, 130, 246, 0.2);
+  border-color: #3b82f6;
+}
+
+.intervention-btn.danger {
+  background: rgba(239, 68, 68, 0.2);
+  color: #f87171;
+}
+
+.intervention-btn.danger:hover {
+  background: rgba(239, 68, 68, 0.3);
+}
+
+.btn-icon {
+  font-size: 14px;
+}
+
+/* 干预面板 */
+.intervention-panel {
+  padding: 16px;
+  background: rgba(59, 130, 246, 0.05);
+  border-top: 1px solid #334155;
+  animation: slideDown 0.2s ease;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.intervention-panel .panel-header {
+  flex-direction: row;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.intervention-panel .panel-header h4 {
+  font-size: 14px;
+}
+
+.guidance-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.preset-btn {
+  padding: 6px 12px;
+  background: #334155;
+  border: none;
+  border-radius: 16px;
+  color: #94a3b8;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.preset-btn:hover {
+  background: #475569;
+  color: #e2e8f0;
+}
+
+.intervention-input {
+  width: 100%;
+  padding: 12px;
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  color: #e2e8f0;
+  font-size: 13px;
+  resize: vertical;
+  min-height: 80px;
+  font-family: inherit;
+}
+
+.intervention-input:focus {
+  outline: none;
+  border-color: #3b82f6;
+}
+
+.intervention-input::placeholder {
+  color: #64748b;
+}
+
+.panel-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+/* 按钮样式 */
+.btn-primary {
+  flex: 1;
+  padding: 10px 16px;
+  background: #3b82f6;
+  border: none;
+  border-radius: 8px;
+  color: white;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: #2563eb;
+}
+
+.btn-primary:disabled {
+  background: #475569;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.btn-secondary {
+  flex: 1;
+  padding: 10px 16px;
+  background: transparent;
+  border: 1px solid #475569;
+  border-radius: 8px;
+  color: #94a3b8;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-secondary:hover {
+  background: #334155;
+  color: #e2e8f0;
+}
+
+/* 回溯列表 */
+.backtrack-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.backtrack-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: #334155;
+  border: none;
+  border-radius: 8px;
+  color: #e2e8f0;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: left;
+}
+
+.backtrack-item:hover {
+  background: #475569;
+}
+
+.backtrack-index {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #3b82f6;
+  border-radius: 50%;
+  font-size: 11px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.backtrack-text {
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 响应式调整 */
+@media (max-width: 768px) {
+  .tool-confirmation-modal {
+    width: 95%;
+    margin: 16px;
+  }
+  
+  .toolbar-actions {
+    gap: 6px;
+  }
+  
+  .intervention-btn {
+    padding: 6px 10px;
+    font-size: 11px;
+  }
+  
+  .btn-label {
+    display: none;
+  }
+  
+  .current-thought-preview {
+    display: none;
+  }
+  
+  .branch-option {
+    padding: 12px;
+  }
+  
+  .guidance-presets {
+    gap: 6px;
+  }
+  
+  .preset-btn {
+    padding: 4px 10px;
+    font-size: 10px;
+  }
+}

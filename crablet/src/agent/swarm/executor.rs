@@ -322,6 +322,17 @@ impl SwarmExecutor {
                             node.status = TaskStatus::Completed { duration: 500 }; 
                             node.result = Some(content.clone());
                             
+                            // Draft Mode Enhancement: Update Canvas if role is drafter
+                            if selected_role == "drafter" {
+                                if let Some(bus) = &self.event_bus {
+                                    bus.publish(AgentEvent::CanvasUpdate {
+                                        title: format!("Draft Update: {}", task_id),
+                                        content: content.clone(),
+                                        kind: "markdown".to_string(),
+                                    });
+                                }
+                            }
+                            
                             // Simulate communication events
                             if let Some(bus) = &self.event_bus {
                                  bus.publish(AgentEvent::SwarmActivity {

@@ -7,7 +7,7 @@ use dashmap::DashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use anyhow::{Result, anyhow};
-use tracing::{info, warn, error, debug};
+use tracing::{info, warn, debug};
 use std::time::Duration;
 
 // --- JSON-RPC Types ---
@@ -155,7 +155,7 @@ impl McpClient {
                     warn!("MCP Client received invalid JSON: {}", line);
                 }
             }
-            error!("MCP Server stdout closed");
+            debug!("MCP Server stdout closed (Normal shutdown)");
         });
 
         let client = Self {

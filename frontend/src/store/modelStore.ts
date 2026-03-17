@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { settingsService } from '@/services/settingsService';
+import { getApiBaseUrl } from '@/utils/constants';
 
 export interface ModelProvider {
   id: string;
@@ -206,17 +207,22 @@ export const useModelStore = create<ModelState>()(
         try {
           const config: any = await settingsService.getSystemConfig();
           const modelName = config?.openai_model_name;
+          const vendor = config?.llm_vendor || 'Backend';
+          const apiBase = config?.openai_api_base || getApiBaseUrl();
+          
           if (modelName) {
             const { providers, upsertProvider } = get();
-            const exists = providers.some((p: ModelProvider) => p.model === modelName);
-            if (!exists) {
+            const id = `backend-${modelName}`;
+            const exists = providers.find((p: ModelProvider) => p.id === id || p.model === modelName);
+            
+            if (!exists || exists.vendor !== vendor) {
                upsertProvider({
-                 id: `backend-${modelName}`,
-                 vendor: 'Backend',
+                 id: id,
+                 vendor: vendor === 'aliyun' ? 'Aliyun' : (vendor === 'openai' ? 'OpenAI' : vendor),
                  model: modelName,
                  modelType: 'chat',
                  version: 'latest',
-                 apiBaseUrl: 'http://127.0.0.1:18789/api',
+                 apiBaseUrl: apiBase,
                  apiKey: '',
                  enabled: true,
                  priority: 0,

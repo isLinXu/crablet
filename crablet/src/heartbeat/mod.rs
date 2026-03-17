@@ -9,12 +9,16 @@ use crate::error::Result;
 use crate::types::{Message, ContentPart};
 use crate::memory::core::CoreMemoryBlock;
 
+use crate::agent::swarm::{SwarmOrchestrator, GraphStatus, TaskNode, TaskStatus, TaskGraph};
+use uuid::Uuid;
+
 /// HeartbeatEngine handles periodic background tasks like proactive agent activities,
 /// memory consolidation, and predictive maintenance.
 pub struct HeartbeatEngine {
     memory_mgr: Arc<MemoryManager>,
     llm: Arc<Box<dyn LlmClient>>,
     skills: Arc<RwLock<SkillRegistry>>,
+    swarm_orch: Option<Arc<SwarmOrchestrator>>,
     idle_threshold: Duration,
     check_interval: Duration,
 }
@@ -29,9 +33,15 @@ impl HeartbeatEngine {
             memory_mgr,
             llm,
             skills,
+            swarm_orch: None,
             idle_threshold: Duration::from_secs(300), // 5 minutes
             check_interval: Duration::from_secs(60),  // 1 minute
         }
+    }
+
+    pub fn with_swarm(mut self, swarm_orch: Arc<SwarmOrchestrator>) -> Self {
+        self.swarm_orch = Some(swarm_orch);
+        self
     }
 
     pub fn with_thresholds(mut self, idle: Duration, interval: Duration) -> Self {
@@ -56,6 +66,11 @@ impl HeartbeatEngine {
                     debug!("User is idle, running enhanced background maintenance...");
                     if let Err(e) = engine.enhanced_background_think().await {
                         warn!("Failed to run enhanced background think: {}", e);
+                    }
+                    
+                    // Run Draft Mode proactive refinement
+                    if let Err(e) = engine.proactive_draft_refinement().await {
+                        warn!("Draft refinement failed: {}", e);
                     }
                 }
                 
@@ -152,6 +167,58 @@ impl HeartbeatEngine {
             // Execute the skill logic here
         }
         
+        Ok(())
+    }
+
+    /// 主动草稿精炼逻辑
+    async fn proactive_draft_refinement(&self) -> Result<()> {
+        if let Some(orch) = &self.swarm_orch {
+            let active_graphs = orch.coordinator.active_graphs.read().await;
+            for (id, graph) in active_graphs.iter() {
+                // 只针对草稿模式且已完成的任务进行主动优化
+                if graph.goal.starts_with("Draft:") && graph.status == GraphStatus::Completed {
+                    debug!("Checking draft swarm {} for proactive refinement...", id);
+                    
+                    // 随机触发深层次 polish (比如 10% 概率)
+                    if rand::random::<f32>() < 0.1 {
+                        info!("Triggering autonomous deep polish for draft: {}", graph.goal);
+                        
+                        // 创建新的 polish 任务
+                        let polish_id = format!("proactive_polish_{}", Uuid::new_v4().to_string().chars().take(8).collect::<String>());
+                        
+                        let new_task = TaskNode {
+                            id: polish_id.clone(),
+                            agent_role: "drafter".to_string(),
+                            prompt: format!("Perform an autonomous deep polish of the previous work for '{}'. Focus on enhancing the logical flow and professional tone.", graph.goal),
+                            dependencies: vec![], // No dependencies as previous tasks are all done
+                            status: TaskStatus::Pending,
+                            result: None,
+                            logs: Vec::new(),
+                            priority: 64, // Lower priority for background tasks
+                            timeout_ms: 120000,
+                            max_retries: 2,
+                            retry_count: 0,
+                        };
+                        
+                        // 由于我们目前持有 read lock，无法直接修改 active_graphs
+                        // 这里可以发送一个事件或者使用内部消息队列
+                        // 为了简单起见，我们直接调用 orch.add_task_to_graph (它会获取自己的 write lock)
+                        let id_clone = id.clone();
+                        let orch_clone = orch.clone();
+                        let goal_clone = graph.goal.clone();
+                        
+                        tokio::spawn(async move {
+                            if let Err(e) = orch_clone.add_task_to_graph(&id_clone, new_task).await {
+                                warn!("Failed to add proactive task to graph {}: {}", id_clone, e);
+                            } else {
+                                // 重新启动执行
+                                let _ = orch_clone.execute_graph(TaskGraph::new(), &id_clone, &goal_clone).await;
+                            }
+                        });
+                    }
+                }
+            }
+        }
         Ok(())
     }
 

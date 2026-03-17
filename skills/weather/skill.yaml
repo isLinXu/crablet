@@ -1,0 +1,34 @@
+name: weather
+description: Get weather information for a location
+version: "1.0.0"
+parameters:
+  type: object
+  properties:
+    location:
+      type: string
+      description: City name or location
+    units:
+      type: string
+      enum: [metric, imperial]
+      default: metric
+  required: [location]
+entrypoint: "python main.py"
+runtime: python3
+requires: [python3]
+triggers:
+  - type: keyword
+    keywords: ["天气", "weather", "temperature", "forecast", "forecast"]
+    case_sensitive: false
+  - type: command
+    prefix: "/weather"
+    args_schema:
+      type: object
+      properties:
+        location:
+          type: string
+        units:
+          type: string
+permissions: ["network:api.weather.com"]
+resources:
+  timeout: "10s"
+author: "Crablet Team"

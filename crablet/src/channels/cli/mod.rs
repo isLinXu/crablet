@@ -82,7 +82,7 @@ pub async fn run(config: Config) -> Result<()> {
         }
         #[cfg(feature = "auto-working")]
         Some(Commands::Task { subcmd }) => {
-            handlers::task::handle_task(subcmd).await
+            handlers::task::handle_task(subcmd, &config).await
         }
         #[cfg(feature = "auto-working")]
         Some(Commands::Workflow { subcmd }) => {

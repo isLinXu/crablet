@@ -97,6 +97,8 @@ fn default_max_retries() -> u32 { 3 }
 pub struct TaskGraph {
     pub nodes: HashMap<String, TaskNode>,
     pub status: GraphStatus,
+    #[serde(default)]
+    pub goal: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -127,7 +129,13 @@ impl TaskGraph {
         Self { 
             nodes: HashMap::new(),
             status: GraphStatus::Active,
+            goal: String::new(),
         }
+    }
+
+    pub fn with_goal(mut self, goal: String) -> Self {
+        self.goal = goal;
+        self
     }
     
     pub fn add_task(&mut self, id: String, role: String, prompt: String, deps: Vec<String>) {

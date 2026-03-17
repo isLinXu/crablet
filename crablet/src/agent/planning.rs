@@ -41,6 +41,10 @@ Available Agent Capabilities:
 - researcher: web search, information gathering, fact checking
 - coder: writing code, debugging, software design (Python, Rust, etc.)
 - analyst: data analysis, summarizing, logical reasoning, critical review
+- drafter: writing content, drafting documents, reports, technical writing
+- critic: reviewing, finding weaknesses, suggesting improvements, editing
+- planner: breaking down tasks, project management, strategy
+- reviewer: code review, content moderation, quality assurance
 
 Output JSON format:
 {{

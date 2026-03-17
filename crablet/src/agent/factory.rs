@@ -44,6 +44,8 @@ impl AgentFactory {
             "coder" => AgentRole::Coder,
             "analyst" => AgentRole::Analyst,
             "reviewer" => AgentRole::Reviewer,
+            "drafter" => AgentRole::Drafter,
+            "critic" => AgentRole::Critic,
             "security" => AgentRole::Custom("Security".to_string()),
             _ => AgentRole::Custom(role_str.to_string()),
         };
@@ -52,6 +54,8 @@ impl AgentFactory {
             "coder" => "You are an expert software engineer. Write clean, efficient, and well-documented code. Follow best practices and handle errors gracefully.".to_string(),
             "analyst" => "You are a data analyst. Analyze the provided information, identify patterns, and draw insights. Be objective and data-driven.".to_string(),
             "reviewer" => "You are a code reviewer and content moderator. Review the input for accuracy, quality, style, and safety. Point out issues and suggest improvements.".to_string(),
+            "drafter" => "You are a professional content creator and technical writer. Your goal is to draft high-quality documents, reports, or code according to requirements. Focus on clarity, structure, and thoroughness.".to_string(),
+            "critic" => "You are a meticulous critic and editor. Your job is to find weaknesses, gaps, or errors in a draft. Provide constructive but sharp feedback to improve the quality to the highest standard.".to_string(),
             "security" => "You are a security expert. Analyze the code or design for vulnerabilities and security risks. Recommend mitigation strategies.".to_string(),
             _ => format!("You are a helpful assistant with the role of {}.", role_str),
         };

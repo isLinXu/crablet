@@ -3,9 +3,12 @@
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::time::Instant;
+// use std::time::Duration; // Removed to avoid unused import in lib build
 use tokio::sync::RwLock;
 use serde::{Deserialize, Serialize};
 use tracing::debug;
+
+use crate::cognitive::meta_controller::ExecutionResult;
 
 /// 执行监控器
 pub struct Monitor {
@@ -253,9 +256,6 @@ pub struct GlobalMetricsView {
     pub avg_feedback: f32,
 }
 
-// 导入 ExecutionResult 类型
-use crate::cognitive::meta_controller::ExecutionResult;
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -269,20 +269,24 @@ mod tests {
     #[tokio::test]
     async fn test_start_and_finish_execution() {
         let monitor = Monitor::new(100);
-        monitor.start_execution("test-1");
+        monitor.start_execution("test-1").await;
         
         let result = ExecutionResult {
             task_id: "test-1".into(),
             success: true,
-            output: "Test".into(),
+            output: "Test output".into(),
             confidence: 0.9,
-            duration: Duration::from_millis(100),
-            metrics: ExecutionMetrics::default(),
+            duration: std::time::Duration::from_millis(100),
+            metrics: ExecutionMetrics {
+                success: true,
+                confidence: 0.9,
+                ..Default::default()
+            },
         };
         
-        monitor.finish_execution("test-1", &result);
+        monitor.finish_execution("test-1", &result).await;
         
-        tokio::time::sleep(Duration::from_millis(10)).await;
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
         
         let metrics = monitor.get_metrics("test-1").await;
         assert!(metrics.is_some());
@@ -292,19 +296,24 @@ mod tests {
     async fn test_global_metrics() {
         let monitor = Monitor::new(100);
         
+        monitor.start_execution("test-1").await;
+        
         let result = ExecutionResult {
             task_id: "test-1".into(),
             success: true,
-            output: "Test".into(),
+            output: "Test output".into(),
             confidence: 0.9,
-            duration: Duration::from_millis(100),
-            metrics: ExecutionMetrics::default(),
+            duration: std::time::Duration::from_millis(100),
+            metrics: ExecutionMetrics {
+                success: true,
+                confidence: 0.9,
+                ..Default::default()
+            },
         };
         
-        monitor.start_execution("test-1");
-        monitor.finish_execution("test-1", &result);
+        monitor.finish_execution("test-1", &result).await;
         
-        tokio::time::sleep(Duration::from_millis(10)).await;
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
         
         let global = monitor.get_global_metrics().await;
         assert_eq!(global.total_executions, 1);

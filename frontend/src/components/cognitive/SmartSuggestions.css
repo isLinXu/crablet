@@ -1,0 +1,329 @@
+.smart-suggestions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: linear-gradient(180deg, #1e293b 0%, #0f172a 100%);
+  border-radius: 12px;
+  padding: 12px;
+  border: 1px solid #334155;
+  animation: slideIn 0.3s ease;
+}
+
+.smart-suggestions.above {
+  margin-bottom: 8px;
+}
+
+.smart-suggestions.below {
+  margin-top: 8px;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 快捷操作栏 */
+.quick-actions-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.category-tabs {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.category-tabs::-webkit-scrollbar {
+  height: 4px;
+}
+
+.category-tabs::-webkit-scrollbar-track {
+  background: #0f172a;
+}
+
+.category-tabs::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 2px;
+}
+
+.category-tab {
+  padding: 6px 12px;
+  background: #334155;
+  border: none;
+  border-radius: 16px;
+  color: #94a3b8;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.category-tab:hover {
+  background: #475569;
+  color: #e2e8f0;
+}
+
+.category-tab.active {
+  background: #3b82f6;
+  color: white;
+}
+
+/* 快捷操作网格 */
+.quick-actions-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  max-height: 80px;
+  overflow: hidden;
+  transition: max-height 0.3s ease;
+}
+
+.quick-actions-grid.expanded {
+  max-height: 200px;
+}
+
+.quick-action-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 8px;
+  background: rgba(51, 65, 85, 0.5);
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: #e2e8f0;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.quick-action-btn:hover {
+  background: rgba(59, 130, 246, 0.2);
+  border-color: rgba(59, 130, 246, 0.5);
+  transform: translateY(-2px);
+}
+
+.action-icon {
+  font-size: 18px;
+}
+
+.action-label {
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.action-shortcut {
+  position: absolute;
+  top: 2px;
+  right: 4px;
+  font-size: 9px;
+  color: #64748b;
+  background: rgba(15, 23, 42, 0.8);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+.expand-toggle {
+  align-self: center;
+  padding: 4px 12px;
+  background: transparent;
+  border: none;
+  color: #64748b;
+  font-size: 11px;
+  cursor: pointer;
+  transition: color 0.2s ease;
+}
+
+.expand-toggle:hover {
+  color: #94a3b8;
+}
+
+/* 建议列表 */
+.suggestions-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.suggestions-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 4px;
+}
+
+.suggestions-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+.suggestions-count {
+  font-size: 10px;
+  padding: 2px 8px;
+  background: #334155;
+  border-radius: 10px;
+  color: #94a3b8;
+}
+
+.suggestions-items {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.suggestion-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: rgba(51, 65, 85, 0.3);
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: #e2e8f0;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: left;
+  position: relative;
+  overflow: hidden;
+}
+
+.suggestion-item:hover,
+.suggestion-item.selected {
+  transform: translateX(4px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.suggestion-icon {
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.suggestion-text {
+  flex: 1;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.suggestion-type-badge {
+  font-size: 9px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  color: white;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.confidence-indicator {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.confidence-bar {
+  height: 100%;
+  transition: width 0.3s ease;
+}
+
+.suggestion-shortcut {
+  font-size: 10px;
+  padding: 2px 6px;
+  background: rgba(15, 23, 42, 0.6);
+  border-radius: 4px;
+  color: #64748b;
+  font-family: monospace;
+}
+
+/* 上下文提示 */
+.context-hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: rgba(59, 130, 246, 0.1);
+  border-radius: 6px;
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.hint-icon {
+  font-size: 12px;
+}
+
+.hint-text {
+  flex: 1;
+}
+
+/* 响应式调整 */
+@media (max-width: 768px) {
+  .quick-actions-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  
+  .quick-actions-grid.expanded {
+    max-height: 280px;
+  }
+  
+  .action-shortcut {
+    display: none;
+  }
+  
+  .suggestion-item {
+    padding: 8px 10px;
+  }
+  
+  .suggestion-type-badge {
+    display: none;
+  }
+  
+  .category-tabs {
+    gap: 4px;
+  }
+  
+  .category-tab {
+    padding: 4px 10px;
+    font-size: 11px;
+  }
+}
+
+/* 暗色主题优化 */
+@media (prefers-color-scheme: dark) {
+  .smart-suggestions {
+    background: linear-gradient(180deg, #1e293b 0%, #0f172a 100%);
+  }
+}
+
+/* 高对比度模式 */
+@media (prefers-contrast: high) {
+  .suggestion-item {
+    border-width: 2px;
+  }
+  
+  .quick-action-btn {
+    border-width: 2px;
+  }
+}
+
+/* 减少动画 */
+@media (prefers-reduced-motion: reduce) {
+  .smart-suggestions {
+    animation: none;
+  }
+  
+  .suggestion-item,
+  .quick-action-btn {
+    transition: none;
+  }
+}

@@ -1,0 +1,300 @@
+.thought-graph-viewer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #0f172a;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.graph-container {
+  position: relative;
+  flex: 1;
+  overflow: hidden;
+}
+
+.graph-svg {
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+}
+
+/* 节点样式 */
+.thought-node {
+  transition: all 0.3s ease;
+}
+
+.thought-node:hover {
+  filter: brightness(1.2);
+}
+
+.thought-node.active circle:nth-child(2) {
+  stroke: #fbbf24;
+  stroke-width: 4;
+  filter: drop-shadow(0 0 8px rgba(251, 191, 36, 0.6));
+}
+
+.thought-node.selected circle:nth-child(2) {
+  stroke: #3b82f6;
+  stroke-width: 4;
+  filter: drop-shadow(0 0 8px rgba(59, 130, 246, 0.6));
+}
+
+/* 迷你地图 */
+.thought-graph-minimap {
+  position: absolute;
+  bottom: 16px;
+  left: 16px;
+  background: #1e293b;
+  border-radius: 8px;
+  padding: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  border: 1px solid #334155;
+}
+
+/* 统计面板 */
+.thought-graph-stats {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  display: flex;
+  gap: 12px;
+  background: rgba(30, 41, 59, 0.9);
+  padding: 12px 16px;
+  border-radius: 8px;
+  backdrop-filter: blur(8px);
+  border: 1px solid #334155;
+}
+
+.stat-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 50px;
+}
+
+.stat-value {
+  font-size: 18px;
+  font-weight: 700;
+  color: #f8fafc;
+}
+
+.stat-label {
+  font-size: 10px;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* 控制按钮 */
+.graph-controls {
+  position: absolute;
+  bottom: 16px;
+  right: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.control-btn {
+  width: 36px;
+  height: 36px;
+  background: rgba(30, 41, 59, 0.9);
+  border: 1px solid #334155;
+  border-radius: 8px;
+  color: #e2e8f0;
+  font-size: 18px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.control-btn:hover {
+  background: #334155;
+  border-color: #475569;
+  transform: scale(1.05);
+}
+
+.control-btn:active {
+  transform: scale(0.95);
+}
+
+/* 节点详情面板 */
+.thought-node-detail {
+  background: #1e293b;
+  border-top: 1px solid #334155;
+  padding: 16px;
+  max-height: 250px;
+  overflow-y: auto;
+}
+
+.detail-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.detail-icon {
+  font-size: 20px;
+}
+
+.detail-type {
+  font-size: 14px;
+  font-weight: 600;
+  color: #f8fafc;
+}
+
+.detail-status {
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 12px;
+  color: white;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.detail-content {
+  background: #0f172a;
+  padding: 12px;
+  border-radius: 6px;
+  margin-bottom: 12px;
+}
+
+.detail-content p {
+  margin: 0;
+  color: #e2e8f0;
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.detail-meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+}
+
+.meta-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.meta-label {
+  color: #94a3b8;
+  min-width: 60px;
+}
+
+.meta-value {
+  color: #e2e8f0;
+  font-weight: 500;
+}
+
+.confidence-bar {
+  flex: 1;
+  height: 6px;
+  background: #334155;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.confidence-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #22c55e, #84cc16);
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.detail-metadata {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #334155;
+}
+
+.detail-metadata h5 {
+  margin: 0 0 8px 0;
+  font-size: 12px;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.detail-metadata pre {
+  background: #0f172a;
+  padding: 12px;
+  border-radius: 6px;
+  font-size: 11px;
+  color: #e2e8f0;
+  overflow-x: auto;
+  max-height: 100px;
+}
+
+/* 滚动条样式 */
+.thought-node-detail::-webkit-scrollbar {
+  width: 6px;
+}
+
+.thought-node-detail::-webkit-scrollbar-track {
+  background: #0f172a;
+}
+
+.thought-node-detail::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 3px;
+}
+
+.thought-node-detail::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}
+
+/* 连接线动画 */
+@keyframes dash {
+  to {
+    stroke-dashoffset: -10;
+  }
+}
+
+path[stroke-dasharray="5,5"] {
+  animation: dash 1s linear infinite;
+}
+
+/* 脉冲动画 */
+@keyframes pulse {
+  0%, 100% {
+    opacity: 0.3;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.5;
+    transform: scale(1.1);
+  }
+}
+
+/* 响应式调整 */
+@media (max-width: 768px) {
+  .thought-graph-stats {
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 8px 12px;
+  }
+  
+  .stat-item {
+    min-width: 40px;
+  }
+  
+  .stat-value {
+    font-size: 14px;
+  }
+  
+  .stat-label {
+    font-size: 9px;
+  }
+  
+  .thought-graph-minimap {
+    display: none;
+  }
+}

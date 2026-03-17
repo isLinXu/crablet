@@ -21,7 +21,7 @@ use sqlx::sqlite::SqlitePool;
 pub struct System3 {
     pub swarm: Arc<Swarm>,
     pub orchestrator: Option<Arc<SwarmOrchestrator>>,
-    coordinator: CoordinatorAgent, // Keep for legacy/CLI flow?
+    pub coordinator: CoordinatorAgent, // Make this public
     self_id: AgentId,
     event_bus: Arc<EventBus>,
     timeout: Duration,
@@ -79,9 +79,29 @@ impl CognitiveSystem for System3 {
     }
 
     async fn process(&self, input: &str, _context: &[Message]) -> Result<(String, Vec<TraceStep>)> {
+        let lower = input.to_lowercase();
+        
+        // Handle Draft Mode specifically using the new SwarmOrchestrator
+        if lower.starts_with("draft ") {
+            if let Some(orch) = &self.orchestrator {
+                let topic = input.chars().skip(6).collect::<String>().trim().to_string();
+                let result_msg = orch.coordinator.start_draft_swarm(&topic).await?;
+                
+                let traces = vec![
+                    TraceStep {
+                        step: 1,
+                        thought: format!("Draft Mode initialized for topic: {}", topic),
+                        action: Some("start_draft_swarm".to_string()),
+                        action_input: Some(topic),
+                        observation: Some(result_msg.clone()),
+                    }
+                ];
+                return Ok((result_msg, traces));
+            }
+        }
+
         // Extract topic (flexible matching)
         // Fix P0: Safe string slicing
-        let lower = input.to_lowercase();
         let topic = if lower.starts_with("research ") {
             // Find where "research " ends in char indices
             // "research " is 9 chars.

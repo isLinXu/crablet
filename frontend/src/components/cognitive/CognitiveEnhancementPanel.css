@@ -1,0 +1,161 @@
+.cognitive-enhancement-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #0f172a;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid #334155;
+}
+
+/* 面板头部 */
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: #1e293b;
+  border-bottom: 1px solid #334155;
+}
+
+.view-tabs {
+  display: flex;
+  gap: 4px;
+}
+
+.view-tabs .tab {
+  padding: 8px 14px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: #94a3b8;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.view-tabs .tab:hover {
+  background: #334155;
+  color: #e2e8f0;
+}
+
+.view-tabs .tab.active {
+  background: #3b82f6;
+  color: white;
+}
+
+/* 认知负载指示器 */
+.cognitive-load-indicator {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.load-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.load-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: #64748b;
+  width: 18px;
+}
+
+.load-track {
+  width: 60px;
+  height: 6px;
+  background: #334155;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.load-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.load-fill.system1 {
+  background: linear-gradient(90deg, #22c55e, #84cc16);
+}
+
+.load-fill.system2 {
+  background: linear-gradient(90deg, #3b82f6, #8b5cf6);
+}
+
+.load-fill.system3 {
+  background: linear-gradient(90deg, #f59e0b, #ef4444);
+}
+
+.load-value {
+  font-size: 10px;
+  color: #94a3b8;
+  min-width: 28px;
+}
+
+/* 主内容区 */
+.panel-main {
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+}
+
+/* 底部建议区 */
+.panel-suggestions {
+  border-top: 1px solid #334155;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+/* 干预控制区 */
+.panel-intervention {
+  border-top: 1px solid #334155;
+}
+
+/* 空视图 */
+.empty-view {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #64748b;
+  font-size: 14px;
+}
+
+/* 响应式 */
+@media (max-width: 768px) {
+  .panel-header {
+    flex-direction: column;
+    gap: 12px;
+    padding: 12px;
+  }
+  
+  .view-tabs {
+    width: 100%;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+  
+  .view-tabs .tab {
+    padding: 6px 10px;
+    font-size: 11px;
+  }
+  
+  .cognitive-load-indicator {
+    gap: 12px;
+  }
+  
+  .load-track {
+    width: 40px;
+  }
+  
+  .load-value {
+    display: none;
+  }
+}

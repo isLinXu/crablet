@@ -96,6 +96,7 @@ use crate::cognitive::router::CognitiveRouter;
 use crate::workflow::engine::WorkflowEngine;
 use crate::workflow::registry::WorkflowRegistry;
 use crate::workflow::executor::NodeExecutorRegistry;
+use crate::heartbeat::HeartbeatEngine;
 
 #[derive(Clone)]
 pub struct CrabletGateway {
@@ -109,6 +110,7 @@ pub struct CrabletGateway {
     pub rate_limiter: Arc<GlobalRateLimiter>,
     pub workflow_engine: Arc<WorkflowEngine>,
     pub workflow_registry: Arc<WorkflowRegistry>,
+    pub heartbeat: Arc<HeartbeatEngine>,
     #[cfg(feature = "knowledge")]
     pub ingestion: Option<Arc<IngestionService>>,
 }
@@ -163,6 +165,23 @@ impl CrabletGateway {
         let workflow_engine = Arc::new(WorkflowEngine::new(executor_registry));
         let workflow_registry = Arc::new(WorkflowRegistry::new());
 
+        // Initialize Heartbeat Engine for Draft Mode and proactive tasks
+        let mut heartbeat = HeartbeatEngine::new(
+            router.memory_mgr.clone(),
+            router.sys3.coordinator.llm.clone(),
+            router.shared_skills.clone(),
+        );
+        
+        if let Some(orch) = &router.sys3.orchestrator {
+            heartbeat = heartbeat.with_swarm(orch.clone());
+        }
+        
+        let heartbeat_arc = Arc::new(heartbeat);
+        let heartbeat_clone = heartbeat_arc.clone();
+        tokio::spawn(async move {
+            heartbeat_clone.start().await;
+        });
+
         Self {
             router,
             rpc: RpcDispatcher::new(),
@@ -174,6 +193,7 @@ impl CrabletGateway {
             rate_limiter: create_limiter(),
             workflow_engine,
             workflow_registry,
+            heartbeat: heartbeat_arc,
             #[cfg(feature = "knowledge")]
             ingestion,
         }

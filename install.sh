@@ -126,8 +126,8 @@ if [ ! -f crablet.db ]; then
     sqlx migrate run
 fi
 
-echo "Compiling Release Build..."
-cargo build --release --features knowledge
+echo "Installing Crablet CLI..."
+cargo install --path . --features knowledge,auto-working,web
 cd ..
 
 # 4. Install Frontend Dependencies

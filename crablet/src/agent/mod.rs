@@ -33,6 +33,8 @@ pub enum AgentRole {
     Reviewer,
     Planner,
     Moderator,
+    Drafter,
+    Critic,
     Custom(String),
 }
 

@@ -38,6 +38,7 @@ impl SwarmPersister {
             
             for row in rows {
                 let id: String = row.get("id");
+                let goal: String = row.get("goal");
                 let status_str: String = row.get("status");
                 let status = match status_str.as_str() {
                     "Active" => GraphStatus::Active,
@@ -80,7 +81,7 @@ impl SwarmPersister {
                     });
                 }
                 
-                graphs.insert(id, TaskGraph { nodes, status });
+                graphs.insert(id, TaskGraph { nodes, status, goal });
             }
             Ok(graphs)
         } else {

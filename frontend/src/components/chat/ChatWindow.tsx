@@ -4,7 +4,7 @@ import type { ExtendedMessage } from '../../store/chatStore';
 import { useWebSocket } from '../../hooks/useWebSocket';
 import { useStreamingChat } from '../../hooks/useStreamingChat';
 import { useKeyboard } from '../../hooks/useKeyboard';
-import { Send, Bot, Loader2, StopCircle, History, X, PlusCircle, Upload, Workflow as WorkflowIcon, Download, Upload as UploadIcon, Settings, BookOpen } from 'lucide-react';
+import { Send, Bot, Loader2, StopCircle, History, X, PlusCircle, Upload, Workflow as WorkflowIcon, Download, Upload as UploadIcon, Settings, BookOpen, PenLine } from 'lucide-react';
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 import { Button } from '../ui/Button';
 import { MessageBubble } from './MessageBubble';
@@ -46,7 +46,18 @@ interface RetrievalHit {
 }
 
 export const ChatWindow = () => {
-  const { messages, isConnected, isThinking, createSession, currentCognitiveLayer, sessionId, deleteMessage, editMessage } = useChatStore();
+  const { 
+    messages, 
+    isConnected, 
+    isThinking, 
+    isDraftMode,
+    createSession, 
+    currentCognitiveLayer, 
+    sessionId, 
+    deleteMessage, 
+    editMessage,
+    setDraftMode
+  } = useChatStore();
   const { systemLogs = [] } = useWebSocket('ws://localhost:8080/ws/logs') as any;
   const { sendMessage } = useStreamingChat();
   const [input, setInput] = useState('');
@@ -133,6 +144,12 @@ export const ChatWindow = () => {
     
     // 构建最终 prompt，包含文件内容
     let finalPrompt = input;
+    
+    // Draft Mode Override
+    if (isDraftMode && !finalPrompt.toLowerCase().startsWith('draft ')) {
+        finalPrompt = `draft ${finalPrompt}`;
+    }
+
     if (attachmentSummary) {
       finalPrompt += `\n\n[附件列表]\n${attachmentSummary}`;
     }
@@ -635,11 +652,11 @@ export const ChatWindow = () => {
         <div className="absolute inset-0 max-w-5xl mx-auto w-full">
             {messages.length === 0 ? (
                 <CrabEmptyState
-                    title="小螃蟹准备好了"
-                    description="我是 Crablet，你的 AI 助手。我可以帮你写代码、解答问题、分析数据。开始你的第一次对话吧！"
+                    title={isDraftMode ? "准备好开始创作了" : "小螃蟹准备好了"}
+                    description={isDraftMode ? "草稿模式已开启。我将通过调研、撰写、审阅和精炼的闭环流程，为您生成高质量的内容。" : "我是 Crablet，你的 AI 助手。我可以帮你写代码、解答问题、分析数据。开始你的第一次对话吧！"}
                     action={
                         <div className="flex flex-wrap justify-center gap-2 mt-4">
-                            {['解释代码', '生成文档', '调试错误', '优化性能'].map((suggestion) => (
+                            {(isDraftMode ? ['写一篇技术博客', '设计系统架构', '起草产品需求', '编写开发文档'] : ['解释代码', '生成文档', '调试错误', '优化性能']).map((suggestion) => (
                                 <button
                                     key={suggestion}
                                     onClick={() => setInput(suggestion)}
@@ -756,6 +773,27 @@ export const ChatWindow = () => {
                     
                     <div className="h-4 w-px bg-zinc-300 dark:bg-zinc-700" />
                     
+                    {/* Draft Mode Switch */}
+                    <button
+                        onClick={() => setDraftMode(!isDraftMode)}
+                        className={clsx(
+                            "flex items-center gap-1.5 px-2 py-1 rounded-md text-xs transition-colors",
+                            isDraftMode 
+                                ? "bg-emerald-500/20 text-emerald-600 dark:text-emerald-400" 
+                                : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
+                        )}
+                        title="Draft Mode: High-quality drafting & background refinement"
+                    >
+                        <PenLine className="w-3.5 h-3.5" />
+                        <span>草稿模式</span>
+                        <span className={clsx(
+                            "w-1.5 h-1.5 rounded-full",
+                            isDraftMode ? "bg-emerald-500" : "bg-zinc-400"
+                        )} />
+                    </button>
+                    
+                    <div className="h-4 w-px bg-zinc-300 dark:bg-zinc-700" />
+                    
                     {/* 手动控制开关 */}
                     <div className="flex items-center gap-2">
                         <button
@@ -823,7 +861,7 @@ export const ChatWindow = () => {
                             handleSend();
                         }
                     }}
-                    placeholder="Message Crablet..."
+                    placeholder={isDraftMode ? "Describe what to draft..." : "Message Crablet..."}
                     disabled={isThinking}
                     className="w-full bg-transparent border-none text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-500 dark:placeholder:text-zinc-500 focus:ring-0 resize-none max-h-48 min-h-[56px] py-4 px-4 text-[15px] leading-relaxed scrollbar-thin scrollbar-thumb-zinc-400 dark:scrollbar-thumb-zinc-700 rounded-2xl"
                     rows={1}
@@ -838,7 +876,7 @@ export const ChatWindow = () => {
                         className={clsx(
                             "h-9 w-9 rounded-xl transition-all duration-200",
                             input.trim() 
-                                ? "bg-blue-600 hover:bg-blue-700 text-white shadow-md shadow-blue-500/20" 
+                                ? (isDraftMode ? "bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-500/20" : "bg-blue-600 hover:bg-blue-700 text-white shadow-md shadow-blue-500/20")
                                 : "bg-zinc-200 dark:bg-zinc-800 text-zinc-400 dark:text-zinc-500"
                         )}
                     >

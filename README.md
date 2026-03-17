@@ -500,14 +500,32 @@ cd crablet
 ./one-click.sh
 ```
 
-Useful flags:
+Common maintenance commands:
 
 ```bash
-# Skip install, start services only
-./one-click.sh --start-only
+# Check service status
+crablet status
 
-# Non-interactive mode (CI/CD-friendly)
-./one-click.sh --non-interactive
+# Deep clean build artifacts and cache (free up space)
+./clean.sh
+
+# Manual build and install CLI
+./install.sh
+
+# Show current configuration
+crablet config
+
+# Manage scheduled tasks
+crablet task list
+
+# Manage workflows
+crablet workflow list
+
+# Start services in debug mode (detailed logs)
+./debug.sh
+
+# Full uninstall
+./uninstall.sh --full
 ```
 
 ### Option 2: Local Build

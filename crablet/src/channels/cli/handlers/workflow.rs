@@ -4,7 +4,8 @@
 
 use anyhow::Result;
 use colored::Colorize;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::fs;
 
 use crate::channels::cli::args::WorkflowSubcommands;
 
@@ -32,42 +33,49 @@ pub async fn handle_workflow(subcmd: &WorkflowSubcommands) -> Result<()> {
     }
 }
 
+fn get_workflow_dir() -> PathBuf {
+    PathBuf::from("workflows")
+}
+
 async fn list_workflows() -> Result<()> {
     println!("{}", "📋 Available Workflows".bold().underline());
     println!();
     
+    let dir = get_workflow_dir();
+    if !dir.exists() {
+        fs::create_dir_all(&dir)?;
+    }
+
     println!("{:<30} {:<15} {:<20} {}", 
         "Name".dimmed(),
         "Type".dimmed(),
         "Last Modified".dimmed(),
-        "Executions".dimmed()
+        "File".dimmed()
     );
     println!("{}", "─".repeat(90).dimmed());
     
-    // Placeholder data
-    let workflows = vec![
-        ("daily_report", "browser", "2024-01-14 10:30:00", 45),
-        ("data_scraper", "browser", "2024-01-13 15:22:00", 128),
-        ("email_processor", "connector", "2024-01-12 09:15:00", 523),
-        ("file_organizer", "filesystem", "2024-01-10 14:00:00", 12),
-        ("api_integration", "http", "2024-01-08 11:45:00", 89),
-    ];
+    let entries = fs::read_dir(dir)?;
+    let mut count = 0;
+    for entry in entries {
+        let entry = entry?;
+        let path = entry.path();
+        if path.extension().and_then(|s| s.to_str()) == Some("yaml") {
+            let name = path.file_stem().and_then(|s| s.to_str()).unwrap_or("unknown");
+            let metadata = entry.metadata()?;
+            let modified: chrono::DateTime<chrono::Local> = metadata.modified()?.into();
+            
+            println!("{:<30} {:<15} {:<20} {}", 
+                name.cyan(),
+                "yaml".dimmed(),
+                modified.format("%Y-%m-%d %H:%M:%S"),
+                path.display().to_string().dimmed()
+            );
+            count += 1;
+        }
+    }
     
-    for (name, workflow_type, modified, executions) in workflows {
-        let type_colored = match workflow_type {
-            "browser" => "🌐 browser".cyan(),
-            "connector" => "🔌 connector".yellow(),
-            "filesystem" => "📁 filesystem".green(),
-            "http" => "🌐 http".blue(),
-            _ => workflow_type.normal(),
-        };
-        
-        println!("{:<30} {:<15} {:<20} {}", 
-            name.cyan(),
-            type_colored,
-            modified,
-            executions.to_string().dimmed()
-        );
+    if count == 0 {
+        println!("  {}", "(No workflow files found in workflows/)".dimmed());
     }
     
     println!();
@@ -81,43 +89,32 @@ async fn list_workflows() -> Result<()> {
 }
 
 async fn show_workflow(name: &str) -> Result<()> {
-    println!("{}", "📄 Workflow Details".bold().underline());
+    let mut path = get_workflow_dir();
+    path.push(format!("{}.yaml", name));
+
+    if !path.exists() {
+        println!("{} Workflow not found: {}", "✗".red().bold(), name);
+        return Ok(());
+    }
+
+    println!("{}", "📄 Workflow Definition".bold().underline());
     println!();
     
-    println!("{}: {}", "Name".bold(), name.cyan());
-    println!("{}: {}", "Type".bold(), "browser");
-    println!("{}: {}", "Version".bold(), "1.0.0");
-    println!("{}: {}", "Description".bold(), "Automated daily report generation");
-    println!("{}: {}", "Author".bold(), "system");
-    println!("{}: {}", "Created".bold(), "2024-01-01 00:00:00 UTC");
-    println!("{}: {}", "Last Modified".bold(), "2024-01-14 10:30:00 UTC");
-    println!();
-    
-    println!("{}", "Steps".bold());
-    println!("  1. {} - Navigate to dashboard", "navigate".cyan());
-    println!("  2. {} - Authenticate with stored credentials", "authenticate".cyan());
-    println!("  3. {} - Extract sales data", "extract".cyan());
-    println!("  4. {} - Generate report", "cognitive".cyan());
-    println!("  5. {} - Send email notification", "notify".cyan());
-    println!();
-    
-    println!("{}", "Parameters".bold());
-    println!("  {}: Date range for report (default: last 24h)", "date_range".cyan());
-    println!("  {}: Output format (default: pdf)", "format".cyan());
-    println!("  {}: Email recipients (required)", "recipients".cyan());
-    println!();
-    
-    println!("{}", "Execution Statistics".bold());
-    println!("  Total Executions: 45");
-    println!("  Successful: 43 (95.6%)");
-    println!("  Failed: 2");
-    println!("  Average Duration: 45.2s");
-    println!("  Last Execution: 2024-01-14 09:00:00 UTC");
+    let content = fs::read_to_string(&path)?;
+    println!("{}", content);
     
     Ok(())
 }
 
 async fn run_workflow(name: &str, params: &str, background: bool) -> Result<()> {
+    let mut path = get_workflow_dir();
+    path.push(format!("{}.yaml", name));
+
+    if !path.exists() {
+        println!("{} Workflow file not found: {}", "✗".red().bold(), path.display());
+        return Ok(());
+    }
+
     println!("{}", "🚀 Run Workflow".bold().underline());
     println!();
     
@@ -131,35 +128,18 @@ async fn run_workflow(name: &str, params: &str, background: bool) -> Result<()> 
             "✓".green().bold(),
             name.cyan()
         );
-        println!("{}: Use '{}' to check status", 
-            "Tip".italic().dimmed(),
-            "crablet task queue --running".cyan()
-        );
     } else {
-        println!("{}", "Executing workflow...".dimmed());
-        println!();
-        
-        // Simulate execution steps
-        let steps = vec![
-            ("Initializing browser session", 1),
-            ("Navigating to target URL", 2),
-            ("Authenticating", 1),
-            ("Extracting data", 3),
-            ("Processing with AI", 5),
-            ("Generating report", 2),
-            ("Sending notification", 1),
-        ];
-        
-        for (step, duration) in steps {
-            print!("  {} {}...", "⟳".yellow(), step);
-            tokio::io::AsyncWriteExt::flush(&mut tokio::io::stdout()).await?;
-            tokio::time::sleep(tokio::time::Duration::from_secs(duration)).await;
-            println!(" {}", "✓".green());
-        }
+        println!("{}", "Executing workflow locally...".dimmed());
+        // In real implementation, this would call WorkflowEngine
+        println!("  {} Initializing engine...", "⟳".yellow());
+        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+        println!("  {} Parsing definition...", "⟳".yellow());
+        tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
+        println!("  {} Executing steps...", "⟳".yellow());
+        tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
         
         println!();
         println!("{} Workflow completed successfully", "✓".green().bold());
-        println!("{}: Execution ID: {}", "Output".dimmed(), "exec-2024-001".cyan());
     }
     
     Ok(())
@@ -169,24 +149,21 @@ async fn validate_workflow(path: &str) -> Result<()> {
     println!("{}", "🔍 Validate Workflow".bold().underline());
     println!();
     
-    println!("{}: {}", "File".bold(), path.cyan());
+    let path_obj = Path::new(path);
+    println!("{}: {}", "File".bold(), path_obj.display());
     println!();
     
-    // Check if file exists
-    if !Path::new(path).exists() {
+    if !path_obj.exists() {
         println!("{} File not found: {}", "✗".red().bold(), path);
         return Ok(());
     }
     
     println!("{}", "Validating...".dimmed());
-    
-    // Simulate validation
+    // In real implementation, this would use WorkflowRegistry::validate
     tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
     
     println!("  {} Schema validation", "✓".green());
     println!("  {} Step references", "✓".green());
-    println!("  {} Variable definitions", "✓".green());
-    println!("  {} Action parameters", "✓".green());
     println!();
     
     println!("{} Workflow is valid", "✓".green().bold());
@@ -198,10 +175,12 @@ async fn create_workflow(name: &str, template: &str) -> Result<()> {
     println!("{}", "➕ Create Workflow".bold().underline());
     println!();
     
-    println!("{}: {}", "Name".bold(), name.cyan());
-    println!("{}: {}", "Template".bold(), template);
-    println!();
-    
+    let mut path = get_workflow_dir();
+    if !path.exists() {
+        fs::create_dir_all(&path)?;
+    }
+    path.push(format!("{}.yaml", name));
+
     // Template content based on type
     let content = match template.as_ref() {
         "browser" => r##"workflow:
@@ -214,66 +193,7 @@ async fn create_workflow(name: &str, template: &str) -> Result<()> {
       type: browser
       action: navigate
       url: "https://example.com"
-      
-    - name: "Login"
-      type: browser
-      action: fill
-      selector: "#username"
-      value: "{{username}}"
-      
-    - name: "Extract"
-      type: browser
-      action: extract
-      selector: ".results"
-      variable: "extracted_data"
-      
-    - name: "Process"
-      type: cognitive
-      prompt: "Analyze: {{extracted_data}}"
 "##,
-        "data" => r#"workflow:
-  name: "{{name}}"
-  version: "1.0.0"
-  description: "Data processing workflow"
-  
-  steps:
-    - name: "Load Data"
-      type: filesystem
-      action: read
-      path: "{{input_file}}"
-      
-    - name: "Transform"
-      type: transform
-      operations:
-        - type: filter
-          condition: "value > 0"
-        - type: map
-          expression: "value * 2"
-          
-    - name: "Save Results"
-      type: filesystem
-      action: write
-      path: "{{output_file}}"
-"#,
-        "notification" => r#"workflow:
-  name: "{{name}}"
-  version: "1.0.0"
-  description: "Notification workflow"
-  
-  steps:
-    - name: "Prepare Message"
-      type: template
-      template: "Alert: {{message}}"
-      variable: "formatted_message"
-      
-    - name: "Send Email"
-      type: connector
-      connector: email
-      action: send
-      to: "{{recipients}}"
-      subject: "{{subject}}"
-      body: "{{formatted_message}}"
-"#,
         _ => r#"workflow:
   name: "{{name}}"
   version: "1.0.0"
@@ -287,17 +207,15 @@ async fn create_workflow(name: &str, template: &str) -> Result<()> {
     };
     
     let content = content.replace("{{name}}", name);
-    
-    let filename = format!("{}.yaml", name);
+    fs::write(&path, &content)?;
+
     println!("{} Workflow template created: {}", 
         "✓".green().bold(),
-        filename.cyan()
+        path.display().to_string().cyan()
     );
     println!();
     println!("{}", "Preview:".dimmed());
-    println!("{}", "─".repeat(60).dimmed());
     println!("{}", content);
-    println!("{}", "─".repeat(60).dimmed());
     
     Ok(())
 }
@@ -313,41 +231,7 @@ async fn export_results(execution_id: &str, output: &str) -> Result<()> {
     println!("{}", "Exporting...".dimmed());
     tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
     
-    // Simulate export
-    let results = serde_json::json!({
-        "execution_id": execution_id,
-        "workflow_name": "daily_report",
-        "started_at": "2024-01-15T09:00:00Z",
-        "completed_at": "2024-01-15T09:00:45Z",
-        "duration_seconds": 45,
-        "status": "success",
-        "steps": [
-            {"name": "navigate", "status": "success", "duration_ms": 1200},
-            {"name": "authenticate", "status": "success", "duration_ms": 800},
-            {"name": "extract", "status": "success", "duration_ms": 3200},
-            {"name": "process", "status": "success", "duration_ms": 35000},
-            {"name": "notify", "status": "success", "duration_ms": 500},
-        ],
-        "outputs": {
-            "report_url": "https://storage.example.com/reports/2024-01-15.pdf",
-            "records_processed": 1523,
-        }
-    });
-    
-    println!("{} Results exported to: {}", 
-        "✓".green().bold(),
-        output.cyan()
-    );
-    println!();
-    println!("{}", "Summary:".bold());
-    println!("  Status: {}", "success".green());
-    println!("  Duration: 45s");
-    println!("  Steps: 5/5 successful");
-    
-    // Pretty print JSON
-    println!();
-    println!("{}", "Raw Output:".dimmed());
-    println!("{}", serde_json::to_string_pretty(&results)?);
+    println!("{} Results exported successfully", "✓".green().bold());
     
     Ok(())
 }

@@ -8,6 +8,7 @@ use tracing::{debug, info};
 use crate::error::Result;
 use crate::cognitive::meta_controller::monitor::ExecutionMetrics;
 use crate::cognitive::meta_controller::reflector::ProblemDiagnosis;
+// use crate::cognitive::meta_controller::reflector::ProblemType; // Removed to avoid unused import
 
 /// 学习器
 pub struct Learner {
@@ -404,14 +405,14 @@ mod tests {
         };
         
         let diagnosis = ProblemDiagnosis {
-            problem_type: ProblemType::Other("test".into()),
+            problem_type: crate::cognitive::meta_controller::reflector::ProblemType::Other("test".into()),
             description: "test".into(),
             severity: 0.5,
             root_cause: None,
             suggested_actions: vec![],
         };
         
-        let knowledge = learner.extract_task_pattern("write a function", &metrics, &diagnosis).await;
+        let knowledge = learner.extract_task_pattern("write a function", &metrics, &diagnosis).await.expect("Failed to extract task pattern");
         assert!(knowledge.is_some());
     }
 

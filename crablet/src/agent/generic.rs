@@ -31,7 +31,9 @@ impl Agent for GenericAgent {
             AgentRole::Executor => "Executor",
             AgentRole::Reviewer => "Reviewer",
             AgentRole::Planner => "Planner",
-            AgentRole::Moderator => "Moderator",
+            AgentRole::Moderator => "moderator",
+            AgentRole::Drafter => "drafter",
+            AgentRole::Critic => "critic",
             AgentRole::Custom(name) => name,
         }
     }

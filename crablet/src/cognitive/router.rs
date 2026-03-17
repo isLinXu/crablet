@@ -427,10 +427,8 @@ impl CognitiveRouter {
         let base_score = self.complexity_analyzer.calculate_complexity_score(&characteristics);
         
         // Normalize 0.0-10.0+ to 0.0-1.0
-        let normalized_score = (base_score / 10.0).min(1.0);
-        
         // Dynamic adjustment based on current config (e.g., adaptive threshold)
-        normalized_score
+        (base_score / 10.0).min(1.0)
     }
 
     #[instrument(skip(self), fields(session.id = %session_id, input.length = input.len()))]
@@ -611,6 +609,22 @@ impl CognitiveRouter {
         // Skip System 1 if forced routing is active to allow debugging System 2 directly
         let intent = Classifier::classify_intent(input_text);
         
+        // 2. Check for Deep Research or High Complexity (System 3)
+        let complexity_score = self.assess_complexity_enhanced(input_text);
+        let config = self.config.read().await.clone();
+        let context = self.memory_mgr.get_context(session_id).await;
+
+        // Draft Mode Override: Always use System 3 Swarm for drafting
+        if input_text.to_lowercase().starts_with("draft ") {
+             let msg = format!("Draft Mode detected, routing to System 3 Swarm: {:?}", input_text);
+             info!("{}", msg);
+             self.event_bus.publish(AgentEvent::SystemLog(msg));
+             self.event_bus.publish(AgentEvent::CognitiveLayerChanged { layer: "system3".to_string() });
+             
+             let result = self.sys3.process(input_text, &context).await?;
+             return Ok((result.0, result.1, SystemChoice::System3));
+        }
+
         if !force_cloud && !force_local {
             match intent {
                 Intent::Greeting | Intent::Help | Intent::Status | Intent::Persona | Intent::Chat => {
@@ -623,11 +637,6 @@ impl CognitiveRouter {
                 _ => {}
             }
         }
-
-        // 2. Check for Deep Research or High Complexity (System 3)
-        let complexity_score = self.assess_complexity_enhanced(input_text);
-        let config = self.config.read().await.clone();
-        let context = self.memory_mgr.get_context(session_id).await;
 
         if config.enable_adaptive_routing && !force_cloud && !force_local {
             let (choice, features) = {

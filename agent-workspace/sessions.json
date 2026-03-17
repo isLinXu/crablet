@@ -1,0 +1,21 @@
+{
+  "version": "0.2.0",
+  "last_updated": "2026-03-15T21:33:00+08:00",
+  "active_sessions": [],
+  "session_history": [
+    {
+      "session_id": "sess_20260315_213300",
+      "created_at": "2026-03-15T21:33:00+08:00",
+      "ended_at": "2026-03-15T21:45:00+08:00",
+      "message_count": 3,
+      "summary": "OpenClaw 架构对齐讨论，创建了四层记忆系统的文档",
+      "participants": ["user"],
+      "tags": ["architecture", "memory-system", "openclaw"]
+    }
+  ],
+  "metadata": {
+    "total_sessions": 1,
+    "total_messages": 3,
+    "storage_size_bytes": 1024
+  }
+}

@@ -1,0 +1,25 @@
+feat: Optimize Web UI response routing and performance
+
+Major changes:
+- Add CognitiveRouter integration to chat_stream endpoint
+  Route greeting messages and simple queries to System 1 for fast responses
+  Replace verbose technical responses with concise, friendly greetings
+  Fix stream type compatibility issues using BoxStream
+
+- Improve frontend streaming performance
+  Add throttle function to reduce UI update frequency (50ms limit)
+  Prevent excessive re-renders during message streaming
+  Preserve cognitive layer info from streaming events
+
+- Configuration enhancements
+  Add DATABASE_URL and LLM_VENDOR settings
+  Enable knowledge feature in release build
+  Update API key configuration
+
+- Code quality improvements
+  Fix type mismatches in adaptive_router and gateway modules
+  Add missing imports (BoxStream, Event)
+  Clean up unused imports
+
+This resolves the issue where '你好' returned verbose system details
+instead of a simple greeting response.

@@ -103,7 +103,11 @@ impl SkillDiscoverer {
         }
 
         // 4. 按置信度排序
-        candidates.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap());
+        candidates.sort_by(|a, b| {
+            b.confidence
+                .partial_cmp(&a.confidence)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         
         info!("Discovered {} skill candidates", candidates.len());
         candidates
@@ -178,7 +182,7 @@ impl SkillDiscoverer {
         let last_seen = timestamps.iter().max().copied().unwrap_or(Utc::now());
 
         Some(ExecutionPattern {
-            id: format!("pattern_{}", uuid::Uuid::new_v4().to_string()[..8].to_string()),
+            id: format!("pattern_{}", &uuid::Uuid::new_v4().to_string()[..8]),
             name: self.generate_pattern_name(cluster_id),
             description: format!("Auto-discovered pattern from {} executions", total),
             input_pattern,
@@ -269,9 +273,9 @@ impl SkillDiscoverer {
         // 从聚类ID生成可读名称
         let parts: Vec<&str> = cluster_id.split(':').collect();
         if parts.len() >= 2 {
-            format!("auto_{}_{}", parts[0], uuid::Uuid::new_v4().to_string()[..6].to_string())
+            format!("auto_{}_{}", parts[0], &uuid::Uuid::new_v4().to_string()[..6])
         } else {
-            format!("auto_pattern_{}", uuid::Uuid::new_v4().to_string()[..8].to_string())
+            format!("auto_pattern_{}", &uuid::Uuid::new_v4().to_string()[..8])
         }
     }
 

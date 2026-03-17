@@ -321,7 +321,7 @@ impl KnowledgeDistiller {
         let extraction: KnowledgeExtraction = serde_json::from_str(json_str)?;
 
         Ok(DistilledKnowledge {
-            id: format!("knowledge_{}", uuid::Uuid::new_v4().to_string()[..8].to_string()),
+            id: format!("knowledge_{}", &uuid::Uuid::new_v4().to_string()[..8]),
             topic: extraction.topic,
             summary: extraction.summary,
             key_facts: extraction.key_facts,

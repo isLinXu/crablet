@@ -15,7 +15,7 @@ use async_trait::async_trait;
 pub struct CoordinatorAgent {
     id: AgentId,
     planner: TaskPlanner,
-    llm: Arc<Box<dyn LlmClient>>,
+    pub llm: Arc<Box<dyn LlmClient>>,
     swarm: Arc<Swarm>,
     tasks: Arc<RwLock<HashMap<String, Task>>>,
     // Channel to notify execution loop about subtask completion

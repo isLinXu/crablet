@@ -639,9 +639,9 @@ mod tests {
     #[test]
     fn test_install_progress() {
         let mut progress = InstallProgress::new();
-        assert_eq!(progress.percentage, 0.0);
+        assert!((progress.percentage - 0.0).abs() < f32::EPSILON);
         
         progress.update("Test", 3);
-        assert_eq!(progress.percentage, 60.0);
+        assert!((progress.percentage - 60.0).abs() < 0.001);
     }
 }
