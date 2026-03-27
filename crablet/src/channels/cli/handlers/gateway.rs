@@ -11,10 +11,10 @@ pub async fn handle_gateway(host: &str, port: u16, router: Arc<CognitiveRouter>)
     let gateway_config = GatewayConfig {
         host: host.to_string(),
         port,
-        auth_mode: "off".to_string(),
+        auth_mode: std::env::var("CRABLET_AUTH_MODE").unwrap_or_else(|_| "token".to_string()),
     };
     
-    let gateway = CrabletGateway::new(gateway_config, router);
+    let gateway = CrabletGateway::new(gateway_config, router).await?;
     
     // Register a ping method for testing
     gateway.rpc.register("ping", |_| async { 

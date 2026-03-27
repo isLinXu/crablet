@@ -1,0 +1,98 @@
+name: Coverage
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+    types: [ opened, synchronize, reopened ]
+
+jobs:
+  coverage-report:
+    name: Generate Coverage Report
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-action@stable
+
+      - name: Install llvm-cov
+        run: cargo install cargo-llvm-cov
+
+      - name: Cache cargo registry
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crablet
+
+      - name: Generate coverage report
+        run: |
+          cd crablet
+          mkdir -p coverage
+          cargo llvm-cov --workspace --lcov --output-path coverage/lcov.info
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          files: ./crablet/coverage/lcov.info
+          flags: unittests
+          name: crablet-coverage
+          fail_ci_if_error: true
+          verbose: true
+
+      - name: Comment coverage on PR
+        if: github.event_name == 'pull_request'
+        uses: romeovs/lcov-reporter-action@v0.3.1
+        with:
+          lcov-file: ./crablet/coverage/lcov.info
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          delete-old-comments: true
+
+  coverage-check:
+    name: Coverage Check (80% Gate)
+    runs-on: ubuntu-latest
+    needs: coverage-report
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-action@stable
+
+      - name: Install llvm-cov
+        run: cargo install cargo-llvm-cov
+
+      - name: Cache cargo registry
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crablet
+
+      - name: Check coverage gate
+        run: |
+          cd crablet
+          mkdir -p coverage
+          cargo llvm-cov --workspace --lcov --output-path coverage/lcov.info
+          COVERAGE=$(awk -F: '
+            /^LF:/ { lf += $2 }
+            /^LH:/ { lh += $2 }
+            END {
+              if (lf == 0) {
+                print "0.00"
+              } else {
+                printf "%.2f", (lh / lf) * 100
+              }
+            }
+          ' coverage/lcov.info)
+          echo "Current coverage: ${COVERAGE}%"
+
+          THRESHOLD=80
+          awk -v coverage="$COVERAGE" -v threshold="$THRESHOLD" '
+            BEGIN {
+              if (coverage + 0 < threshold + 0) {
+                printf "ERROR: Coverage %s%% is below %s%% threshold!\n", coverage, threshold
+                exit 1
+              }
+              printf "SUCCESS: Coverage %s%% meets %s%% threshold\n", coverage, threshold
+            }
+          '

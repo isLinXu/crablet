@@ -83,19 +83,36 @@ pub async fn run(router: Arc<CognitiveRouter>, port: u16, auth_config: Option<(S
         .route("/callback", get(callback_handler))
         .with_state(auth_state);
 
-    let app = Router::new()
-        .route("/ws", get(ws_handler))
-        .nest("/api", api_router)
-        .nest("/auth", auth_router)
-        // Fallback to legacy chat or static files
-        .route("/legacy_chat", post(chat)) // Keep legacy POST /chat at root? or just use API
-        .fallback_service(
-            ServeDir::new(static_dir)
-                .append_index_html_on_directories(true)
-                .not_found_service(ServeFile::new(index_file))
-        )
-        .layer(axum::extract::DefaultBodyLimit::max(1024 * 1024 * 50)) // 50MB limit
-        .with_state(app_state);
+    let enable_legacy_api = std::env::var("CRABLET_ENABLE_LEGACY_WEB_API")
+        .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
+        .unwrap_or(false);
+
+    let app = if enable_legacy_api {
+        info!("Legacy Web API is enabled on port {}", port);
+        Router::new()
+            .route("/ws", get(ws_handler))
+            .nest("/api", api_router)
+            .nest("/auth", auth_router)
+            .route("/legacy_chat", post(chat))
+            .fallback_service(
+                ServeDir::new(static_dir)
+                    .append_index_html_on_directories(true)
+                    .not_found_service(ServeFile::new(index_file))
+            )
+            .layer(axum::extract::DefaultBodyLimit::max(1024 * 1024 * 50))
+            .with_state(app_state)
+    } else {
+        info!("Legacy Web API is disabled; serving static UI and auth endpoints only on port {}", port);
+        Router::new()
+            .nest("/auth", auth_router)
+            .fallback_service(
+                ServeDir::new(static_dir)
+                    .append_index_html_on_directories(true)
+                    .not_found_service(ServeFile::new(index_file))
+            )
+            .layer(axum::extract::DefaultBodyLimit::max(1024 * 1024 * 50))
+            .with_state(app_state)
+    };
 
     let addr = std::net::SocketAddr::from(([0, 0, 0, 0], port));
     info!("Web UI listening on http://{}", addr);

@@ -5,10 +5,7 @@ use crablet::cognitive::{
     create_llm_client,
 };
 use crablet::config::Config;
-use crablet::types::Message;
-use crablet::cognitive::meta_controller::{
-    monitor::ExecutionMetrics, reflector::ProblemDiagnosis, learner::LearnedKnowledge,
-};
+use crablet::cognitive::meta_controller::monitor::ExecutionMetrics;
 use std::time::{Duration, Instant};
 
 #[tokio::test]
@@ -74,7 +71,7 @@ async fn test_execute_with_meta_failure() {
             output: "Failed to complete task".into(),
             confidence: 0.2,
             duration: Duration::from_millis(500),
-            metrics,
+            metrics: metrics.clone(),
         }
     }).await;
     
@@ -267,7 +264,7 @@ async fn test_meta_cognitive_workflow() {
             output: "Failed".into(),
             confidence: 0.2,
             duration: Duration::from_millis(200),
-            metrics,
+            metrics: metrics.clone(),
         }
     }).await;
     

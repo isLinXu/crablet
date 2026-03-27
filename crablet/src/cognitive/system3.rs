@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use std::sync::Arc;
 use crate::cognitive::llm::LlmClient;
 use crate::agent::researcher::ResearchAgent;
-use crate::agent::swarm::{Swarm, SwarmAgent, AgentId, SwarmOrchestrator};
+use crate::agent::swarm::{Swarm, AgentId, SwarmOrchestrator};
 use crate::agent::coder::CoderAgent;
 use crate::agent::analyst::AnalystAgent;
 use crate::agent::aggregator::AggregatorAgent;

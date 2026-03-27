@@ -4,7 +4,7 @@ use axum::{
     extract::{State, Request},
     response::{sse::{Event, KeepAlive, Sse}, Response},
     middleware::{self, Next},
-    http::{StatusCode, header},
+    http::{StatusCode, header, HeaderValue, Method},
     BoxError,
 };
 use std::sync::Arc;
@@ -17,18 +17,35 @@ use crate::events::EventBus;
 use crate::gateway::types::GatewayConfig;
 use crate::gateway::canvas_manager::CanvasManager;
 use crate::gateway::web_handlers::{
-    chat_handler, chat_stream, image_handler, list_skills, list_sessions as list_chat_sessions, upload_knowledge,
+    chat_handler, chat_stream, image_handler, list_skills, upload_knowledge,
     list_documents, get_document_chunks, search_knowledge, list_api_keys,
     create_api_key, revoke_api_key, list_audit_logs, get_routing_settings, update_routing_settings, get_routing_report,
-    get_swarm_state, list_agents, cancel_task, delete_session as delete_chat_session, get_session_history as get_chat_session_history,
+    get_swarm_state, list_agents, cancel_task,
     get_dashboard_stats, get_swarm_stats, get_swarm_tasks, toggle_skill,
     search_registry_skills, install_skill, batch_test_skills, get_mcp_overview, list_swarm_reviews, decide_swarm_review,
     get_skills_sh_top, get_system_config, update_system_config,
     semantic_search_skills, run_skill, get_skill_logs, get_all_skill_logs
 };
+use crate::gateway::session_handlers::{
+    list_sessions as list_chat_sessions,
+    delete_session as delete_chat_session,
+    get_session_history as get_chat_session_history,
+    compress_session,
+};
+use crate::gateway::chat_enhancement_handlers::{
+    get_token_usage,
+    star_message,
+    unstar_message,
+    list_stars,
+    is_starred,
+    get_star_count,
+    dual_search,
+    topk_recommend,
+};
 use crate::gateway::observability_handlers as obs;
 use crate::gateway::workflow_handlers;
 use crate::gateway::ratelimit::{create_limiter, GlobalRateLimiter};
+use crate::storage::{HybridStorage, StorageConfig};
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::StreamExt as _;
 use futures::stream::Stream;
@@ -108,6 +125,7 @@ pub struct CrabletGateway {
     pub canvas: CanvasManager,
     pub config: GatewayConfig,
     pub rate_limiter: Arc<GlobalRateLimiter>,
+    pub storage: Arc<HybridStorage>,
     pub workflow_engine: Arc<WorkflowEngine>,
     pub workflow_registry: Arc<WorkflowRegistry>,
     pub heartbeat: Arc<HeartbeatEngine>,
@@ -116,7 +134,7 @@ pub struct CrabletGateway {
 }
 
 impl CrabletGateway {
-    pub fn new(config: GatewayConfig, router: Arc<CognitiveRouter>) -> Self {
+    pub async fn new(config: GatewayConfig, router: Arc<CognitiveRouter>) -> anyhow::Result<Self> {
         let event_bus = crate::events::EventBus::new(100);
 
         // Parse auth mode from config
@@ -138,7 +156,21 @@ impl CrabletGateway {
             crate::audit::start_audit_worker(p.clone(), Arc::new(event_bus.clone()));
         }
 
-        let auth = AuthManager::new(auth_mode, pool);
+        let auth = AuthManager::new(auth_mode, pool.clone());
+
+        let sqlite_pool = match &pool {
+            Some(existing) => existing.clone(),
+            None => sqlx::sqlite::SqlitePool::connect("sqlite::memory:").await?,
+        };
+        let redis_url = std::env::var("REDIS_URL")
+            .ok()
+            .or_else(|| std::env::var("CRABLET_REDIS_URL").ok());
+        let storage = Arc::new(
+            HybridStorage::new(StorageConfig {
+                redis_url,
+                sqlite_pool,
+            }).await?
+        );
 
         // Load existing keys
         let auth_clone = auth.clone();
@@ -151,8 +183,20 @@ impl CrabletGateway {
         // Generate admin token if using Token auth and no tokens exist
         if matches!(auth.mode(), AuthMode::Token) && !auth.has_tokens() {
             let token = auth.generate_token("admin", "admin");
-            tracing::info!("Generated Admin Token: {}", token);
-            tracing::info!("Please save this token. Requests require 'Authorization: Bearer <token>' header.");
+            let allow_plaintext_bootstrap_token = std::env::var("CRABLET_PRINT_BOOTSTRAP_TOKEN")
+                .map(|v| matches!(v.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
+                .unwrap_or(false);
+            if allow_plaintext_bootstrap_token {
+                tracing::warn!("Generated bootstrap admin token: {}", token);
+            } else {
+                let suffix_len = token.len().min(6);
+                let suffix = &token[token.len() - suffix_len..];
+                tracing::warn!(
+                    "Generated bootstrap admin token ending with ...{}. Set CRABLET_PRINT_BOOTSTRAP_TOKEN=true to print the full token in trusted local development.",
+                    suffix
+                );
+            }
+            tracing::info!("Requests require 'Authorization: Bearer <token>' header.");
         }
 
         #[cfg(feature = "knowledge")]
@@ -182,7 +226,7 @@ impl CrabletGateway {
             heartbeat_clone.start().await;
         });
 
-        Self {
+        Ok(Self {
             router,
             rpc: RpcDispatcher::new(),
             auth,
@@ -191,12 +235,13 @@ impl CrabletGateway {
             event_bus,
             config,
             rate_limiter: create_limiter(),
+            storage,
             workflow_engine,
             workflow_registry,
             heartbeat: heartbeat_arc,
             #[cfg(feature = "knowledge")]
             ingestion,
-        }
+        })
     }
 
     pub async fn start(self) -> Result<(), axum::BoxError> {
@@ -215,6 +260,13 @@ impl CrabletGateway {
                 .route("/sessions", get(list_chat_sessions))
                 .route("/sessions/:id", delete(delete_chat_session))
                 .route("/sessions/:id/history", get(get_chat_session_history))
+                .route("/chat/sessions/:id/token-usage", get(get_token_usage))
+                .route("/chat/sessions/:id/compress", post(compress_session))
+                .route("/chat/sessions/:id/stars", get(list_stars).post(star_message))
+                .route("/chat/sessions/:id/stars/:message_id", get(is_starred).delete(unstar_message))
+                .route("/chat/sessions/:id/star-count", get(get_star_count))
+                .route("/rag/topk-recommend", get(topk_recommend))
+                .route("/rag/search", get(dual_search))
                 .route("/dashboard", get(get_dashboard_stats))
                 .route("/swarm/stats", get(get_swarm_stats))
                 .route("/swarm/tasks", get(get_swarm_tasks))
@@ -283,10 +335,28 @@ impl CrabletGateway {
             // Rate Limiting (Applied to protected routes + expensive ones)
             .layer(middleware::from_fn_with_state(gateway.clone(), rate_limit_middleware));
 
-        let cors = CorsLayer::new()
-            .allow_origin(Any)
-            .allow_methods(Any)
-            .allow_headers(Any);
+        let allow_any_origin = std::env::var("CRABLET_ALLOW_ANY_ORIGIN")
+            .map(|v| matches!(v.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
+            .unwrap_or(false);
+
+        let cors = if allow_any_origin {
+            CorsLayer::new()
+                .allow_origin(Any)
+                .allow_methods(Any)
+                .allow_headers(Any)
+        } else {
+            CorsLayer::new()
+                .allow_origin([
+                    HeaderValue::from_static("http://localhost:3000"),
+                    HeaderValue::from_static("http://127.0.0.1:3000"),
+                    HeaderValue::from_static("http://localhost:5173"),
+                    HeaderValue::from_static("http://127.0.0.1:5173"),
+                    HeaderValue::from_static("http://localhost:8080"),
+                    HeaderValue::from_static("http://127.0.0.1:8080"),
+                ])
+                .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE, Method::OPTIONS])
+                .allow_headers([header::AUTHORIZATION, header::CONTENT_TYPE])
+        };
 
         let app = public_routes
             .merge(protected_routes)

@@ -22,10 +22,12 @@ pub mod error;
 pub mod sandbox;
 pub mod workflow;
 pub mod observability;
+pub mod storage;
 
 pub mod heartbeat;
 pub mod background;
 pub mod audit;
+#[cfg(feature = "web")]
 pub mod auth;
 pub mod health;
 #[cfg(feature = "web")]

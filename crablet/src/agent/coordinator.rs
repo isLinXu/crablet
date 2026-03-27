@@ -35,6 +35,10 @@ impl CoordinatorAgent {
         }
     }
 
+    pub fn id(&self) -> &AgentId {
+        &self.id
+    }
+
     pub async fn submit_task(&self, description: String) -> String {
         let task = Task::new(description);
         let id = task.id.clone();

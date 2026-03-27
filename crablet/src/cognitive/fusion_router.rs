@@ -454,11 +454,8 @@ impl SessionFusionRouter {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    
     #[test]
     fn test_complexity_calculation() {
-        let config = RouterConfig::default();
         // Test complexity calculation without FusionAdapter
         // Just test the complexity calculation logic directly
         let text1 = "Hello";

@@ -168,4 +168,4 @@ jobs:
       run: npm run build
     
     - name: Test
-      run: npm test -- --coverage
+      run: npm test -- --run

@@ -20,6 +20,7 @@ telemetry = ["dep:opentelemetry", "dep:opentelemetry_sdk", "dep:opentelemetry-ot
 sandbox = ["dep:bollard"]
 vision = [] # Placeholder for now as image crate is not listed explicitly but might be transitive or used via simple file ops
 qdrant-support = ["dep:qdrant-client"]
+fusion-tests-disabled = []
 
 [dependencies]
 tokio = { version = "1.40", features = ["full"] }
@@ -104,6 +105,7 @@ jsonwebtoken = "9.2.0"
 governor = { version = "0.6.3", features = ["std", "dashmap", "jitter", "quanta"] }
 tower = { version = "0.4.13", features = ["util", "limit"] }
 tower_governor = "0.4.2"
+redis = { version = "0.27", features = ["tokio-comp", "connection-manager"] }
 openid = "0.23.0"
 connect = "0.2.4"
 url = "2.5.8"

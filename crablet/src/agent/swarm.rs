@@ -12,9 +12,13 @@ use crate::agent::factory::AgentFactory;
 use crate::agent::capability::CapabilityRouter;
 
 // Declare submodules
+#[path = "swarm/types.rs"]
 pub mod types;
+#[path = "swarm/persister.rs"]
 pub mod persister;
+#[path = "swarm/executor.rs"]
 pub mod executor;
+#[path = "swarm/coordinator.rs"]
 pub mod coordinator;
 
 // Re-export common types

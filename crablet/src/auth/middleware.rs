@@ -73,8 +73,7 @@ pub async fn auth_middleware(
             }
         }
     } else {
-        // Anonymous access
-        UserContext::anonymous()
+        return Err(StatusCode::UNAUTHORIZED);
     };
 
     req.extensions_mut().insert(context);

@@ -2,6 +2,7 @@ pub mod researcher;
 pub mod coordinator;
 pub mod task;
 pub mod factory;
+#[path = "swarm.rs"]
 pub mod swarm;
 pub mod coder;
 pub mod analyst;

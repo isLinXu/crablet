@@ -7,14 +7,21 @@ import type {
   NodeTypeDefinition,
   ExecutionEvent,
 } from '../types/workflow';
+import { LOCAL_STORAGE_KEYS, getApiBaseUrl } from '../utils/constants';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000';
+const getWorkflowApiBase = () => {
+  const apiBase = getApiBaseUrl().replace(/\/+$/, '');
+  const gatewayRoot = apiBase.endsWith('/api') ? apiBase.slice(0, -4) : apiBase;
+  return `${gatewayRoot}/api/v1`;
+};
 
 const getAuthHeaders = (): HeadersInit => {
-  const token = localStorage.getItem('token');
+  const token = localStorage.getItem(LOCAL_STORAGE_KEYS.AUTH_TOKEN);
+  const apiKey = localStorage.getItem(LOCAL_STORAGE_KEYS.API_KEY);
   return {
     'Content-Type': 'application/json',
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(!token && apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
   };
 };
 
@@ -22,7 +29,7 @@ const getAuthHeaders = (): HeadersInit => {
 export const workflowApi = {
   // Create a new workflow
   async createWorkflow(request: CreateWorkflowRequest): Promise<Workflow> {
-    const response = await fetch(`${API_BASE_URL}/api/v1/workflows`, {
+    const response = await fetch(`${getWorkflowApiBase()}/workflows`, {
       method: 'POST',
       headers: getAuthHeaders(),
       body: JSON.stringify(request),
@@ -38,7 +45,7 @@ export const workflowApi = {
 
   // List all workflows
   async listWorkflows(): Promise<Workflow[]> {
-    const response = await fetch(`${API_BASE_URL}/api/v1/workflows`, {
+    const response = await fetch(`${getWorkflowApiBase()}/workflows`, {
       headers: getAuthHeaders(),
     });
 
@@ -51,7 +58,7 @@ export const workflowApi = {
 
   // Get a workflow by ID
   async getWorkflow(id: string): Promise<Workflow> {
-    const response = await fetch(`${API_BASE_URL}/api/v1/workflows/${id}`, {
+    const response = await fetch(`${getWorkflowApiBase()}/workflows/${id}`, {
       headers: getAuthHeaders(),
     });
 
@@ -64,7 +71,7 @@ export const workflowApi = {
 
   // Update a workflow
   async updateWorkflow(id: string, request: UpdateWorkflowRequest): Promise<Workflow> {
-    const response = await fetch(`${API_BASE_URL}/api/v1/workflows/${id}`, {
+    const response = await fetch(`${getWorkflowApiBase()}/workflows/${id}`, {
       method: 'PUT',
       headers: getAuthHeaders(),
       body: JSON.stringify(request),
@@ -80,7 +87,7 @@ export const workflowApi = {
 
   // Delete a workflow
   async deleteWorkflow(id: string): Promise<void> {
-    const response = await fetch(`${API_BASE_URL}/api/v1/workflows/${id}`, {
+    const response = await fetch(`${getWorkflowApiBase()}/workflows/${id}`, {
       method: 'DELETE',
       headers: getAuthHeaders(),
     });
@@ -92,7 +99,7 @@ export const workflowApi = {
 
   // Validate a workflow
   async validateWorkflow(request: CreateWorkflowRequest): Promise<{ valid: boolean; errors: string[] }> {
-    const response = await fetch(`${API_BASE_URL}/api/v1/workflows/validate`, {
+    const response = await fetch(`${getWorkflowApiBase()}/workflows/validate`, {
       method: 'POST',
       headers: getAuthHeaders(),
       body: JSON.stringify(request),
@@ -107,7 +114,7 @@ export const workflowApi = {
 
   // Get available node types
   async getNodeTypes(): Promise<NodeTypeDefinition[]> {
-    const response = await fetch(`${API_BASE_URL}/api/v1/workflows/node-types`, {
+    const response = await fetch(`${getWorkflowApiBase()}/workflows/node-types`, {
       headers: getAuthHeaders(),
     });
 
@@ -126,7 +133,7 @@ export const executionApi = {
     workflowId: string,
     request: ExecuteWorkflowRequest
   ): Promise<WorkflowExecution> {
-    const response = await fetch(`${API_BASE_URL}/api/v1/workflows/${workflowId}/execute`, {
+    const response = await fetch(`${getWorkflowApiBase()}/workflows/${workflowId}/execute`, {
       method: 'POST',
       headers: getAuthHeaders(),
       body: JSON.stringify(request),
@@ -147,8 +154,7 @@ export const executionApi = {
     onEvent: (event: ExecutionEvent) => void,
     onError?: (error: Error) => void
   ): () => void {
-    const token = localStorage.getItem('token');
-    const url = new URL(`${API_BASE_URL}/api/v1/workflows/${workflowId}/run`);
+    const url = new URL(`${getWorkflowApiBase()}/workflows/${workflowId}/run`, window.location.origin);
     
     // For SSE with auth, we need to use EventSource with headers polyfill or query param
     // Here we use a simple fetch-based approach for broader compatibility
@@ -206,7 +212,7 @@ export const executionApi = {
 
   // Get execution by ID
   async getExecution(executionId: string): Promise<WorkflowExecution> {
-    const response = await fetch(`${API_BASE_URL}/api/v1/executions/${executionId}`, {
+    const response = await fetch(`${getWorkflowApiBase()}/executions/${executionId}`, {
       headers: getAuthHeaders(),
     });
 
@@ -219,7 +225,7 @@ export const executionApi = {
 
   // List executions for a workflow
   async listExecutions(workflowId: string): Promise<WorkflowExecution[]> {
-    const response = await fetch(`${API_BASE_URL}/api/v1/workflows/${workflowId}/executions`, {
+    const response = await fetch(`${getWorkflowApiBase()}/workflows/${workflowId}/executions`, {
       headers: getAuthHeaders(),
     });
 
@@ -232,7 +238,7 @@ export const executionApi = {
 
   // Cancel an execution
   async cancelExecution(executionId: string): Promise<void> {
-    const response = await fetch(`${API_BASE_URL}/api/v1/executions/${executionId}`, {
+    const response = await fetch(`${getWorkflowApiBase()}/executions/${executionId}`, {
       method: 'DELETE',
       headers: getAuthHeaders(),
     });
