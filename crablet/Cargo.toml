@@ -8,8 +8,7 @@ default = ["qdrant-support", "web", "auto-working"]
 inference = ["dep:ort"]
 browser = ["dep:chromiumoxide"]
 auto-working = ["dep:cron", "dep:enigo", "dep:lettre", "dep:imap"]
-discord = ["dep:serenity"]
-full = ["knowledge", "audio", "vision", "web", "scripting", "telemetry", "sandbox", "telegram", "browser", "discord", "auto-working"]
+full = ["knowledge", "audio", "vision", "web", "scripting", "telemetry", "sandbox", "telegram", "browser", "auto-working"]
 telegram = ["dep:teloxide"]
 knowledge = ["dep:fastembed", "dep:pdf-extract", "dep:neo4rs", "qdrant-support"]
 # knowledge = ["dep:fastembed", "dep:pdf-extract", "dep:neo4rs"] # Qdrant disabled for now due to dep issues
@@ -28,7 +27,8 @@ axum = { version = "0.7", features = ["ws", "multipart", "macros"], optional = t
 axum-extra = { version = "0.9", features = ["cookie", "form", "query"], optional = true }
 reqwest = { version = "0.12", features = ["json", "stream", "multipart", "cookies"] }
 serde = { version = "1.0", features = ["derive"] }
-sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "sqlite", "chrono", "migrate"] }
+sqlx-core = { version = "0.8.6", default-features = false, features = ["_rt-tokio", "chrono", "migrate"] }
+sqlx-sqlite = { version = "0.8.6", default-features = false, features = ["bundled", "chrono", "migrate"] }
 clap = { version = "4.5", features = ["derive"] }
 teloxide = { version = "0.13", features = ["macros"], optional = true }
 anyhow = "1.0"
@@ -80,7 +80,6 @@ image = { version = "0.25.5", optional = true }
 strsim = "0.10.0" # For Levenshtein distance
 ort = { version = "2.0.0-rc.9", optional = true } # Modern ONNX Runtime wrapper (replaces onnxruntime)
 chromiumoxide = { version = "0.5", features = ["tokio-runtime"], optional = true }
-serenity = { version = "0.12", default-features = false, features = ["client", "gateway", "rustls_backend", "model"], optional = true }
 cron = { version = "0.12", optional = true }
 enigo = { version = "0.2", optional = true }
 lettre = { version = "0.11", optional = true }

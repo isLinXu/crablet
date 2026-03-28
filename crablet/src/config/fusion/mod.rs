@@ -485,7 +485,6 @@ impl FusionConfig {
                     channels: vec![
                         "web".to_string(),
                         "telegram".to_string(),
-                        "discord".to_string(),
                     ],
                 },
                 behavior: BehaviorConfig {

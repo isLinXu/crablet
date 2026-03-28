@@ -1,5 +1,4 @@
 use crablet::skills::registry::SkillRegistry;
-use crablet::skills::openclaw::OpenClawSkillLoader;
 
 #[tokio::test]
 async fn test_skill_registry_load() {

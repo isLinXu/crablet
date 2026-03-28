@@ -29,10 +29,6 @@ pub async fn run(config: Config) -> Result<()> {
         Some(Commands::Run { prompt, session }) => {
             handlers::chat::handle_run(&lane_router, prompt, session.as_deref()).await
         }
-        #[cfg(feature = "discord")]
-        Some(Commands::Discord) => {
-            crate::channels::discord::run(app).await
-        }
         Some(Commands::Status) => {
             handlers::status::handle_status()
         }

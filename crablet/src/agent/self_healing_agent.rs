@@ -535,12 +535,37 @@ pub struct SelfHealingAgent<A: Agent> {
 }
 
 impl<A: Agent> SelfHealingAgent<A> {
-    /// Create a new self-healing agent
-    pub fn new(inner: Arc<A>) -> Self {
+    /// Create a new self-healing agent (async to avoid blocking tokio runtime)
+    pub async fn new(inner: Arc<A>) -> Self {
         let diagnostic_engine = Arc::new(DiagnosticEngine::new(1000));
         let strategies: Arc<RwLock<Vec<Box<dyn RepairStrategy>>>> = Arc::new(RwLock::new(Vec::new()));
 
         // Register default strategies
+        let mut strat_list = strategies.write().await;
+        strat_list.push(Box::new(RetryWithBackoffStrategy::new(3, 1000)) as Box<dyn RepairStrategy>);
+        strat_list.push(Box::new(SwitchModelStrategy::new(vec![])) as Box<dyn RepairStrategy>);
+        strat_list.push(Box::new(ContextRefreshStrategy::new(0.5)) as Box<dyn RepairStrategy>);
+        strat_list.push(Box::new(StepReductionStrategy::new(2)) as Box<dyn RepairStrategy>);
+        strat_list.push(Box::new(WaitAndRetryStrategy::new(Duration::from_secs(5))) as Box<dyn RepairStrategy>);
+        strat_list.push(Box::new(ToolFallbackStrategy::new(HashMap::new())) as Box<dyn RepairStrategy>);
+        drop(strat_list);
+
+        Self {
+            inner,
+            diagnostic_engine,
+            strategies,
+            max_repair_attempts: 3,
+        }
+    }
+
+    /// Synchronous constructor - only use when not in a tokio runtime context
+    /// (e.g., in tests with #[tokio::test] the runtime handles this correctly,
+    /// but for initialization outside async context this is provided)
+    pub fn new_sync(inner: Arc<A>) -> Self {
+        let diagnostic_engine = Arc::new(DiagnosticEngine::new(1000));
+        let strategies: Arc<RwLock<Vec<Box<dyn RepairStrategy>>>> = Arc::new(RwLock::new(Vec::new()));
+
+        // Register default strategies using blocking_write
         let mut strat_list = strategies.blocking_write();
         strat_list.push(Box::new(RetryWithBackoffStrategy::new(3, 1000)) as Box<dyn RepairStrategy>);
         strat_list.push(Box::new(SwitchModelStrategy::new(vec![])) as Box<dyn RepairStrategy>);
@@ -643,9 +668,11 @@ impl<A: Agent> SelfHealingAgent<A> {
         diagnostic: &DiagnosticResult,
         context: &mut AgentHarnessContext,
     ) -> RepairOutcome {
-        let strategies = self.strategies.read().await;
+        // Keep the read lock while iterating because these strategies are trait objects
+        // and we do not have an owned cloneable representation for them yet.
+        let strategy_refs = self.strategies.read().await;
 
-        for strategy in strategies.iter() {
+        for strategy in strategy_refs.iter() {
             if strategy.can_handle(&diagnostic.error_type, diagnostic.severity) {
                 let outcome = strategy.repair(error, context).await;
 

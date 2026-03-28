@@ -1,6 +1,7 @@
 #![cfg(feature = "knowledge")]
 
 use crablet::knowledge::vector_store::VectorStore;
+use crablet as sqlx;
 use serde_json::json;
 use sqlx::sqlite::SqlitePoolOptions;
 

@@ -306,10 +306,6 @@ pub enum Commands {
         port: u16,
     },
     
-    /// Run Discord bot
-    #[cfg(feature = "discord")]
-    Discord,
-    
     /// Deep Research Mode
     Research {
         /// Topic to research

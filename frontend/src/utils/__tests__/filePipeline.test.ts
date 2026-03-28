@@ -26,11 +26,8 @@ const toBytes = (parts: BlobPart[]) => {
   return merged;
 };
 
-const toArrayBuffer = (bytes: Uint8Array) =>
-  bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
-
 const makeSlice = (bytes: Uint8Array) => ({
-  arrayBuffer: async () => toArrayBuffer(bytes),
+  arrayBuffer: async () => Uint8Array.from(bytes) as unknown as ArrayBuffer,
 });
 
 const makeFile = (parts: BlobPart[], name: string, type = 'application/octet-stream') => {
@@ -40,7 +37,7 @@ const makeFile = (parts: BlobPart[], name: string, type = 'application/octet-str
     size: bytes.byteLength,
     type,
     slice: (start?: number, end?: number) => makeSlice(bytes.slice(start, end)),
-    arrayBuffer: async () => toArrayBuffer(bytes),
+    arrayBuffer: async () => Uint8Array.from(bytes) as unknown as ArrayBuffer,
   } as File;
 };
 

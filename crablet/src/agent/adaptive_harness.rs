@@ -5,7 +5,7 @@
 //! - Multi-level breakpoints with conditional triggers
 //! - Step duration tracking and prediction
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
@@ -47,7 +47,7 @@ impl Default for AdaptiveTimeoutConfig {
 #[derive(Debug, Clone)]
 pub struct StepHistory {
     /// Duration of each step in milliseconds
-    step_durations: Vec<u64>,
+    step_durations: VecDeque<u64>,
     /// Maximum window size
     window_size: usize,
 }
@@ -55,7 +55,7 @@ pub struct StepHistory {
 impl StepHistory {
     pub fn new(window_size: usize) -> Self {
         Self {
-            step_durations: Vec::with_capacity(window_size),
+            step_durations: VecDeque::with_capacity(window_size),
             window_size,
         }
     }
@@ -63,9 +63,9 @@ impl StepHistory {
     /// Record a step completion
     pub fn record_step(&mut self, duration_ms: u64) {
         if self.step_durations.len() >= self.window_size {
-            self.step_durations.remove(0);
+            self.step_durations.pop_front();
         }
-        self.step_durations.push(duration_ms);
+        self.step_durations.push_back(duration_ms);
     }
 
     /// Calculate average step duration
@@ -94,16 +94,15 @@ impl StepHistory {
 
     /// Check if execution is showing signs of slowdown
     pub fn is_slowing_down(&self) -> bool {
-        if self.step_durations.len() < 3 {
+        if self.step_durations.len() < 4 {
             return false;
         }
-        let recent = &self.step_durations[self.step_durations.len() - 2..];
-        let older = &self.step_durations[..self.step_durations.len() - 2.min(0)];
-        if older.is_empty() {
-            return false;
-        }
-        let recent_avg: u64 = recent.iter().sum::<u64>() / recent.len() as u64;
-        let older_avg: u64 = older.iter().sum::<u64>() / older.len() as u64;
+        let split_at = self.step_durations.len() / 2;
+        let recent_sum: u64 = self.step_durations.iter().skip(split_at).sum();
+        let recent_len = self.step_durations.len() - split_at;
+        let older_sum: u64 = self.step_durations.iter().take(split_at).sum();
+        let recent_avg: u64 = recent_sum / recent_len as u64;
+        let older_avg: u64 = older_sum / split_at as u64;
         recent_avg > older_avg * 2 // 2x slowdown threshold
     }
 }

@@ -1,5 +1,6 @@
 use crablet::channels::cli;
 use crablet::config::Config;
+use crablet as sqlx;
 use tracing::info;
 
 #[tokio::main]

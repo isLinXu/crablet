@@ -1,6 +1,4 @@
 pub mod cli;
-#[cfg(feature = "discord")]
-pub mod discord;
 #[cfg(feature = "web")]
 pub mod web;
 pub mod domestic;

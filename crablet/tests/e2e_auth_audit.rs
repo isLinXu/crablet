@@ -1,6 +1,7 @@
 use anyhow::Result;
 use crablet::gateway::auth::{AuthManager, AuthMode};
 use crablet::events::{EventBus, AgentEvent};
+use crablet as sqlx;
 // use crablet::audit::start_audit_worker;
 use sqlx::sqlite::SqlitePoolOptions;
 use std::sync::Arc;

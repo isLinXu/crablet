@@ -100,7 +100,10 @@ impl Gauge {
     }
 
     pub fn dec(&self, amount: u64) {
-        self.value.fetch_sub(amount, Ordering::SeqCst);
+        // Use saturating_sub to prevent underflow: if value < amount, clamp to 0
+        self.value.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |v| {
+            Some(v.saturating_sub(amount))
+        }).ok();
     }
 
     pub fn get(&self) -> u64 {
@@ -223,6 +226,32 @@ impl Histogram {
 
     pub fn description(&self) -> &str {
         &self.description
+    }
+
+    /// Approximate percentile from histogram buckets.
+    /// Uses linear interpolation between bucket boundaries for a rough but reasonable estimate.
+    pub fn approximate_percentile(&self, percentile: f64) -> f64 {
+        let count = self.count.load(Ordering::SeqCst);
+        if count == 0 {
+            return 0.0;
+        }
+        let target = (percentile * count as f64 / 100.0).ceil() as u64;
+        let bucket_bounds = [0u64, 5, 10, 25, 50, 100, 250, 500, 1000, 2500];
+        let mut cumulative: u64 = 0;
+        for (i, &bound) in bucket_bounds.iter().enumerate() {
+            cumulative += self.counts[i].load(Ordering::SeqCst);
+            if cumulative >= target {
+                let prev_cumulative = cumulative - self.counts[i].load(Ordering::SeqCst);
+                let prev_bound: f64 = if i > 0 { bucket_bounds[i - 1] as f64 } else { 0.0 };
+                let bucket_count = self.counts[i].load(Ordering::SeqCst);
+                if bucket_count > 0 && cumulative > prev_cumulative {
+                    let fraction = (target - prev_cumulative) as f64 / bucket_count as f64;
+                    return prev_bound + fraction * (bound as f64 - prev_bound);
+                }
+                return bound as f64;
+            }
+        }
+        2500.0
     }
 
     /// Get bucket values for Prometheus format
@@ -681,7 +710,7 @@ impl MetricsExporter for OpenTelemetryExporter {
                                     as_double: 0.0,
                                     time_unix_nano: std::time::SystemTime::now()
                                         .duration_since(std::time::UNIX_EPOCH)
-                                        .unwrap()
+                                        .unwrap_or(std::time::Duration::ZERO)
                                         .as_nanos() as u64,
                                 }],
                             }),
@@ -696,7 +725,7 @@ impl MetricsExporter for OpenTelemetryExporter {
                                     as_double: 0.0,
                                     time_unix_nano: std::time::SystemTime::now()
                                         .duration_since(std::time::UNIX_EPOCH)
-                                        .unwrap()
+                                        .unwrap_or(std::time::Duration::ZERO)
                                         .as_nanos() as u64,
                                 }],
                             }),
@@ -711,7 +740,7 @@ impl MetricsExporter for OpenTelemetryExporter {
                                     as_double: 0.0,
                                     time_unix_nano: std::time::SystemTime::now()
                                         .duration_since(std::time::UNIX_EPOCH)
-                                        .unwrap()
+                                        .unwrap_or(std::time::Duration::ZERO)
                                         .as_nanos() as u64,
                                 }],
                             }),
@@ -726,7 +755,7 @@ impl MetricsExporter for OpenTelemetryExporter {
                                     as_double: 0.0,
                                     time_unix_nano: std::time::SystemTime::now()
                                         .duration_since(std::time::UNIX_EPOCH)
-                                        .unwrap()
+                                        .unwrap_or(std::time::Duration::ZERO)
                                         .as_nanos() as u64,
                                 }],
                             }),
@@ -741,7 +770,7 @@ impl MetricsExporter for OpenTelemetryExporter {
                                     as_double: snapshot.avg_tool_duration_ms,
                                     time_unix_nano: std::time::SystemTime::now()
                                         .duration_since(std::time::UNIX_EPOCH)
-                                        .unwrap()
+                                        .unwrap_or(std::time::Duration::ZERO)
                                         .as_nanos() as u64,
                                 }],
                             }),
@@ -981,12 +1010,12 @@ impl RealtimeMetrics {
                 },
             },
             histograms: DashboardHistograms {
-                step_duration_p50: self.step_duration_ms.get_avg(),
-                step_duration_p95: self.step_duration_ms.get_avg() * 1.95,
-                step_duration_p99: self.step_duration_ms.get_avg() * 2.99,
-                tool_duration_p50: self.tool_duration_ms.get_avg(),
-                tool_duration_p95: self.tool_duration_ms.get_avg() * 1.95,
-                tool_duration_p99: self.tool_duration_ms.get_avg() * 2.99,
+                step_duration_p50: self.step_duration_ms.approximate_percentile(50.0),
+                step_duration_p95: self.step_duration_ms.approximate_percentile(95.0),
+                step_duration_p99: self.step_duration_ms.approximate_percentile(99.0),
+                tool_duration_p50: self.tool_duration_ms.approximate_percentile(50.0),
+                tool_duration_p95: self.tool_duration_ms.approximate_percentile(95.0),
+                tool_duration_p99: self.tool_duration_ms.approximate_percentile(99.0),
             },
         }
     }

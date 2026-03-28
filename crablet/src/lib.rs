@@ -2,6 +2,10 @@
 #![allow(dead_code)]
 #![warn(clippy::unwrap_used)] // Warn on unwrap usage instead of deny for now
 
+mod sqlx_compat;
+pub use sqlx_compat::*;
+extern crate self as sqlx;
+
 pub mod cognitive;
 pub mod memory;
 pub mod safety;

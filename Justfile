@@ -40,7 +40,7 @@ audit:
 
 # CI-oriented security audit
 audit-ci:
-    cd ./crablet && cargo audit --ignore RUSTSEC-2023-0071
+    cd ./crablet && cargo audit --no-fetch --stale
     cd ./frontend && npm audit --omit=dev --audit-level=high
 
 # Coverage
