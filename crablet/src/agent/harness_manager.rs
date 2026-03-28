@@ -6,14 +6,14 @@
 //! - Harness state monitoring and metrics
 //! - Graceful shutdown coordination
 
-use std::collections::HashMap;
-use std::sync::Arc;
-use tokio::sync::{RwLock, broadcast};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::Instant;
+use tokio::sync::{broadcast, RwLock};
 
-use super::harness::{AgentHarnessContext, HarnessConfig, HarnessSignal, HarnessError};
+use super::harness::{AgentHarnessContext, HarnessConfig, HarnessError, HarnessSignal};
 
 /// Status of a managed harness
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -78,6 +78,14 @@ impl HarnessStats {
     }
 }
 
+#[derive(Debug, Clone)]
+struct HarnessSnapshot {
+    last_active_at: DateTime<Utc>,
+    step_count: usize,
+    error_count: usize,
+    duration_ms: u64,
+}
+
 /// Manager for multiple agent harnesses
 pub struct HarnessManager {
     /// Active harnesses by ID
@@ -118,7 +126,10 @@ impl HarnessManager {
     }
 
     /// Create a new harness instance
-    pub async fn create_harness(&self, config: Option<HarnessConfig>) -> Result<String, HarnessError> {
+    pub async fn create_harness(
+        &self,
+        config: Option<HarnessConfig>,
+    ) -> Result<String, HarnessError> {
         let id = self.generate_id();
         let cfg = config.unwrap_or_else(|| self.default_config.clone());
 
@@ -143,10 +154,34 @@ impl HarnessManager {
         harnesses.get(id).cloned()
     }
 
+    async fn snapshot_harness(&self, id: &str) -> Option<HarnessSnapshot> {
+        let harness = {
+            let harnesses = self.harnesses.read().await;
+            harnesses.get(id).cloned()
+        }?;
+
+        let harness = harness.read().await;
+        Some(HarnessSnapshot {
+            last_active_at: harness.metadata().last_activity_at,
+            step_count: harness.metadata().step_count,
+            error_count: harness.error_count(),
+            duration_ms: harness.metadata().total_duration_ms,
+        })
+    }
+
     /// Get harness info
     pub async fn get_info(&self, id: &str) -> Option<HarnessInfo> {
-        let info_map = self.info.read().await;
-        info_map.get(id).cloned()
+        let snapshot = self.snapshot_harness(id).await;
+        let mut info_map = self.info.write().await;
+        if let Some(info) = info_map.get_mut(id) {
+            if let Some(snapshot) = snapshot {
+                info.last_active_at = snapshot.last_active_at;
+                info.step_count = snapshot.step_count;
+                info.error_count = snapshot.error_count;
+            }
+            return Some(info.clone());
+        }
+        None
     }
 
     /// List all harness IDs
@@ -157,16 +192,39 @@ impl HarnessManager {
 
     /// Get all harness info
     pub async fn list_harness_info(&self) -> Vec<HarnessInfo> {
+        let ids = {
+            let info_map = self.info.read().await;
+            info_map.keys().cloned().collect::<Vec<_>>()
+        };
+
+        for id in ids {
+            if let Some(snapshot) = self.snapshot_harness(&id).await {
+                let mut info_map = self.info.write().await;
+                if let Some(info) = info_map.get_mut(&id) {
+                    info.last_active_at = snapshot.last_active_at;
+                    info.step_count = snapshot.step_count;
+                    info.error_count = snapshot.error_count;
+                }
+            }
+        }
+
         let info_map = self.info.read().await;
         info_map.values().cloned().collect()
     }
 
     /// Update harness status
     pub async fn update_status(&self, id: &str, status: HarnessStatus) {
+        let snapshot = self.snapshot_harness(id).await;
         let mut info_map = self.info.write().await;
         if let Some(info) = info_map.get_mut(id) {
             info.status = status;
-            info.last_active_at = Utc::now();
+            if let Some(snapshot) = snapshot {
+                info.last_active_at = snapshot.last_active_at;
+                info.step_count = snapshot.step_count;
+                info.error_count = snapshot.error_count;
+            } else {
+                info.last_active_at = Utc::now();
+            }
         }
     }
 
@@ -210,6 +268,40 @@ impl HarnessManager {
         } else {
             Err(HarnessError::ContextClosed)
         }
+    }
+
+    /// Mark a harness as completed and roll its execution into aggregate stats
+    pub async fn complete_harness(&self, id: &str) -> Result<(), HarnessError> {
+        let snapshot = self
+            .snapshot_harness(id)
+            .await
+            .ok_or(HarnessError::ContextClosed)?;
+        let mut should_record_stats = false;
+
+        {
+            let mut info_map = self.info.write().await;
+            if let Some(info) = info_map.get_mut(id) {
+                if !matches!(info.status, HarnessStatus::Completed) {
+                    should_record_stats = true;
+                }
+                info.status = HarnessStatus::Completed;
+                info.last_active_at = snapshot.last_active_at;
+                info.step_count = snapshot.step_count;
+                info.error_count = snapshot.error_count;
+            } else {
+                return Err(HarnessError::ContextClosed);
+            }
+        }
+
+        if should_record_stats {
+            let mut stats = self.stats.write().await;
+            stats.record_completion(
+                snapshot.duration_ms,
+                snapshot.step_count,
+                snapshot.error_count,
+            );
+        }
+        Ok(())
     }
 
     /// Remove a harness
@@ -264,7 +356,10 @@ pub struct HarnessScope<'a> {
 }
 
 impl<'a> HarnessScope<'a> {
-    pub async fn new(manager: &'a HarnessManager, config: Option<HarnessConfig>) -> Result<Self, HarnessError> {
+    pub async fn new(
+        manager: &'a HarnessManager,
+        config: Option<HarnessConfig>,
+    ) -> Result<Self, HarnessError> {
         let id = manager.create_harness(config).await?;
         manager.update_status(&id, HarnessStatus::Running).await;
 
@@ -351,6 +446,34 @@ mod tests {
 
         let stats = manager.get_stats().await;
         assert_eq!(stats.total_created, 2);
+
+        manager.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn test_complete_harness_updates_snapshot_and_stats() {
+        let manager = HarnessManager::new();
+        let id = manager.create_harness(None).await.unwrap();
+
+        let harness = manager.get_harness(&id).await.unwrap();
+        {
+            let mut harness = harness.write().await;
+            harness.record_step();
+            harness.record_error(HarnessError::Timeout(std::time::Duration::from_millis(5)));
+            harness.metadata_mut().update_duration();
+        }
+
+        manager.complete_harness(&id).await.unwrap();
+
+        let info = manager.get_info(&id).await.unwrap();
+        assert!(matches!(info.status, HarnessStatus::Completed));
+        assert_eq!(info.step_count, 1);
+        assert_eq!(info.error_count, 1);
+
+        let stats = manager.get_stats().await;
+        assert_eq!(stats.total_completed, 1);
+        assert_eq!(stats.total_steps_executed, 1);
+        assert_eq!(stats.total_errors, 1);
 
         manager.shutdown().await;
     }

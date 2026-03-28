@@ -30,17 +30,19 @@
 //│ └─────────────────────────────────────────────────────────────┘
 //! ```
 
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::sync::{RwLock, broadcast};
-use tokio::sync::broadcast::Sender;
-use serde::{Deserialize, Serialize};
 use thiserror::Error;
+use tokio::sync::broadcast::Sender;
+use tokio::sync::{broadcast, RwLock};
 
-use super::harness::{AgentHarnessContext, HarnessConfig, HarnessError};
-use super::adaptive_harness::{AdaptiveTimeout, AdaptiveTimeoutConfig, BreakpointManager, BreakpointAction, BreakpointContext};
-use super::self_healing_agent::{DiagnosticEngine, ErrorType, RepairOutcome, RepairStrategy};
+use super::adaptive_harness::{
+    AdaptiveTimeout, AdaptiveTimeoutConfig, BreakpointAction, BreakpointContext, BreakpointManager,
+};
+use super::harness::{AgentHarnessContext, CircuitState, HarnessConfig, HarnessError};
 use super::metrics::{Counter, Gauge};
+use super::self_healing_agent::{DiagnosticEngine, ErrorType, RepairOutcome, RepairStrategy};
 
 // ============================================================================
 // Error Types
@@ -210,16 +212,41 @@ pub struct UnifiedHarnessFusion {
 
 #[derive(Debug, Clone)]
 pub enum FusionEvent {
-    StepStarted { step: usize },
-    StepCompleted { step: usize, duration_ms: u64, success: bool },
-    SelfHealingStarted { error_type: ErrorType, strategy: String },
-    SelfHealingCompleted { success: bool, message: String },
-    CircuitBreakerTripped { tool_name: String },
+    StepStarted {
+        step: usize,
+    },
+    StepCompleted {
+        step: usize,
+        duration_ms: u64,
+        success: bool,
+    },
+    SelfHealingStarted {
+        error_type: ErrorType,
+        strategy: String,
+    },
+    SelfHealingCompleted {
+        success: bool,
+        message: String,
+    },
+    CircuitBreakerTripped {
+        tool_name: String,
+    },
     CircuitBreakerReset,
-    AdaptiveTimeoutAdjusted { old_ms: u64, new_ms: u64 },
-    ResourcePressureDetected { pressure: f64 },
-    EngineStateChanged { from: EngineState, to: EngineState },
-    BreakpointTriggered { breakpoint_id: String, action: BreakpointAction },
+    AdaptiveTimeoutAdjusted {
+        old_ms: u64,
+        new_ms: u64,
+    },
+    ResourcePressureDetected {
+        pressure: f64,
+    },
+    EngineStateChanged {
+        from: EngineState,
+        to: EngineState,
+    },
+    BreakpointTriggered {
+        breakpoint_id: String,
+        action: BreakpointAction,
+    },
 }
 
 impl UnifiedHarnessFusion {
@@ -238,7 +265,9 @@ impl UnifiedHarnessFusion {
 
         Self {
             harness: Arc::new(RwLock::new(AgentHarnessContext::new(harness_config))),
-            adaptive_timeout: Arc::new(RwLock::new(AdaptiveTimeout::new(config.adaptive_timeout_config.clone()))),
+            adaptive_timeout: Arc::new(RwLock::new(AdaptiveTimeout::new(
+                config.adaptive_timeout_config.clone(),
+            ))),
             breakpoint_manager: Arc::new(BreakpointManager::new()),
             diagnostic_engine: Arc::new(DiagnosticEngine::new(1000)),
             repair_strategies: Arc::new(RwLock::new(Vec::new())),
@@ -257,7 +286,10 @@ impl UnifiedHarnessFusion {
     }
 
     /// Register a repair strategy
-    pub async fn register_repair_strategy(&mut self, strategy: Box<dyn RepairStrategy + Send + Sync>) {
+    pub async fn register_repair_strategy(
+        &mut self,
+        strategy: Box<dyn RepairStrategy + Send + Sync>,
+    ) {
         let mut strategies = self.repair_strategies.write().await;
         strategies.push(strategy);
     }
@@ -322,23 +354,27 @@ impl UnifiedHarnessFusion {
             return Err(FusionError::EngineClosed);
         }
 
-        let harness = self.harness.read().await;
-
-        // Check if we should stop
-        if harness.should_stop() {
-            return Err(FusionError::EngineClosed);
-        }
-
-        // Calculate adaptive timeout
-        let timeout = self.calculate_adaptive_timeout(&harness).await;
+        // Read-only data extraction (release lock immediately to avoid deadlock
+        // when step_fn internally tries to acquire write lock on the same Arc<RwLock<>>)
+        let (step_number, timeout) = {
+            let harness = self.harness.read().await;
+            if harness.should_stop() {
+                return Err(FusionError::EngineClosed);
+            }
+            let timeout = self.calculate_adaptive_timeout(&harness).await;
+            let step_number = harness.metadata().step_count + 1;
+            (step_number, timeout)
+        };
+        // harness read lock is dropped here before step_fn executes
 
         // Record step start
-        let step_number = harness.metadata().step_count;
         *self.step_start.write().await = Some(Instant::now());
 
-        let _ = self.event_tx.send(FusionEvent::StepStarted { step: step_number });
+        let _ = self
+            .event_tx
+            .send(FusionEvent::StepStarted { step: step_number });
 
-        // Execute with timeout
+        // Execute with timeout (step_fn gets the Arc, can acquire its own locks)
         let result = tokio::time::timeout(timeout, step_fn(self.harness.clone(), timeout)).await;
 
         // Record step completion
@@ -373,6 +409,7 @@ impl UnifiedHarnessFusion {
                 if self.config.enable_self_healing {
                     self.handle_error(error).await
                 } else {
+                    self.record_harness_error(&error).await;
                     Err(FusionError::HarnessError(error.to_string()))
                 }
             }
@@ -383,7 +420,41 @@ impl UnifiedHarnessFusion {
                     duration_ms: duration,
                     success: false,
                 });
-                Err(FusionError::HarnessError("Step timeout".to_string()))
+
+                let error = HarnessError::Timeout(timeout);
+                if self.config.enable_self_healing {
+                    self.handle_error(error).await
+                } else {
+                    self.record_harness_error(&error).await;
+                    Err(FusionError::HarnessError(error.to_string()))
+                }
+            }
+        }
+    }
+
+    async fn record_harness_error(&self, error: &HarnessError) {
+        let trip_info = {
+            let mut harness = self.harness.write().await;
+            let trip_info = if let HarnessError::ToolFailure(tool_name, _) = error {
+                let previous = harness.circuit_breaker_for(tool_name);
+                harness.record_error(error.clone());
+                let current = harness.circuit_breaker_for(tool_name);
+                Some((tool_name.clone(), previous, current))
+            } else {
+                harness.record_error(error.clone());
+                None
+            };
+
+            harness.metadata_mut().update_duration();
+            trip_info
+        };
+
+        if let Some((tool_name, previous, current)) = trip_info {
+            if previous != CircuitState::Open && current == CircuitState::Open {
+                self.metrics.write().await.circuit_breaker_trips.inc(1);
+                let _ = self
+                    .event_tx
+                    .send(FusionEvent::CircuitBreakerTripped { tool_name });
             }
         }
     }
@@ -392,49 +463,60 @@ impl UnifiedHarnessFusion {
     async fn handle_error(&self, error: HarnessError) -> Result<String, FusionError> {
         self.set_state(EngineState::SelfHealing).await;
         self.metrics.write().await.self_healing_attempts.inc(1);
+        self.record_harness_error(&error).await;
 
         // Diagnose the error
-        let diagnostic = self.diagnostic_engine.diagnose(&error, "fusion-engine").await;
+        let diagnostic = self
+            .diagnostic_engine
+            .diagnose(&error, "fusion-engine")
+            .await;
 
         let _ = self.event_tx.send(FusionEvent::SelfHealingStarted {
             error_type: diagnostic.error_type.clone(),
-            strategy: diagnostic.suggested_strategies.first().cloned().unwrap_or_default(),
+            strategy: diagnostic
+                .suggested_strategies
+                .first()
+                .cloned()
+                .unwrap_or_default(),
         });
 
-        // Get repair strategies - iterate directly without clone
-        let strategies = self.repair_strategies.read().await;
+        // Keep the read lock for the duration of iteration since the strategies are
+        // stored as trait objects and cannot be cloned cheaply into an owned list.
+        let strategy_refs = self.repair_strategies.read().await;
 
         let mut repair_attempts = 0u32;
         let last_error = error.clone();
 
-        for strategy in strategies.iter() {
+        for strategy in strategy_refs.iter() {
             if !strategy.can_handle(&diagnostic.error_type, diagnostic.severity) {
                 continue;
             }
 
             repair_attempts += 1;
 
-            // Attempt repair
+            // Attempt repair (no strategies lock held)
             let mut harness = self.harness.write().await;
             let outcome = strategy.repair(&last_error, &mut harness).await;
 
             match outcome {
-                RepairOutcome::Success { repaired: true, message, .. } => {
+                RepairOutcome::Success {
+                    repaired: true,
+                    message,
+                    ..
+                } => {
                     self.metrics.write().await.self_healing_successes.inc(1);
                     let _ = self.event_tx.send(FusionEvent::SelfHealingCompleted {
                         success: true,
                         message: message.clone(),
                     });
 
-                    // Update circuit breaker if it was a tool failure
-                    if matches!(last_error, HarnessError::ToolFailure(_, _)) {
-                        harness.circuit_breaker().record_success();
-                    }
-
                     self.set_state(EngineState::Running).await;
-                    return Err(FusionError::SelfHealingFailed(message));
+                    // Return success - the error was healed, no need to propagate it
+                    return Ok(message);
                 }
-                RepairOutcome::Failed { can_retry: true, .. } => {
+                RepairOutcome::Failed {
+                    can_retry: true, ..
+                } => {
                     // Try next strategy
                     continue;
                 }
@@ -443,19 +525,6 @@ impl UnifiedHarnessFusion {
                     continue;
                 }
             }
-        }
-
-        // Record circuit breaker trip if applicable
-        if matches!(error, HarnessError::ToolFailure(_, _)) {
-            self.metrics.write().await.circuit_breaker_trips.inc(1);
-            self.harness.read().await.circuit_breaker().record_failure();
-
-            let _ = self.event_tx.send(FusionEvent::CircuitBreakerTripped {
-                tool_name: match &error {
-                    HarnessError::ToolFailure(name, _) => name.clone(),
-                    _ => "unknown".to_string(),
-                },
-            });
         }
 
         let _ = self.event_tx.send(FusionEvent::SelfHealingCompleted {
@@ -492,12 +561,12 @@ impl UnifiedHarnessFusion {
             timeout.calculate_timeout(step_count)
         };
 
-        // Factor 1: Circuit breaker state
-        let cb_state = harness.circuit_breaker().state();
+        // Factor 1: Aggregate circuit breaker state across all tracked tools
+        let cb_state = harness.aggregate_circuit_state();
         let cb_multiplier = match cb_state {
-            super::harness::CircuitState::Closed => 1.0,
-            super::harness::CircuitState::HalfOpen => 1.5,
-            super::harness::CircuitState::Open => 2.5, // Significantly increase timeout when circuit is open
+            CircuitState::Closed => 1.0,
+            CircuitState::HalfOpen => 1.5,
+            CircuitState::Open => 2.5, // Significantly increase timeout when circuit is open
         };
 
         // Factor 2: Resource pressure
@@ -567,7 +636,11 @@ impl UnifiedHarnessFusion {
         }
 
         if timeout_adjusted {
-            self.metrics.write().await.adaptive_timeout_adjustments.inc(1);
+            self.metrics
+                .write()
+                .await
+                .adaptive_timeout_adjustments
+                .inc(1);
         }
 
         Duration::from_millis(new_timeout_ms)
@@ -575,6 +648,14 @@ impl UnifiedHarnessFusion {
 
     /// Record step completion for metrics and history
     async fn record_step_completion(&self, step: usize, duration_ms: u64) {
+        {
+            let mut harness = self.harness.write().await;
+            if harness.metadata().step_count < step {
+                harness.record_step();
+            }
+            harness.metadata_mut().update_duration();
+        }
+
         // Update metrics
         {
             let metrics = self.metrics.write().await;
@@ -684,17 +765,18 @@ impl UnifiedHarnessFusion {
     /// Get execution summary
     pub async fn summary(&self) -> ExecutionSummary {
         let metrics = self.metrics.read().await;
+        let harness = self.harness.read().await;
         ExecutionSummary {
-            step_count: metrics.steps_completed.value() as usize,
-            total_duration_ms: 0, // Not directly tracked
-            tool_call_count: 0,   // Not directly tracked
-            tool_failure_count: metrics.steps_failed.value() as usize,
-            llm_tokens_used: None,
+            step_count: harness.metadata().step_count,
+            total_duration_ms: harness.metadata().total_duration_ms,
+            tool_call_count: harness.metadata().tool_call_count,
+            tool_failure_count: harness.metadata().tool_failure_count,
+            llm_tokens_used: harness.metadata().llm_tokens_used,
             self_healing_attempts: metrics.self_healing_attempts.value(),
             self_healing_successes: metrics.self_healing_successes.value(),
-            circuit_breaker_state: "Closed".to_string(),
+            circuit_breaker_state: format!("{:?}", harness.aggregate_circuit_state()),
             avg_step_duration_ms: metrics.avg_step_duration_ms.value() as f64,
-            final_timeout_ms: 0,
+            final_timeout_ms: harness.config().step_timeout.as_millis() as u64,
         }
     }
 }
@@ -913,5 +995,36 @@ mod tests {
         // Should receive state change event
         let event = tokio::time::timeout(Duration::from_secs(1), rx.recv()).await;
         assert!(event.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_execute_step_updates_harness_metadata() {
+        let engine = UnifiedHarnessFusion::with_default();
+        engine.start().await;
+
+        let output = engine
+            .execute_step(|_, _| async { Ok("ok".to_string()) })
+            .await
+            .unwrap();
+
+        assert_eq!(output, "ok");
+
+        let harness = engine.harness().await;
+        let harness = harness.read().await;
+        assert_eq!(harness.metadata().step_count, 1);
+        drop(harness);
+
+        assert_eq!(engine.summary().await.step_count, 1);
+    }
+
+    #[test]
+    fn test_fusion_config_serialization() {
+        let config = FusionConfig::default();
+        let json = serde_json::to_string(&config).unwrap();
+        let parsed: FusionConfig = serde_json::from_str(&json).unwrap();
+
+        assert!(parsed.enable_self_healing);
+        assert!(parsed.enable_adaptive_timeout);
+        assert!(parsed.enable_metrics);
     }
 }

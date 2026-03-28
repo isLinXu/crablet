@@ -10,15 +10,16 @@
 //! - Resource usage tracking
 //! - Checkpoint and resume capability
 
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::time::{Duration, Instant};
-use std::collections::HashMap;
-use tokio::sync::{RwLock, broadcast};
-use tokio::sync::broadcast::Sender;
-use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
+use parking_lot::Mutex;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 use thiserror::Error;
+use tokio::sync::broadcast::Sender;
+use tokio::sync::{broadcast, RwLock};
 
 // ============================================================================
 // Error Types
@@ -55,9 +56,9 @@ impl HarnessError {
     pub fn is_retryable(&self) -> bool {
         matches!(
             self,
-            HarnessError::Timeout(_) |
-            HarnessError::ToolFailure(_, _) |
-            HarnessError::LlmFailure(_)
+            HarnessError::Timeout(_)
+                | HarnessError::ToolFailure(_, _)
+                | HarnessError::LlmFailure(_)
         )
     }
 }
@@ -193,11 +194,11 @@ impl Default for CircuitBreakerConfig {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CircuitState {
-    Closed,    // Normal operation
-    Open,      // Failing, reject calls
-    HalfOpen,  // Testing if recovery is possible
+    Closed,   // Normal operation
+    Open,     // Failing, reject calls
+    HalfOpen, // Testing if recovery is possible
 }
 
 pub struct CircuitBreaker {
@@ -228,8 +229,12 @@ impl CircuitBreaker {
                 if last_failure == 0 {
                     return true;
                 }
-                let elapsed = Duration::from_secs(last_failure);
-                if elapsed > self.config.timeout {
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_millis() as u64;
+                let elapsed = Duration::from_millis(now.saturating_sub(last_failure));
+                if elapsed >= self.config.timeout {
                     self.state.store(CircuitState::HalfOpen, Ordering::SeqCst);
                     true
                 } else {
@@ -245,8 +250,8 @@ impl CircuitBreaker {
         self.last_failure_time.store(
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs(),
+                .unwrap_or(std::time::Duration::ZERO)
+                .as_millis() as u64,
             Ordering::SeqCst,
         );
 
@@ -275,6 +280,7 @@ impl CircuitBreaker {
         self.state.store(CircuitState::Closed, Ordering::SeqCst);
         self.failure_count.store(0, Ordering::SeqCst);
         self.success_count.store(0, Ordering::SeqCst);
+        self.last_failure_time.store(0, Ordering::SeqCst);
     }
 }
 
@@ -461,8 +467,10 @@ pub struct AgentHarnessContext {
     config: HarnessConfig,
     /// Retry configuration for tool calls
     retry_config: RetryConfig,
-    /// Circuit breaker for fault tolerance
-    circuit_breaker: CircuitBreaker,
+    /// Per-tool circuit breakers for fault tolerance (tool_name -> CircuitBreaker)
+    circuit_breakers: Mutex<HashMap<String, CircuitBreaker>>,
+    /// Default circuit breaker configuration (used when creating new per-tool breakers)
+    default_cb_config: CircuitBreakerConfig,
     /// Resource tracker
     resource_tracker: ResourceTracker,
     /// Cancellation and control signals
@@ -515,10 +523,10 @@ impl Default for HarnessConfig {
 
 impl AgentHarnessContext {
     pub fn new(config: HarnessConfig) -> Self {
-        let circuit_breaker = config.circuit_breaker
-            .as_ref()
-            .map(|cb| CircuitBreaker::new(cb.clone()))
-            .unwrap_or_else(|| CircuitBreaker::new(CircuitBreakerConfig::default()));
+        let default_cb_config = config
+            .circuit_breaker
+            .clone()
+            .unwrap_or_else(CircuitBreakerConfig::default);
 
         let max_memory = config.max_memory_bytes.unwrap_or(u64::MAX);
         let max_cpu = config.max_cpu_time_ms.unwrap_or(u64::MAX);
@@ -528,7 +536,8 @@ impl AgentHarnessContext {
             metadata: ExecutionMetadata::new(),
             config,
             retry_config: RetryConfig::default(),
-            circuit_breaker,
+            circuit_breakers: Mutex::new(HashMap::new()),
+            default_cb_config,
             resource_tracker,
             signals: HarnessSignalChannel::new(),
             error_history: Vec::new(),
@@ -552,8 +561,10 @@ impl AgentHarnessContext {
     }
 
     pub fn cancel(&self) {
-        self.should_stop.store(true, Ordering::SeqCst);
-        let _ = self.signals.cancel();
+        let was_stopped = self.should_stop.swap(true, Ordering::SeqCst);
+        if !was_stopped {
+            let _ = self.signals.cancel();
+        }
     }
 
     pub fn should_stop(&self) -> bool {
@@ -561,11 +572,17 @@ impl AgentHarnessContext {
     }
 
     pub fn pause(&self) {
-        self.is_paused.store(true, Ordering::SeqCst);
+        let was_paused = self.is_paused.swap(true, Ordering::SeqCst);
+        if !was_paused {
+            let _ = self.signals.pause();
+        }
     }
 
     pub fn resume(&self) {
-        self.is_paused.store(false, Ordering::SeqCst);
+        let was_paused = self.is_paused.swap(false, Ordering::SeqCst);
+        if was_paused {
+            let _ = self.signals.resume();
+        }
     }
 
     pub fn is_paused(&self) -> bool {
@@ -575,11 +592,20 @@ impl AgentHarnessContext {
     // --- Error handling ---
 
     pub fn record_error(&mut self, error: HarnessError) {
-        // Update circuit breaker if tool failure
-        if matches!(error, HarnessError::ToolFailure(_, _)) {
-            self.circuit_breaker.record_failure();
+        // Update per-tool circuit breaker if tool failure
+        if let HarnessError::ToolFailure(ref tool_name, _) = error {
+            self.record_tool_failure(tool_name);
         }
         self.error_history.push(error.clone());
+    }
+
+    /// Record a failure for a specific tool's circuit breaker
+    pub(crate) fn record_tool_failure(&self, tool_name: &str) {
+        let mut breakers = self.circuit_breakers.lock();
+        let cb = breakers
+            .entry(tool_name.to_string())
+            .or_insert_with(|| CircuitBreaker::new(self.default_cb_config.clone()));
+        cb.record_failure();
     }
 
     pub fn get_last_error(&self) -> Option<&HarnessError> {
@@ -596,12 +622,53 @@ impl AgentHarnessContext {
 
     // --- Circuit Breaker ---
 
-    pub fn circuit_breaker(&self) -> &CircuitBreaker {
-        &self.circuit_breaker
+    /// Get the circuit breaker state for a specific tool
+    pub fn circuit_breaker_for(&self, tool_name: &str) -> CircuitState {
+        let breakers = self.circuit_breakers.lock();
+        breakers
+            .get(tool_name)
+            .map(|cb| cb.state())
+            .unwrap_or(CircuitState::Closed)
     }
 
-    pub fn is_circuit_open(&self, _tool_name: &str) -> bool {
-        !self.circuit_breaker.is_allowed()
+    /// Record a success for a specific tool's circuit breaker
+    pub fn record_tool_success(&self, tool_name: &str) {
+        let mut breakers = self.circuit_breakers.lock();
+        if let Some(cb) = breakers.get_mut(tool_name) {
+            cb.record_success();
+        }
+    }
+
+    /// Check if a specific tool's circuit is open
+    pub fn is_circuit_open(&self, tool_name: &str) -> bool {
+        let breakers = self.circuit_breakers.lock();
+        breakers
+            .get(tool_name)
+            .map(|cb| !cb.is_allowed())
+            .unwrap_or(false)
+    }
+
+    /// Reset circuit breaker for a specific tool
+    pub fn reset_circuit_breaker(&self, tool_name: &str) {
+        let mut breakers = self.circuit_breakers.lock();
+        if let Some(cb) = breakers.get_mut(tool_name) {
+            cb.reset();
+        }
+    }
+
+    /// Get the aggregate circuit state across all tracked tools
+    pub fn aggregate_circuit_state(&self) -> CircuitState {
+        let breakers = self.circuit_breakers.lock();
+        if breakers.values().any(|cb| cb.state() == CircuitState::Open) {
+            CircuitState::Open
+        } else if breakers
+            .values()
+            .any(|cb| cb.state() == CircuitState::HalfOpen)
+        {
+            CircuitState::HalfOpen
+        } else {
+            CircuitState::Closed
+        }
     }
 
     // --- Resource tracking ---
@@ -634,12 +701,22 @@ impl AgentHarnessContext {
         self.metadata.record_step();
     }
 
+    pub fn record_tool_call(&mut self, success: bool) {
+        self.metadata.record_tool_call(success);
+    }
+
+    pub fn error_count(&self) -> usize {
+        self.error_history.len()
+    }
+
     pub fn can_continue(&self) -> bool {
         !self.should_stop() && self.metadata.step_count < self.config.max_steps
     }
 
     pub fn remaining_steps(&self) -> usize {
-        self.config.max_steps.saturating_sub(self.metadata.step_count)
+        self.config
+            .max_steps
+            .saturating_sub(self.metadata.step_count)
     }
 
     // --- Wait for pause/resume ---
@@ -656,6 +733,7 @@ impl AgentHarnessContext {
         let checkpoint = Checkpoint::from_context(self, self.metadata.step_count);
         let mut cp = self.checkpoint.write().await;
         *cp = Some(checkpoint.clone());
+        let _ = self.signals.checkpoint();
         checkpoint
     }
 
@@ -683,14 +761,15 @@ impl AgentHarnessContext {
     pub fn reset(&mut self) {
         // Clear error history
         self.error_history.clear();
-        // Reset circuit breaker
-        self.circuit_breaker.reset();
+        // Reset all per-tool circuit breakers
+        self.circuit_breakers.lock().clear();
         // Reset resource tracker
         self.resource_tracker.reset();
         // Reset step count but keep timing
         self.metadata = ExecutionMetadata::new();
         // Ensure not stopped
         self.should_stop.store(false, Ordering::SeqCst);
+        self.is_paused.store(false, Ordering::SeqCst);
     }
 }
 
@@ -708,7 +787,13 @@ pub struct ToolExecResult {
 }
 
 impl ToolExecResult {
-    pub fn success(tool_name: String, args: String, output: String, attempts: u32, duration_ms: u64) -> Self {
+    pub fn success(
+        tool_name: String,
+        args: String,
+        output: String,
+        attempts: u32,
+        duration_ms: u64,
+    ) -> Self {
         Self {
             tool_name,
             args,
@@ -718,7 +803,13 @@ impl ToolExecResult {
         }
     }
 
-    pub fn failure(tool_name: String, args: String, error: HarnessError, attempts: u32, duration_ms: u64) -> Self {
+    pub fn failure(
+        tool_name: String,
+        args: String,
+        error: HarnessError,
+        attempts: u32,
+        duration_ms: u64,
+    ) -> Self {
         Self {
             tool_name,
             args,
@@ -733,9 +824,9 @@ impl ToolExecResult {
     }
 
     pub fn can_retry(&self, config: &RetryConfig) -> bool {
-        self.output.is_err() &&
-        self.output.as_ref().unwrap_err().is_retryable() &&
-        self.attempts < config.max_retries
+        self.output.is_err()
+            && self.output.as_ref().unwrap_err().is_retryable()
+            && self.attempts < config.max_retries
     }
 }
 
@@ -779,9 +870,9 @@ impl Drop for ExecutionGuard<'_> {
     fn drop(&mut self) {
         self.ctx.metadata.update_duration();
         // Track CPU time for this step
-        self.ctx.resource_tracker.add_cpu_time(
-            self.step_start.elapsed().as_millis() as u64
-        );
+        self.ctx
+            .resource_tracker
+            .add_cpu_time(self.step_start.elapsed().as_millis() as u64);
     }
 }
 
@@ -799,7 +890,7 @@ pub fn parse_tool_calls(response: &str) -> Vec<(String, String)> {
             for action in actions {
                 if let (Some(name), Some(args)) = (
                     action.get("name").and_then(|n| n.as_str()),
-                    action.get("args").or(action.get("arguments"))
+                    action.get("args").or(action.get("arguments")),
                 ) {
                     let args_str = match args {
                         serde_json::Value::String(s) => s.clone(),
@@ -813,8 +904,8 @@ pub fn parse_tool_calls(response: &str) -> Vec<(String, String)> {
 
     // Try regex parsing as fallback
     if calls.is_empty() {
-        use regex::Regex;
         use lazy_static::lazy_static;
+        use regex::Regex;
 
         lazy_static! {
             static ref RE: Regex = Regex::new(
@@ -823,8 +914,13 @@ pub fn parse_tool_calls(response: &str) -> Vec<(String, String)> {
         }
 
         for cap in RE.captures_iter(response) {
-            let name = cap.get(1).map(|m| m.as_str().to_string()).unwrap_or_default();
-            let args = cap.get(2).or(cap.get(3))
+            let name = cap
+                .get(1)
+                .map(|m| m.as_str().to_string())
+                .unwrap_or_default();
+            let args = cap
+                .get(2)
+                .or(cap.get(3))
                 .map(|m| m.as_str().to_string())
                 .unwrap_or_default();
             if !name.is_empty() {
@@ -875,6 +971,24 @@ mod tests {
     }
 
     #[test]
+    fn test_circuit_breaker_respects_timeout_window() {
+        let cb = CircuitBreaker::new(CircuitBreakerConfig {
+            failure_threshold: 1,
+            success_threshold: 1,
+            timeout: Duration::from_millis(50),
+        });
+
+        cb.record_failure();
+        assert_eq!(cb.state(), CircuitState::Open);
+        assert!(!cb.is_allowed());
+
+        std::thread::sleep(Duration::from_millis(60));
+
+        assert!(cb.is_allowed());
+        assert_eq!(cb.state(), CircuitState::HalfOpen);
+    }
+
+    #[test]
     fn test_harness_context_lifecycle() {
         let config = HarnessConfig {
             max_steps: 5,
@@ -896,6 +1010,52 @@ mod tests {
         ctx.cancel();
         assert!(ctx.should_stop());
         assert!(!ctx.can_continue());
+    }
+
+    #[test]
+    fn test_per_tool_circuit_breaker() {
+        let config = HarnessConfig {
+            max_steps: 5,
+            ..Default::default()
+        };
+
+        let mut ctx = AgentHarnessContext::new(config);
+
+        // Tool A failures should NOT affect Tool B
+        for _ in 0..3 {
+            ctx.record_error(HarnessError::ToolFailure(
+                "tool_a".to_string(),
+                "error".to_string(),
+            ));
+        }
+
+        // Tool A circuit should be open
+        assert!(ctx.is_circuit_open("tool_a"));
+        assert_eq!(ctx.circuit_breaker_for("tool_a"), CircuitState::Open);
+
+        // Tool B circuit should remain closed (default)
+        assert!(!ctx.is_circuit_open("tool_b"));
+        assert_eq!(ctx.circuit_breaker_for("tool_b"), CircuitState::Closed);
+
+        // Reset tool A
+        ctx.reset_circuit_breaker("tool_a");
+        assert!(!ctx.is_circuit_open("tool_a"));
+    }
+
+    #[test]
+    fn test_aggregate_circuit_state() {
+        let mut ctx = AgentHarnessContext::new(HarnessConfig::default());
+
+        assert_eq!(ctx.aggregate_circuit_state(), CircuitState::Closed);
+
+        for _ in 0..3 {
+            ctx.record_error(HarnessError::ToolFailure(
+                "tool_a".to_string(),
+                "error".to_string(),
+            ));
+        }
+
+        assert_eq!(ctx.aggregate_circuit_state(), CircuitState::Open);
     }
 
     #[test]
@@ -926,7 +1086,7 @@ Action: read {path: "/file.txt"}"#;
             r#"{"query": "test"}"#.to_string(),
             "results".to_string(),
             1,
-            100
+            100,
         );
 
         assert!(result.is_success());

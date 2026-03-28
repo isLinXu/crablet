@@ -7,16 +7,14 @@
 //! - Execution tracking
 //! - Harness integration
 
+use anyhow::Result;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::{RwLock, Semaphore};
-use anyhow::Result;
 use tracing::warn;
 
+use super::harness::{AgentHarnessContext, HarnessError, RetryConfig, ToolExecResult};
 use crate::skills::SkillRegistry;
-use super::harness::{
-    AgentHarnessContext, RetryConfig, ToolExecResult, HarnessError,
-};
 
 /// Tool execution wrapper with harness support
 pub struct HarnessToolExecutor {
@@ -53,11 +51,7 @@ impl HarnessToolExecutor {
     }
 
     /// Execute a tool with retry and timeout support
-    pub async fn execute(
-        &self,
-        tool_name: &str,
-        args: serde_json::Value,
-    ) -> ToolExecResult {
+    pub async fn execute(&self, tool_name: &str, args: serde_json::Value) -> ToolExecResult {
         let start = Instant::now();
         let args_str = serde_json::to_string(&args).unwrap_or_default();
         let mut attempts = 0u32;
@@ -81,6 +75,11 @@ impl HarnessToolExecutor {
             // Execute tool
             match self.execute_once(tool_name, args.clone()).await {
                 Ok(output) => {
+                    if let Some(ref mut harness) = *self.harness.write().await {
+                        harness.record_tool_call(true);
+                        harness.record_tool_success(tool_name);
+                    }
+
                     let duration_ms = start.elapsed().as_millis() as u64;
                     return ToolExecResult::success(
                         tool_name.to_string(),
@@ -92,8 +91,13 @@ impl HarnessToolExecutor {
                 }
                 Err(e) => {
                     let harness_error = self.classify_error(tool_name, e);
-                    let can_retry = harness_error.is_retryable()
-                        && attempts < self.retry_config.max_retries;
+                    let can_retry =
+                        harness_error.is_retryable() && attempts < self.retry_config.max_retries;
+
+                    if let Some(ref mut harness) = *self.harness.write().await {
+                        harness.record_tool_call(false);
+                        harness.record_error(harness_error.clone());
+                    }
 
                     if !can_retry {
                         let duration_ms = start.elapsed().as_millis() as u64;
@@ -106,20 +110,11 @@ impl HarnessToolExecutor {
                         );
                     }
 
-                    // Record error in harness
-                    if let Some(ref mut harness) = *self.harness.write().await {
-                        harness.record_error(harness_error.clone());
-                    }
-
                     // Exponential backoff
                     let delay = self.retry_config.calculate_delay(attempts - 1);
                     warn!(
                         "Tool {} failed (attempt {}/{}), retrying in {:?}: {}",
-                        tool_name,
-                        attempts,
-                        self.retry_config.max_retries,
-                        delay,
-                        harness_error
+                        tool_name, attempts, self.retry_config.max_retries, delay, harness_error
                     );
 
                     tokio::time::sleep(delay).await;
@@ -129,11 +124,7 @@ impl HarnessToolExecutor {
     }
 
     /// Execute tool once without retry
-    async fn execute_once(
-        &self,
-        tool_name: &str,
-        args: serde_json::Value,
-    ) -> Result<String> {
+    async fn execute_once(&self, tool_name: &str, args: serde_json::Value) -> Result<String> {
         let registry = self.registry.read().await;
         registry.execute(tool_name, args).await
     }
