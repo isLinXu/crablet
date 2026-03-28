@@ -96,7 +96,12 @@ impl ObservableReActEngine {
 
             // 1. Dynamic context construction
             let mut prompt_context = current_context.clone();
-            if step > 0 {
+            
+            // Add instructions to prevent tool hallucination for simple queries
+            if step == 0 {
+                prompt_context.push(Message::new("system", 
+                    "CRITICAL INSTRUCTION: If the user's request is a general conversation, creative writing (e.g. write a poem/story), or a simple question that does NOT strictly require using the tools below, DO NOT generate a tool call. Respond directly to the user."));
+            } else {
                 prompt_context.push(Message::new("system",
                     "Instruction: You have received tool outputs. Use them to answer directly. \
                     Do NOT repeat the same tool call with similar prompts if it hasn't provided new information."));

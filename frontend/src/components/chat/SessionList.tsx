@@ -2,9 +2,10 @@ import React, { useState } from 'react';
 import { useChatStore } from '../../store/chatStore';
 import { Button } from '../ui/Button';
 import { MessageSquare, Plus, Trash2, Pencil, Download, CheckSquare, Square, ChevronDown, ChevronUp } from 'lucide-react';
-import { cn } from '../ui/Button';
+import { cn } from '../ui/cn';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
 import { format } from 'date-fns';
+import type { ContentPart, Message } from '@/types/domain';
 
 interface SessionListProps {
   className?: string;
@@ -13,13 +14,14 @@ interface SessionListProps {
 
 const sanitizeFileName = (name: string) => name.replace(/[\\/:*?"<>|]/g, '-').trim() || 'chat';
 
-const contentToText = (content: any) => {
+const contentToText = (content: unknown) => {
   if (typeof content === 'string') return content;
   if (!Array.isArray(content)) return String(content ?? '');
   return content
     .map((part) => {
-      if (part?.type === 'text') return part.text || '';
-      if (part?.type === 'image_url') return `![image](${part.image_url?.url || ''})`;
+      const contentPart = part as ContentPart;
+      if (contentPart?.type === 'text') return contentPart.text || '';
+      if (contentPart?.type === 'image_url') return `![image](${contentPart.image_url?.url || ''})`;
       return '';
     })
     .filter(Boolean)
@@ -34,7 +36,10 @@ const roleLabel = (role: string) => {
   return role;
 };
 
-const buildSessionMarkdown = (session: { id: string; title: string; created_at: string; updated_at: string }, messages: any[]) => {
+const buildSessionMarkdown = (
+  session: { id: string; title: string; created_at: string; updated_at: string },
+  messages: Message[]
+) => {
   const header = [
     `# ${session.title || 'Untitled Chat'}`,
     '',

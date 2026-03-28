@@ -36,4 +36,9 @@ describe('getApiBaseUrl', () => {
     localStorage.setItem(LOCAL_STORAGE_KEYS.API_BASE_URL, 'http://api');
     expect(getApiBaseUrl()).toBe(getExpectedFallback());
   });
+
+  it('migrates stale 18790 gateway url to the current default gateway', () => {
+    localStorage.setItem(LOCAL_STORAGE_KEYS.API_BASE_URL, 'http://localhost:18790/api');
+    expect(getApiBaseUrl()).toBe(getExpectedFallback());
+  });
 });

@@ -4,7 +4,7 @@
  */
 
 import type { ExtendedMessage } from '@/store/chatStore';
-import { useModelStore, type ModelProvider } from '@/store/modelStore';
+import { useModelStore } from '@/store/modelStore';
 
 // Re-define types to avoid import issues
 export interface WorkflowNode {
@@ -133,11 +133,11 @@ function extractNodeConfig(
   content: string, 
   type: string, 
   sessionModelInfo?: { model?: string; provider?: string; vendor?: string }
-): Record<string, any> {
-  const config: Record<string, any> = {};
+): Record<string, unknown> {
+  const config: Record<string, unknown> = {};
   
   switch (type) {
-    case 'code':
+    case 'code': {
       // Extract code blocks
       const codeMatch = content.match(/```(\w+)?\n([\s\S]*?)```/);
       if (codeMatch) {
@@ -148,10 +148,11 @@ function extractNodeConfig(
         config.code = content;
       }
       break;
+    }
       
-    case 'http':
+    case 'http': {
       // Extract URL
-      const urlMatch = content.match(/https?:\/\/[^\s\)]+/);
+      const urlMatch = content.match(/https?:\/\/[^\s)]+/);
       if (urlMatch) {
         config.url = urlMatch[0];
       }
@@ -161,19 +162,21 @@ function extractNodeConfig(
       else if (/\bPUT\b/i.test(content)) config.method = 'PUT';
       else if (/\bDELETE\b/i.test(content)) config.method = 'DELETE';
       break;
+    }
       
     case 'condition':
       config.condition = content.slice(0, 200);
       break;
       
-    case 'loop':
+    case 'loop': {
       const loopMatch = content.match(/\b(\d+)\s*times?\b/i) || content.match(/\bfor\s+(\d+)\b/i);
       if (loopMatch) {
-        config.iterations = parseInt(loopMatch[1]);
+        config.iterations = parseInt(loopMatch[1], 10);
       }
       break;
+    }
       
-    case 'knowledge':
+    case 'knowledge': {
       const queryMatch = content.match(/["']([^"']+)["']/);
       if (queryMatch) {
         config.query = queryMatch[1];
@@ -181,18 +184,20 @@ function extractNodeConfig(
         config.query = content.slice(0, 100);
       }
       break;
+    }
       
     case 'template':
       config.template = content;
       break;
       
-    case 'variable':
+    case 'variable': {
       const varMatch = content.match(/\b(\w+)\s*=\s*["']([^"']+)["']/);
       if (varMatch) {
         config.variableName = varMatch[1];
         config.variableValue = varMatch[2];
       }
       break;
+    }
       
     case 'agent':
       config.role = 'assistant';
@@ -243,7 +248,6 @@ export function convertChatToCanvas(
   const {
     workflowName = 'Chat Workflow',
     includeSystemMessages = false,
-    groupConsecutiveMessages = true,
     sessionModel,
     sessionProvider,
     sessionVendor,
@@ -257,7 +261,7 @@ export function convertChatToCanvas(
   } : undefined;
 
   // Filter messages
-  let filteredMessages = messages.filter(m => 
+  const filteredMessages = messages.filter(m => 
     m.role === 'user' || m.role === 'assistant' || (includeSystemMessages && m.role === 'system')
   );
 
@@ -293,12 +297,7 @@ export function convertChatToCanvas(
     if (!content.trim()) return;
 
     // Determine node type based on content and role
-    let nodeType = 'llm';
-    if (message.role === 'user') {
-      nodeType = detectNodeType(content);
-    } else if (message.role === 'assistant') {
-      nodeType = detectNodeType(content);
-    }
+    const nodeType = detectNodeType(content);
 
     // Create node
     const nodeId = `node-${index}`;

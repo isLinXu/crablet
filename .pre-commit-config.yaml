@@ -1,0 +1,81 @@
+# Crablet Pre-commit Hooks Configuration
+# Install: pip install pre-commit && pre-commit install
+# Run manually: pre-commit run --all-files
+
+repos:
+  # Rust formatting and linting
+  - repo: local
+    hooks:
+      - id: rust-fmt
+        name: Rust fmt
+        entry: cargo fmt -- --check
+        language: system
+        files: \.rs$
+        pass_filenames: false
+        always_run: true
+
+      - id: rust-clippy
+        name: Rust clippy
+        entry: cargo clippy -- -D warnings
+        language: system
+        files: \.rs$
+        pass_filenames: false
+        always_run: true
+
+      - id: rust-check
+        name: Rust check
+        entry: cargo check --all-features
+        language: system
+        files: \.rs$
+        pass_filenames: false
+        always_run: true
+
+  # TypeScript/JavaScript linting (frontend)
+  - repo: local
+    hooks:
+      - id: frontend-lint
+        name: Frontend lint
+        entry: bash -c "cd frontend && npm run lint"
+        language: system
+        files: ^frontend/.*\.(ts|tsx|js|jsx)$
+        pass_filenames: false
+
+      - id: frontend-typecheck
+        name: Frontend type check
+        entry: bash -c "cd frontend && npm run typecheck"
+        language: system
+        files: ^frontend/.*\.(ts|tsx)$
+        pass_filenames: false
+
+  # General file checks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: ^(frontend/dist/|crablet/target/)
+      - id: end-of-file-fixer
+        exclude: ^(frontend/dist/|crablet/target/)
+      - id: check-yaml
+        exclude: ^(frontend/|crablet/)
+      - id: check-json
+        exclude: ^(frontend/dist/|crablet/target/)
+      - id: check-added-large-files
+        args: ['--maxkb=1000']
+      - id: check-merge-conflict
+      - id: detect-private-key
+
+  # Security checks
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.4.0
+    hooks:
+      - id: detect-secrets
+        args: ['--baseline', '.secrets.baseline']
+        exclude: ^(frontend/package-lock\.json|crablet/Cargo\.lock)$
+
+  # Markdown linting
+  - repo: https://github.com/igorshubovych/markdownlint-cli
+    rev: v0.39.0
+    hooks:
+      - id: markdownlint
+        args: ['--fix']
+        exclude: ^(docs/|\.github/)

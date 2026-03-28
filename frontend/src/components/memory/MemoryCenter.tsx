@@ -5,6 +5,14 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import toast from 'react-hot-toast';
+import type { ContentPart } from '@/types/domain';
+
+const nowSnapshot = Date.now();
+
+const getMessageText = (content: string | ContentPart[]) =>
+  typeof content === 'string'
+    ? content
+    : content.map((part) => (part.type === 'text' ? part.text : '')).join(' ');
 
 export const MemoryCenter: React.FC = () => {
   const sessions = useChatStore((state) => state.sessions);
@@ -20,13 +28,12 @@ export const MemoryCenter: React.FC = () => {
 
   const filteredSessions = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const now = Date.now();
     const rangeDays = range === 'all' ? null : Number(range.replace('d', ''));
     return sessions.filter((s) => {
       if (q && !s.title.toLowerCase().includes(q)) return false;
       if (rangeDays == null) return true;
       const t = new Date(s.updated_at || s.created_at).getTime();
-      return t >= now - rangeDays * 24 * 60 * 60 * 1000;
+      return t >= nowSnapshot - rangeDays * 24 * 60 * 60 * 1000;
     });
   }, [sessions, query, range]);
 
@@ -65,14 +72,14 @@ export const MemoryCenter: React.FC = () => {
       }
       const filteredMessages = exportIncludeContent
         ? messages
-        : messages.map((m: any) => ({ ...m, content: '' }));
-      const pruned = filteredMessages.map((m: any) => {
-        const next: any = { ...m };
+        : messages.map((m) => ({ ...m, content: '' }));
+      const pruned = filteredMessages.map((m) => {
+        const next = { ...m };
         if (!exportIncludeTrace) delete next.traceSteps;
         if (!exportIncludeSwarm) delete next.swarmEvents;
         return next;
       });
-      return { ...s, messages: pruned };
+        return { ...s, messages: pruned };
     });
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
     const url = URL.createObjectURL(blob);
@@ -101,7 +108,7 @@ export const MemoryCenter: React.FC = () => {
       msgs.forEach((m, idx) => {
         const content = typeof m.content === 'string'
           ? m.content
-          : (m.content || []).map((p: any) => (p?.type === 'text' ? p.text : '')).join(' ');
+          : getMessageText(m.content || []);
         lines.push(`### ${idx + 1}. ${m.role}`);
         lines.push(content || '(empty)');
         lines.push('');
@@ -117,8 +124,7 @@ export const MemoryCenter: React.FC = () => {
   };
 
   const cleanupPreview = useMemo(() => {
-    const now = Date.now();
-    const threshold = now - keepDays * 24 * 60 * 60 * 1000;
+    const threshold = nowSnapshot - keepDays * 24 * 60 * 60 * 1000;
     return sessions.filter((s) => new Date(s.updated_at || s.created_at).getTime() < threshold);
   }, [sessions, keepDays]);
 
@@ -152,7 +158,7 @@ export const MemoryCenter: React.FC = () => {
         <CardContent className="space-y-3">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
             <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="按会话标题搜索" />
-            <select value={range} onChange={(e) => setRange(e.target.value as any)} className="h-10 rounded-md border border-gray-300 bg-white px-3 text-sm dark:bg-gray-800 dark:border-gray-700">
+            <select value={range} onChange={(e) => setRange(e.target.value as 'all' | '7d' | '30d' | '90d')} className="h-10 rounded-md border border-gray-300 bg-white px-3 text-sm dark:bg-gray-800 dark:border-gray-700">
               <option value="all">全部时间</option>
               <option value="7d">近 7 天</option>
               <option value="30d">近 30 天</option>

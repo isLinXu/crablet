@@ -76,7 +76,7 @@ pub async fn run(router: Arc<CognitiveRouter>, port: u16, auth_config: Option<(S
         .route("/swarm/tasks/:id/nodes", post(swarm_add_task_handler))
         .route("/swarm/tasks/:id/nodes/:node_id", put(swarm_update_node_handler))
         .route("/swarm/tasks/:id/nodes/:node_id/retry", post(swarm_retry_node_handler))
-        .layer(axum::middleware::from_fn(auth_middleware));
+        .layer(axum::middleware::from_fn_with_state(auth_state.clone(), auth_middleware));
 
     let auth_router = Router::new()
         .route("/login", get(login_handler))

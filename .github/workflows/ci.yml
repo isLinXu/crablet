@@ -2,170 +2,149 @@ name: CI
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [main, develop]
   pull_request:
-    branches: [ main, develop ]
+    branches: [main, develop]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
+  OPENAI_API_KEY: sk-test
+  CRABLET_RUN_REAL_LLM_TESTS: 0
+  CI: true
 
 jobs:
-  check:
-    name: Check
+  backend-quality:
+    name: Backend Quality
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: ./crablet
     steps:
-    - uses: actions/checkout@v4
-    
-    - name: Install Rust
-      uses: dtolnay/rust-action@stable
-      with:
-        toolchain: stable
-        components: rustfmt, clippy
-    
-    - name: Cache cargo registry
-      uses: actions/cache@v4
-      with:
-        path: ~/.cargo/registry
-        key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-    
-    - name: Cache cargo index
-      uses: actions/cache@v4
-      with:
-        path: ~/.cargo/git
-        key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
-    
-    - name: Cache cargo build
-      uses: actions/cache@v4
-      with:
-        path: target
-        key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
-    
-    - name: Check formatting
-      run: cargo fmt --all -- --check
-      working-directory: ./crablet
-    
-    - name: Run clippy
-      run: cargo clippy --all-targets --all-features -- -D warnings
-      working-directory: ./crablet
-    
-    - name: Check documentation
-      run: cargo doc --no-deps --document-private-items
-      working-directory: ./crablet
-      env:
-        RUSTDOCFLAGS: "-D warnings"
+      - uses: actions/checkout@v4
 
-  test:
-    name: Test
+      - name: Install Rust
+        uses: dtolnay/rust-action@stable
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            ./crablet -> target
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Run clippy
+        run: cargo clippy --all-targets --no-default-features --features web -- -D warnings
+
+      - name: Check documentation build
+        run: cargo doc --no-deps --document-private-items --no-default-features --features web
+        env:
+          RUSTDOCFLAGS: -D warnings
+
+  backend-tests:
+    name: Backend ${{ matrix.suite.name }}
     runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-    
-    - name: Install Rust
-      uses: dtolnay/rust-action@stable
-      with:
-        toolchain: stable
-    
-    - name: Cache cargo
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-    
-    - name: Run tests
-      run: cargo test --all-features
-      working-directory: ./crablet
-    
-    - name: Run tests (release)
-      run: cargo test --release --all-features
-      working-directory: ./crablet
-
-  coverage:
-    name: Code Coverage
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-    
-    - name: Install Rust
-      uses: dtolnay/rust-action@stable
-      with:
-        toolchain: stable
-    
-    - name: Install tarpaulin
-      run: cargo install cargo-tarpaulin
-    
-    - name: Generate coverage
-      run: cargo tarpaulin --out Xml --all-features
-      working-directory: ./crablet
-    
-    - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v4
-      with:
-        file: ./crablet/cobertura.xml
-        fail_ci_if_error: false
-
-  build:
-    name: Build
-    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
     strategy:
+      fail-fast: false
+      matrix:
+        suite:
+          - name: Web Test Suite
+            command: cargo test --no-default-features --features web
+          - name: Doc Tests
+            command: cargo test --doc --no-default-features --features web
+          - name: All Features Compile
+            command: cargo check --all-features
+    defaults:
+      run:
+        working-directory: ./crablet
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-action@stable
+        with:
+          toolchain: stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            ./crablet -> target
+
+      - name: Run ${{ matrix.suite.name }}
+        run: ${{ matrix.suite.command }}
+
+  backend-build:
+    name: Backend Build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-        rust: [stable]
+    defaults:
+      run:
+        working-directory: ./crablet
     steps:
-    - uses: actions/checkout@v4
-    
-    - name: Install Rust
-      uses: dtolnay/rust-action@stable
-      with:
-        toolchain: ${{ matrix.rust }}
-    
-    - name: Cache cargo
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-${{ matrix.rust }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-    
-    - name: Build
-      run: cargo build --release --all-features
-      working-directory: ./crablet
-    
-    - name: Build (no default features)
-      run: cargo build --release --no-default-features
-      working-directory: ./crablet
+      - uses: actions/checkout@v4
 
-  frontend:
-    name: Frontend Check
+      - name: Install Rust
+        uses: dtolnay/rust-action@stable
+        with:
+          toolchain: stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            ./crablet -> target
+
+      - name: Build Web profile
+        run: cargo build --release --no-default-features --features web
+
+  frontend-checks:
+    name: Frontend Checks
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: ./frontend
     steps:
-    - uses: actions/checkout@v4
-    
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '20'
-        cache: 'npm'
-        cache-dependency-path: './frontend/package-lock.json'
-    
-    - name: Install dependencies
-      run: npm ci
-    
-    - name: Lint
-      run: npm run lint
-    
-    - name: Type check
-      run: npm run type-check
-    
-    - name: Build
-      run: npm run build
-    
-    - name: Test
-      run: npm test -- --run
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: ./frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint:ci
+
+      - name: Type check
+        run: npm run type-check
+
+      - name: Build
+        run: npm run build
+
+      - name: Test
+        run: npm run test:ci

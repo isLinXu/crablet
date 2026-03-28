@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useWebSocket } from '../../hooks/useWebSocket';
+import { getWsUrl } from '@/utils/constants';
 import './TraceViewer.css';
 
 interface AgentSpan {
@@ -7,7 +8,7 @@ interface AgentSpan {
   timestamp: number;
   content?: string;
   tool?: string;
-  params?: any;
+  params?: unknown;
   result?: string;
   duration_ms?: number;
   success?: boolean;
@@ -17,6 +18,15 @@ interface AgentSpan {
   selected?: string;
   reasoning?: string;
   error?: string;
+}
+
+interface TraceEventPayload {
+  event_type?: string;
+  execution_id?: string;
+  workflow_id?: string;
+  timestamp?: number;
+  span?: AgentSpan;
+  success?: boolean;
 }
 
 interface TraceSession {
@@ -41,17 +51,13 @@ export const TraceViewer: React.FC<TraceViewerProps> = ({
   const [isPaused, setIsPaused] = useState(false);
   const [filter, setFilter] = useState<string>('all');
   const scrollRef = useRef<HTMLDivElement>(null);
-  
-  const { lastMessage, sendMessage, connectionStatus } = useWebSocket(
-    `ws://localhost:8080/ws/observability${executionId ? `?execution_id=${executionId}` : ''}`
-  );
 
-  useEffect(() => {
-    if (lastMessage) {
-      const event = JSON.parse(lastMessage.data);
-      
-      switch (event.event_type) {
-        case 'session_started':
+  const handleMessage = useCallback((message: MessageEvent) => {
+    const event = JSON.parse(message.data) as TraceEventPayload;
+
+    switch (event.event_type) {
+      case 'session_started':
+        if (event.execution_id && event.workflow_id && typeof event.timestamp === 'number') {
           setSession({
             execution_id: event.execution_id,
             workflow_id: event.workflow_id,
@@ -59,31 +65,42 @@ export const TraceViewer: React.FC<TraceViewerProps> = ({
             status: 'running'
           });
           setSpans([]);
-          break;
-          
-        case 'span_recorded':
-          setSpans(prev => [...prev, event.span]);
-          break;
-          
-        case 'execution_paused':
-          setIsPaused(true);
-          setSession(prev => prev ? { ...prev, status: 'paused' } : null);
-          break;
-          
-        case 'execution_resumed':
-          setIsPaused(false);
-          setSession(prev => prev ? { ...prev, status: 'running' } : null);
-          break;
-          
-        case 'session_completed':
-          setSession(prev => prev ? { 
-            ...prev, 
-            status: event.success ? 'completed' : 'failed' 
-          } : null);
-          break;
-      }
+        }
+        break;
+
+      case 'span_recorded':
+        if (event.span) {
+          setSpans((prev) => [...prev, event.span as AgentSpan]);
+        }
+        break;
+
+      case 'execution_paused':
+        setIsPaused(true);
+        setSession((prev) => (prev ? { ...prev, status: 'paused' } : null));
+        break;
+
+      case 'execution_resumed':
+        setIsPaused(false);
+        setSession((prev) => (prev ? { ...prev, status: 'running' } : null));
+        break;
+
+      case 'session_completed':
+        setSession((prev) =>
+          prev
+            ? {
+                ...prev,
+                status: event.success ? 'completed' : 'failed',
+              }
+            : null
+        );
+        break;
     }
-  }, [lastMessage]);
+  }, []);
+
+  const { sendMessage, connectionStatus } = useWebSocket(
+    getWsUrl('/ws/observability') + (executionId ? `?execution_id=${executionId}` : ''),
+    { onMessage: handleMessage }
+  );
 
   useEffect(() => {
     if (autoScroll && scrollRef.current) {
@@ -96,7 +113,7 @@ export const TraceViewer: React.FC<TraceViewerProps> = ({
     return span.type === filter;
   });
 
-  const handleResume = (action: string, data?: any) => {
+  const handleResume = (action: string, data?: unknown) => {
     sendMessage(JSON.stringify({
       type: 'resume_execution',
       execution_id: executionId,

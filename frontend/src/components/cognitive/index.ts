@@ -53,3 +53,10 @@ export type {
 } from './ThinkingShare';
 
 export { CognitiveEnhancementPanel } from './CognitiveEnhancementPanel';
+
+export { CognitiveLayerVisualizer } from './CognitiveLayerVisualizer';
+export type {
+  CognitiveLayer,
+  CognitiveRouteDecision,
+  CognitiveLayerStatus
+} from './CognitiveLayerVisualizer';

@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { Message } from '@/types/domain';
+import type { ContentPart, Message } from '@/types/domain';
 import { inferCognitiveLayer, type CognitiveLayer } from '@/utils/cognitive';
 
 export interface TraceStep {
@@ -80,7 +80,7 @@ const inferSessionTitle = (msgs: ExtendedMessage[]) => {
     typeof userMsg.content === 'string'
       ? userMsg.content
       : userMsg.content
-          .map((p: any) => (p?.type === 'text' ? p.text : ''))
+          .map((p: ContentPart) => (p.type === 'text' ? p.text : ''))
           .join(' ')
           .trim();
   if (!text) return 'New Chat';
@@ -343,18 +343,21 @@ export const useChatStore = create<ChatState>()(
     }),
     {
       name: 'chat-storage',
-      migrate: (persistedState: any) => {
+      migrate: (persistedState: unknown) => {
         if (!persistedState) return persistedState;
-        const messages: ExtendedMessage[] = Array.isArray(persistedState.messages) ? persistedState.messages : [];
-        const sessionId: string | null = persistedState.sessionId ?? null;
-        const sessions: ChatSessionItem[] = Array.isArray(persistedState.sessions) ? persistedState.sessions : [];
+        const parsed = typeof persistedState === 'object' && persistedState !== null
+          ? persistedState as Partial<ChatState>
+          : {};
+        const messages: ExtendedMessage[] = Array.isArray(parsed.messages) ? parsed.messages : [];
+        const sessionId: string | null = parsed.sessionId ?? null;
+        const sessions: ChatSessionItem[] = Array.isArray(parsed.sessions) ? parsed.sessions : [];
         const sessionMessages: Record<string, ExtendedMessage[]> =
-          persistedState.sessionMessages && typeof persistedState.sessionMessages === 'object'
-            ? persistedState.sessionMessages
+          parsed.sessionMessages && typeof parsed.sessionMessages === 'object'
+            ? parsed.sessionMessages
             : {};
         const legacy = materializeUnsavedSession(sessionId, messages, sessions, sessionMessages);
         return {
-          ...persistedState,
+          ...parsed,
           sessionId: legacy.sessionId,
           sessions: legacy.sessions,
           sessionMessages: legacy.sessionMessages

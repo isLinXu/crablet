@@ -1,4 +1,4 @@
-import { useCallback, useRef } from 'react';
+import { useCallback } from 'react';
 import { useChatStore } from '../store/chatStore';
 import type { CitationItem } from '../store/chatStore';
 import { LOCAL_STORAGE_KEYS, getApiBaseUrl } from '../utils/constants';
@@ -7,15 +7,23 @@ import { useModelStore } from '@/store/modelStore';
 type StreamEvent = {
   type: string;
   content?: string | null;
-  payload?: any;
+  payload?: {
+    step?: {
+      thought?: unknown;
+      action?: unknown;
+      action_input?: unknown;
+      observation?: unknown;
+    };
+    layer?: unknown;
+  };
   session_id?: string;
 };
 
 // 节流函数：限制函数执行频率
-function throttle<T extends (...args: any[]) => void>(func: T, limit: number): T {
-  let inThrottle: boolean;
-  let lastArgs: Parameters<T> | null = null;
-  return ((...args: Parameters<T>) => {
+function throttle<TArgs extends unknown[]>(func: (...args: TArgs) => void, limit: number) {
+  let inThrottle = false;
+  let lastArgs: TArgs | null = null;
+  return (...args: TArgs) => {
     if (!inThrottle) {
       func(...args);
       inThrottle = true;
@@ -29,8 +37,11 @@ function throttle<T extends (...args: any[]) => void>(func: T, limit: number): T
     } else {
       lastArgs = args;
     }
-  }) as T;
+  };
 }
+
+const getErrorMessage = (error: unknown) =>
+  error instanceof Error ? error.message : '流式发送失败，请稍后重试';
 
 const buildHeaders = () => {
   const token = localStorage.getItem(LOCAL_STORAGE_KEYS.AUTH_TOKEN);
@@ -143,7 +154,7 @@ export function useStreamingChat() {
       }
       
       let response: Response | null = null;
-      let lastError: any = null;
+      let lastError: Error | null = null;
       const candidatesList = [...new Set(candidates)];
       
       for (const url of candidatesList) {
@@ -175,7 +186,7 @@ export function useStreamingChat() {
           break;
         } catch (e) {
           console.warn(`[Chat] Request to ${url} failed with network error`, e);
-          lastError = e;
+          lastError = e instanceof Error ? e : new Error('Network Error');
           // Continue to next candidate on network error (e.g. CORS failure)
         }
       }
@@ -261,8 +272,8 @@ export function useStreamingChat() {
       // 不再强制设置为 system2，而是保持从流中接收到的认知层
       // 如果从未收到认知层事件，则基于输入内容推断
       // 注意：实际的认知层应该在流处理过程中已经被设置
-    } catch (error: any) {
-      updateLastMessage(error?.message || '流式发送失败，请稍后重试');
+    } catch (error: unknown) {
+      updateLastMessage(getErrorMessage(error));
     } finally {
       setThinking(false);
     }

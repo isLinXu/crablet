@@ -4,22 +4,16 @@ use axum::{
     http::{request::Parts, StatusCode},
     middleware::Next,
     response::Response,
+    extract::State,
 };
 use axum_extra::extract::cookie::CookieJar;
 use jsonwebtoken::{decode, DecodingKey, Validation};
-use serde::{Deserialize, Serialize};
-use crate::auth::UserContext;
-
-#[derive(Debug, Serialize, Deserialize)]
-struct Claims {
-    sub: String, // User ID
-    exp: usize,
-    username: Option<String>,
-    roles: Option<Vec<String>>,
-    tenant_id: Option<String>,
-}
+use crate::auth::{JwtClaims, UserContext};
+use crate::auth::handlers::AuthState;
+use std::sync::Arc;
 
 pub async fn auth_middleware(
+    State(auth_state): State<Arc<AuthState>>,
     cookie_jar: CookieJar,
     mut req: axum::http::Request<axum::body::Body>,
     next: Next,
@@ -36,26 +30,9 @@ pub async fn auth_middleware(
         });
 
     let context = if let Some(token) = token {
-        // Validate token
-        // Use secret from environment variable, otherwise fallback to "secret"
-        // But in production, we should enforce a secure secret.
-        let secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| {
-            if cfg!(debug_assertions) {
-                tracing::warn!("JWT_SECRET not set, using default 'secret' for development.");
-                "secret".to_string()
-            } else {
-                tracing::error!("JWT_SECRET not set in production! Generating random secret.");
-                // Generate a random secret to prevent crashing, but invalidating all existing tokens
-                use rand::Rng;
-                use base64::prelude::*;
-                let random_bytes: Vec<u8> = (0..32).map(|_| rand::thread_rng().gen()).collect();
-                BASE64_STANDARD.encode(&random_bytes)
-            }
-        });
-        
-        match decode::<Claims>(
+        match decode::<JwtClaims>(
             &token,
-            &DecodingKey::from_secret(secret.as_bytes()),
+            &DecodingKey::from_secret(auth_state.jwt_secret.as_bytes()),
             &Validation::default(),
         ) {
             Ok(token_data) => {

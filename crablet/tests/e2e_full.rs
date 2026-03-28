@@ -1,16 +1,21 @@
 use anyhow::Result;
 use crablet::config::Config;
-#[allow(unused_imports)]
-use crablet::channels::cli;
+use crablet::gateway::{CrabletGateway, types::GatewayConfig};
+use axum::extract::State;
 use std::sync::Arc;
-use tokio::time::Duration;
+use tempfile::TempDir;
 
 #[tokio::test]
 async fn test_e2e_full_flow() -> Result<()> {
+    std::env::set_var("OPENAI_API_KEY", "sk-test");
+
+    let temp_dir = TempDir::new()?;
+    let skills_dir = temp_dir.path().join("skills");
+
     // 1. Initialize Configuration
     let mut config = Config::default();
     config.database_url = "sqlite::memory:".to_string(); // Use in-memory DB for tests
-    config.skills_dir = std::path::PathBuf::from("tests/fixtures/skills");
+    config.skills_dir = skills_dir.clone();
     config.model_name = "gpt-4o-mini".to_string();
     config.log_level = "debug".to_string();
     config.mcp_servers = std::collections::HashMap::new();
@@ -38,7 +43,6 @@ async fn test_e2e_full_flow() -> Result<()> {
     config.system2_threshold = 0.3;
     config.system3_threshold = 0.7;
 
-    // Ensure skills dir exists
     tokio::fs::create_dir_all(&config.skills_dir).await?;
 
     // 2. Initialize App Context
@@ -57,43 +61,33 @@ async fn test_e2e_full_flow() -> Result<()> {
         "json".to_string()
     ).await?;
     
-    // 4. Test Web Server & Dashboard API
+    // 4. Test Gateway handlers without binding a real socket
     println!("--- Testing Web API ---");
-    let router = app.router.clone();
-    let port = config.port;
-    
-    // Spawn server in background
-    let server_handle = tokio::spawn(async move {
-        if let Err(e) = crablet::channels::web::run(router, port, None).await {
-            eprintln!("Server error: {}", e);
-        }
-    });
-    
-    // Wait for server to start
-    tokio::time::sleep(Duration::from_secs(2)).await;
-    
-    // Call Dashboard API
-    let client = reqwest::Client::new();
-    let resp = client.get(format!("http://localhost:{}/api/dashboard", port))
-        .send()
-        .await?;
-        
-    assert_eq!(resp.status(), 200);
-    let json: serde_json::Value = resp.json().await?;
+    let cancel_token = tokio_util::sync::CancellationToken::new();
+    let gateway = Arc::new(CrabletGateway::new(
+        GatewayConfig {
+            host: "127.0.0.1".to_string(),
+            port: config.port,
+            auth_mode: "off".to_string(),
+        },
+        app.router.clone(),
+        cancel_token.clone(),
+    ).await?);
+
+    let json = crablet::gateway::web_handlers::get_dashboard_stats(State(gateway.clone()))
+        .await
+        .0;
     println!("Dashboard Response: {}", json);
     
-    assert_eq!(json["status"], "success");
+    assert_eq!(json["status"], "healthy");
     assert!(json["skills_count"].is_number());
 
     // 5. Test Knowledge API (Empty initially)
-    let resp = client.get(format!("http://localhost:{}/api/knowledge", port))
-        .send()
-        .await?;
-    assert_eq!(resp.status(), 200);
-    
-    // Cleanup
-    server_handle.abort();
-    tokio::fs::remove_dir_all(&config.skills_dir).await?;
+    let docs = crablet::gateway::web_handlers::list_documents(State(gateway))
+        .await
+        .0;
+    assert_eq!(docs["status"], "success");
+    assert!(docs["documents"].is_array());
     
     Ok(())
 }

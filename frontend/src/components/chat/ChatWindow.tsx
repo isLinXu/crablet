@@ -1,16 +1,15 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { useChatStore } from '../../store/chatStore';
 import type { ExtendedMessage } from '../../store/chatStore';
-import { useWebSocket } from '../../hooks/useWebSocket';
 import { useStreamingChat } from '../../hooks/useStreamingChat';
 import { useKeyboard } from '../../hooks/useKeyboard';
-import { Send, Bot, Loader2, StopCircle, History, X, PlusCircle, Upload, Workflow as WorkflowIcon, Download, Upload as UploadIcon, Settings, BookOpen, PenLine } from 'lucide-react';
+import { Send, Bot, StopCircle, History, X, PlusCircle, Upload, Workflow as WorkflowIcon, Download, Upload as UploadIcon, Settings, BookOpen, PenLine } from 'lucide-react';
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 import { Button } from '../ui/Button';
 import { MessageBubble } from './MessageBubble';
 import { SessionList } from './SessionList';
 import { SkillSlots } from './SkillSlots';
-import { CrabEmptyState, CrabThinking } from '../ui/CrabElements';
+import { CrabEmptyState } from '../ui/CrabElements';
 import clsx from 'clsx';
 import { cognitiveLayerLabel, inferCognitiveLayer, type CognitiveLayer } from '@/utils/cognitive';
 import { useModelStore } from '@/store/modelStore';
@@ -21,13 +20,9 @@ import { archiveIndexService } from '@/services/archiveIndexService';
 import toast from 'react-hot-toast';
 import { LOCAL_STORAGE_KEYS } from '@/utils/constants';
 import { convertChatToCanvas, downloadWorkflow, readWorkflowFromFile } from '@/utils/chatToCanvas';
-import type { Workflow } from '@/utils/chatToCanvas';
 import { useNavigate } from 'react-router-dom';
 import { useAgentThinking } from '@/hooks/useAgentThinking';
-import type { ThinkingProcess } from './EnhancedThinkingVisualization';
-import { EnhancedThinkingVisualization } from './EnhancedThinkingVisualization';
-import type { InterventionRequest } from '../cognitive/ThinkingIntervention';
-import type { Suggestion } from '../cognitive/SmartSuggestions';
+import type { AgentParadigm } from './EnhancedThinkingVisualization';
 import { RagConfigPanel, type RagConfig } from '../rag/RagConfigPanel';
 
 interface PendingAttachment {
@@ -42,8 +37,11 @@ interface PendingAttachment {
 interface RetrievalHit {
   content: string;
   score: number;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
+
+const getRetrievalSource = (hit: RetrievalHit) =>
+  String(hit.metadata?.source ?? hit.metadata?.source_trace ?? 'unknown');
 
 export const ChatWindow = () => {
   const { 
@@ -58,7 +56,6 @@ export const ChatWindow = () => {
     editMessage,
     setDraftMode
   } = useChatStore();
-  const { systemLogs = [] } = useWebSocket('ws://localhost:8080/ws/logs') as any;
   const { sendMessage } = useStreamingChat();
   const [input, setInput] = useState('');
   const [showMobileHistory, setShowMobileHistory] = useState(false);
@@ -177,7 +174,7 @@ export const ChatWindow = () => {
     await sendMessage(
       finalPrompt,
       picked.map((r) => ({
-        source: r.metadata?.source || r.metadata?.source_trace || 'unknown',
+        source: getRetrievalSource(r),
         score: Number(r.score || 0),
         snippet: String(r.content || '').slice(0, 240),
       }))
@@ -276,21 +273,29 @@ export const ChatWindow = () => {
   }, [messages.length]);
 
   const inferredLayer = (() => {
-    for (let i = systemLogs.length - 1; i >= 0; i -= 1) {
-      const e = systemLogs[i] as any;
-      if (e?.kind === 'cognitive_layer' && e?.layer) return e.layer;
-      const layer = inferCognitiveLayer({ text: e?.thought || e?.message || e?.output || e?.args || '' });
-      if (layer !== 'unknown') return layer;
+    const lastAssistant = [...messages].reverse().find(
+      (message): message is ExtendedMessage =>
+        message.role === 'assistant' && message.cognitiveLayer !== undefined
+    );
+    if (lastAssistant?.cognitiveLayer) {
+      return lastAssistant.cognitiveLayer;
     }
-    const lastAssistant = [...messages].reverse().find((m: any) => m.role === 'assistant' && m.cognitiveLayer);
-    return ((lastAssistant as any)?.cognitiveLayer || 'unknown') as CognitiveLayer;
+
+    const latestAssistantText = [...messages]
+      .reverse()
+      .find((message) => message.role === 'assistant' && typeof message.content === 'string');
+    if (latestAssistantText && typeof latestAssistantText.content === 'string') {
+      return inferCognitiveLayer({ text: latestAssistantText.content });
+    }
+
+    return 'unknown' as CognitiveLayer;
   })();
   const currentLayer = currentCognitiveLayer !== 'unknown' ? currentCognitiveLayer : inferredLayer;
   
   // 使用 useMemo 缓存 resolvedModel，避免每次渲染都创建新对象
   const resolvedModel = useMemo(() => 
     resolveForPrompt(sessionId, input || 'general', priority),
-    [sessionId, priority, resolveForPrompt] // 注意：不依赖 input，避免输入时频繁重新计算
+    [sessionId, input, priority, resolveForPrompt]
   );
   
   // 使用新的 Agent Thinking Hook
@@ -306,9 +311,6 @@ export const ChatWindow = () => {
     addSystemStep,
     addParadigmStep,
     addReasoningStep,
-    addToolCallStep,
-    completeToolCall,
-    addConfidenceStep,
     switchLayer,
     switchParadigm,
     pushStack,
@@ -396,7 +398,7 @@ export const ChatWindow = () => {
         const results = await knowledgeService.search(q);
         const hits = (Array.isArray(results) ? results : []).slice(0, 5);
         setRetrievalHits(hits);
-        setSelectedRetrieval(hits.map((_: any, i: number) => i));
+        setSelectedRetrieval(hits.map((_, i) => i));
       } catch {
         setRetrievalHits([]);
         setSelectedRetrieval([]);
@@ -492,7 +494,7 @@ export const ChatWindow = () => {
         );
         
         // 添加范式选择步骤 - 手动模式下使用手动选择的值
-        const paradigm: any = isManualMode ? manualParadigm : (
+        const paradigm: AgentParadigm = isManualMode ? manualParadigm : (
                             effectiveLayer === 'system1' ? 'single-turn' : 
                             effectiveLayer === 'system2' ? 'react' : 
                             effectiveLayer === 'system3' ? 'reflexion' : 'react'
@@ -540,7 +542,7 @@ export const ChatWindow = () => {
       // 思考结束
       endThinking();
     }
-  }, [isThinking, messages, resolvedModel, currentLayer, isManualMode, manualLayer, manualParadigm, startThinking, endThinking, addRoutingStep, addSystemStep, addParadigmStep, addReasoningStep, switchLayer, switchParadigm, isAgentThinking, pushStack, popStack]);
+  }, [isThinking, messages, resolvedModel, currentLayer, isManualMode, manualLayer, manualParadigm, sessionId, startThinking, endThinking, addRoutingStep, addSystemStep, addParadigmStep, addReasoningStep, switchLayer, switchParadigm, isAgentThinking, pushStack, popStack]);
 
   return (
     <div className="flex flex-col h-full bg-zinc-50 dark:bg-zinc-950 transition-colors duration-200 relative">
@@ -747,7 +749,7 @@ export const ChatWindow = () => {
                     <select
                         className="h-7 rounded-md border-0 bg-transparent text-xs text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200 cursor-pointer focus:ring-0"
                         value={priority}
-                        onChange={(e) => setPriority(e.target.value as any)}
+                        onChange={(e) => setPriority(e.target.value as 'speed' | 'quality' | 'balanced')}
                     >
                         <option value="balanced">平衡</option>
                         <option value="speed">速度优先</option>
@@ -820,7 +822,7 @@ export const ChatWindow = () => {
                                 <select
                                     className="h-7 rounded-md border-0 bg-transparent text-xs cursor-pointer focus:ring-0"
                                     value={manualLayer}
-                                    onChange={(e) => setManualLayerSelected(e.target.value as any)}
+                                    onChange={(e) => setManualLayerSelected(e.target.value as CognitiveLayer)}
                                     style={{
                                         color: manualLayer === 'system1' ? '#eab308' : manualLayer === 'system2' ? '#3b82f6' : manualLayer === 'system3' ? '#a855f7' : '#6b7280'
                                     }}
@@ -833,7 +835,7 @@ export const ChatWindow = () => {
                                 <select
                                     className="h-7 rounded-md border-0 bg-transparent text-xs text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200 cursor-pointer focus:ring-0"
                                     value={manualParadigm}
-                                    onChange={(e) => setManualParadigmSelected(e.target.value as any)}
+                                    onChange={(e) => setManualParadigmSelected(e.target.value as AgentParadigm)}
                                 >
                                     <option value="single-turn">Single-Turn</option>
                                     <option value="react">ReAct</option>
@@ -952,7 +954,7 @@ export const ChatWindow = () => {
                       <span className="text-zinc-500">注入此片段</span>
                     </label>
                     <div className="text-zinc-500">
-                      source: {r.metadata?.source || r.metadata?.source_trace || 'unknown'} · score: {Number(r.score || 0).toFixed(3)}
+                      source: {getRetrievalSource(r)} · score: {Number(r.score || 0).toFixed(3)}
                     </div>
                     <div className="text-zinc-700 dark:text-zinc-300 line-clamp-2">
                       {String(r.content || '').slice(0, 180)}

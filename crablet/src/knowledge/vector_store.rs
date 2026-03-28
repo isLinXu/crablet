@@ -35,7 +35,9 @@ pub struct VectorStore {
 impl VectorStore {
     pub async fn new(pool: SqlitePool) -> Result<Self> {
         // Run migrations for metadata tables (document_embeddings)
-        sqlx::migrate!("./migrations").run(&pool).await?;
+        let migrations_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations");
+        let migrator = sqlx::migrate::Migrator::new(migrations_dir.as_path()).await?;
+        migrator.run(&pool).await?;
 
         // Initialize fastembed with a lightweight model
         let mut options = InitOptions::default();
@@ -267,7 +269,7 @@ impl VectorStore {
                         .bind(id)
                         .bind(chunk)
                         .bind(embedding_json)
-                        .bind(meta)
+                        .bind(serde_json::to_string(&meta).unwrap_or_default())
                         .execute(&mut *tx)
                         .await?;
                 }

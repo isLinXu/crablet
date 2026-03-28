@@ -4,10 +4,13 @@
  */
 
 // 动态导入 pdf-parse 以避免服务端渲染问题
+type PdfParseFn = (data: Uint8Array) => Promise<{ text?: string }>;
+
 const loadPdfParser = async () => {
   const pdfParse = await import('pdf-parse');
   // pdf-parse 的导出方式比较特殊，需要处理不同的导出格式
-  return (pdfParse as any).default || pdfParse;
+  const maybeDefault = pdfParse as unknown as { default?: PdfParseFn };
+  return maybeDefault.default || (pdfParse as unknown as PdfParseFn);
 };
 
 // 动态导入 tesseract.js 用于OCR
@@ -52,7 +55,7 @@ export async function extractFileContent(
     let text: string;
 
     switch (ext) {
-      case 'pdf':
+      case 'pdf': {
         const pdfResult = await extractPdfContent(file, onProgress, onOcrStart);
         return {
           text: pdfResult.text,
@@ -60,6 +63,7 @@ export async function extractFileContent(
           truncated: pdfResult.text.length > maxLength,
           isOcr: pdfResult.isOcr,
         };
+      }
       case 'txt':
       case 'md':
       case 'csv':
@@ -188,7 +192,10 @@ function validateExtractedText(text: string): boolean {
   }
   
   // 检查是否包含大量乱码特征（如连续的非打印字符）
-  const nonPrintableRatio = (text.match(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g) || []).length / text.length;
+  const nonPrintableRatio = Array.from(text).filter((char) => {
+    const code = char.charCodeAt(0);
+    return code < 32 && ![9, 10, 13].includes(code);
+  }).length / text.length;
   if (nonPrintableRatio > 0.1) {
     return false;
   }
@@ -238,10 +245,11 @@ async function extractPdfWithOCR(
 
         // 渲染PDF页面到canvas
         const renderTask = page.render({
+          canvas,
           canvasContext: context,
-          viewport: viewport,
+          viewport,
           background: 'white',
-        } as any);
+        });
         await renderTask.promise;
 
         // 将canvas转换为blob

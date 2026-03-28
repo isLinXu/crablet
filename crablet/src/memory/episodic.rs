@@ -34,7 +34,14 @@ impl EpisodicMemory {
             }))
             .connect(database_url).await?;
         
-        sqlx::migrate!("./migrations").run(&pool).await.map_err(|e| crate::error::CrabletError::Database(sqlx::Error::Migrate(Box::new(e))))?;
+        let migrations_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations");
+        let migrator = sqlx::migrate::Migrator::new(migrations_dir.as_path())
+            .await
+            .map_err(|e| crate::error::CrabletError::Other(e.into()))?;
+        migrator
+            .run(&pool)
+            .await
+            .map_err(|e| crate::error::CrabletError::Other(e.into()))?;
         
         // Background write loop
         let (write_tx, mut write_rx) = mpsc::channel(100);

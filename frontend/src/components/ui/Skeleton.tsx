@@ -1,4 +1,4 @@
-import { cn } from './Button';
+import { cn } from './cn';
 
 function Skeleton({
   className,

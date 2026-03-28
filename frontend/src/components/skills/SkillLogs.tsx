@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Clock, CheckCircle, XCircle, Terminal, RefreshCw, Filter, Download } from 'lucide-react';
+import { Clock, CheckCircle, XCircle, Terminal, RefreshCw, Download } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
+import { Card, CardContent } from '@/components/ui/Card';
 import { Modal } from '@/components/ui/Modal';
 import { skillService } from '@/services/skillService';
 import type { Skill, SkillExecutionLog } from '@/types/domain';
@@ -33,7 +33,7 @@ export const SkillLogs: React.FC<SkillLogsProps> = ({
       try {
         const res = await skillService.getAllLogs(100);
         setLogs(res.logs || []);
-      } catch (error) {
+      } catch {
         toast.error('获取日志失败');
       } finally {
         setLoading(false);
@@ -45,7 +45,7 @@ export const SkillLogs: React.FC<SkillLogsProps> = ({
     try {
       const res = await skillService.getSkillLogs(targetSkillName, 50);
       setLogs(res.logs || []);
-    } catch (error) {
+    } catch {
       toast.error('获取日志失败');
     } finally {
       setLoading(false);

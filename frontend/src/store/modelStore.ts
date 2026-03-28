@@ -36,6 +36,8 @@ interface ModelState {
   syncFromBackend: () => Promise<void>;
 }
 
+type PersistedModelState = Pick<ModelState, 'providers' | 'sessionManualProvider'>;
+
 const defaultProviders: ModelProvider[] = [
   {
     id: 'openai-gpt-4o-mini',
@@ -205,7 +207,7 @@ export const useModelStore = create<ModelState>()(
       },
       syncFromBackend: async () => {
         try {
-          const config: any = await settingsService.getSystemConfig();
+          const config = await settingsService.getSystemConfig();
           const modelName = config?.openai_model_name;
           const vendor = config?.llm_vendor || 'Backend';
           const apiBase = config?.openai_api_base || getApiBaseUrl();
@@ -237,8 +239,12 @@ export const useModelStore = create<ModelState>()(
     {
       name: 'model-routing-store',
       version: 1,
-      merge: (persisted: any, current: any) => {
-        const state = { ...current, ...(persisted || {}) };
+      merge: (persisted: unknown, current) => {
+        const persistedState =
+          typeof persisted === 'object' && persisted !== null
+            ? persisted as Partial<PersistedModelState>
+            : {};
+        const state = { ...current, ...persistedState };
         if (Array.isArray(state.providers)) {
           state.providers = state.providers.map((p: ModelProvider) => ({
             ...p,
@@ -247,7 +253,7 @@ export const useModelStore = create<ModelState>()(
         }
         return state;
       },
-      partialize: (s) => ({
+      partialize: (s): PersistedModelState => ({
         providers: s.providers,
         sessionManualProvider: s.sessionManualProvider,
       }),

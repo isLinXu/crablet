@@ -7,7 +7,6 @@ import type {
   StackFrame,
   CognitiveLayer,
   AgentParadigm,
-  DecisionStepType,
 } from '@/components/chat/AgentThinkingVisualization';
 
 interface UseAgentThinkingOptions {
@@ -21,14 +20,14 @@ interface UseAgentThinkingOptions {
 }
 
 export function useAgentThinking(options: UseAgentThinkingOptions) {
-  const { sessionId, model, vendor, manualMode = false, defaultLayer = 'unknown', defaultParadigm = 'unknown' } = options;
+  const { manualMode = false, defaultLayer = 'unknown', defaultParadigm = 'unknown' } = options;
   
   // 手动模式状态
   const [isManualMode, setIsManualMode] = useState(manualMode);
   const [manualLayer, setManualLayer] = useState<CognitiveLayer>(defaultLayer);
   const [manualParadigm, setManualParadigm] = useState<AgentParadigm>(defaultParadigm);
   
-  const [process, setProcess] = useState<ThinkingProcess>({
+  const [process, setProcess] = useState<ThinkingProcess>(() => ({
     steps: [],
     systemSwitches: [],
     paradigmSwitches: [],
@@ -37,7 +36,7 @@ export function useAgentThinking(options: UseAgentThinkingOptions) {
     currentParadigm: defaultParadigm,
     startTime: Date.now(),
     confidence: 0,
-  });
+  }));
   const [isThinking, setIsThinking] = useState(false);
   
   // 使用 ref 来跟踪当前状态，避免闭包问题
@@ -163,7 +162,7 @@ export function useAgentThinking(options: UseAgentThinkingOptions) {
   }, [updateProcess]);
 
   // 压入调用栈
-  const pushStack = useCallback((functionName: string, args: any) => {
+  const pushStack = useCallback((functionName: string, args: Record<string, unknown>) => {
     const frame: StackFrame = {
       id: `frame-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       function: functionName,
@@ -181,7 +180,7 @@ export function useAgentThinking(options: UseAgentThinkingOptions) {
   }, [updateProcess]);
 
   // 弹出调用栈
-  const popStack = useCallback((frameId: string, result?: any) => {
+  const popStack = useCallback((frameId: string, result?: Record<string, unknown>) => {
     updateProcess(prev => ({
       ...prev,
       callStack: prev.callStack.map(f => 
@@ -274,7 +273,7 @@ export function useAgentThinking(options: UseAgentThinkingOptions) {
   }, [addStep]);
 
   // 快捷方法：添加工具调用步骤
-  const addToolCallStep = useCallback((toolName: string, input: any) => {
+  const addToolCallStep = useCallback((toolName: string, input: unknown) => {
     return addStep({
       type: 'tool-call',
       title: '工具调用',
@@ -287,7 +286,7 @@ export function useAgentThinking(options: UseAgentThinkingOptions) {
   }, [addStep]);
 
   // 快捷方法：完成工具调用
-  const completeToolCall = useCallback((stepId: string, output: any, duration: number) => {
+  const completeToolCall = useCallback((stepId: string, output: unknown, duration: number) => {
     updateStep(stepId, {
       details: {
         ...processRef.current.steps.find(s => s.id === stepId)?.details,

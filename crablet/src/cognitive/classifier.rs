@@ -35,6 +35,9 @@ impl Classifier {
         if input_lower.contains("status") || input_lower.contains("system info") || input_lower.contains("状态") {
             return Intent::Status;
         }
+        if input_lower.contains("weather") || input_lower.contains("天气") {
+            return Intent::General; // Push weather queries to System 2 or Skill router directly
+        }
         
         // Persona / Identity queries - 人设/身份查询
         if input_lower.contains("who are you") || input_lower.contains("what are you") || 
@@ -110,7 +113,7 @@ impl Classifier {
         if input.len() > 500 { score += 0.4; }
         
         // Keyword heuristic
-        let complex_keywords = ["analyze", "compare", "reason", "explain", "design", "search", "calculate", "weather"];
+        let complex_keywords = ["analyze", "compare", "reason", "explain", "design", "search", "calculate"];
         for keyword in complex_keywords {
             if input.to_lowercase().contains(keyword) {
                 score += 0.2;

@@ -8,9 +8,14 @@ use crablet::config::Config;
 use crablet::cognitive::meta_controller::monitor::ExecutionMetrics;
 use std::time::{Duration, Instant};
 
+fn test_config() -> Config {
+    std::env::set_var("OPENAI_API_KEY", "sk-test");
+    Config::default()
+}
+
 #[tokio::test]
 async fn test_meta_controller_creation() {
-    let config = Config::default();
+    let config = test_config();
     let llm = create_llm_client(&config).await.unwrap();
     let controller = MetaCognitiveController::new(llm).await;
     
@@ -19,7 +24,7 @@ async fn test_meta_controller_creation() {
 
 #[tokio::test]
 async fn test_execute_with_meta_success() {
-    let config = Config::default();
+    let config = test_config();
     let llm = create_llm_client(&config).await.unwrap();
     let controller = MetaCognitiveController::new(llm).await.unwrap();
     
@@ -48,7 +53,7 @@ async fn test_execute_with_meta_success() {
 
 #[tokio::test]
 async fn test_execute_with_meta_failure() {
-    let config = Config::default();
+    let config = test_config();
     let llm = create_llm_client(&config).await.unwrap();
     let controller = MetaCognitiveController::new(llm).await.unwrap();
     
@@ -81,7 +86,7 @@ async fn test_execute_with_meta_failure() {
 
 #[tokio::test]
 async fn test_statistics() {
-    let config = Config::default();
+    let config = test_config();
     let llm = create_llm_client(&config).await.unwrap();
     let controller = MetaCognitiveController::new(llm).await.unwrap();
     
@@ -114,7 +119,7 @@ async fn test_statistics() {
 
 #[tokio::test]
 async fn test_feedback_integration() {
-    let config = Config::default();
+    let config = test_config();
     let llm = create_llm_client(&config).await.unwrap();
     let controller = MetaCognitiveController::new(llm).await.unwrap();
     
@@ -147,7 +152,7 @@ async fn test_feedback_integration() {
 
 #[tokio::test]
 async fn test_export_knowledge() {
-    let config = Config::default();
+    let config = test_config();
     let llm = create_llm_client(&config).await.unwrap();
     let controller = MetaCognitiveController::new(llm).await.unwrap();
     
@@ -180,7 +185,7 @@ async fn test_export_knowledge() {
 
 #[tokio::test]
 async fn test_custom_config() {
-    let config = Config::default();
+    let config = test_config();
     let llm = create_llm_client(&config).await.unwrap();
     
     let custom_config = MetaConfig {
@@ -198,7 +203,7 @@ async fn test_custom_config() {
 
 #[tokio::test]
 async fn test_concurrent_executions() {
-    let config = Config::default();
+    let config = test_config();
     let llm = create_llm_client(&config).await.unwrap();
     let controller = MetaCognitiveController::new(llm).await.unwrap();
     
@@ -240,7 +245,7 @@ async fn test_concurrent_executions() {
 
 #[tokio::test]
 async fn test_meta_cognitive_workflow() {
-    let config = Config::default();
+    let config = test_config();
     let llm = create_llm_client(&config).await.unwrap();
     let controller = MetaCognitiveController::new(llm).await.unwrap();
     

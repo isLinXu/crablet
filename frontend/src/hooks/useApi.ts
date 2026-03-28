@@ -6,8 +6,11 @@ interface UseApiOptions<T> {
   initialData?: T;
 }
 
-export function useApi<T = any, A extends any[] = any[]>(
-  apiFunc: (...args: A) => Promise<{ data: T }>,
+const toError = (value: unknown): Error =>
+  value instanceof Error ? value : new Error(typeof value === 'string' ? value : 'Unknown API error');
+
+export function useApi<T = unknown, A extends unknown[] = unknown[]>(
+  apiFunc: (...args: A) => Promise<T | { data: T }>,
   options: UseApiOptions<T> = {}
 ) {
   const { onSuccess, onError } = options;
@@ -21,13 +24,17 @@ export function useApi<T = any, A extends any[] = any[]>(
       setError(null);
       try {
         const response = await apiFunc(...args);
-        setData(response.data);
-        onSuccess?.(response.data);
-        return response.data;
-      } catch (err: any) {
-        setError(err);
-        onError?.(err);
-        throw err;
+        const data = (typeof response === 'object' && response !== null && 'data' in response)
+          ? (response as { data: T }).data
+          : response as T;
+        setData(data);
+        onSuccess?.(data);
+        return data;
+      } catch (err: unknown) {
+        const error = toError(err);
+        setError(error);
+        onError?.(error);
+        throw error;
       } finally {
         setLoading(false);
       }

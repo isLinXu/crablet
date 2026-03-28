@@ -294,7 +294,10 @@ impl CognitiveRouter {
     }
 
     pub fn with_config(mut self, config: &crate::config::Config) -> Self {
-        self.sys2 = self.sys2.with_config(config, true);
+        let is_web_only = std::env::var("CRABLET_SERVE_WEB_START_GATEWAY").unwrap_or_default() == "false";
+        let load_mcp = !is_web_only;
+        
+        self.sys2 = self.sys2.with_config(config, load_mcp);
         self.sys2_local = self.sys2_local.with_config(config, false);
         self
     }
@@ -314,9 +317,15 @@ impl CognitiveRouter {
     }
 
     pub fn watch_skills<P: AsRef<Path>>(mut self, path: P) -> Self {
+        let is_web_only = std::env::var("CRABLET_SERVE_WEB_START_GATEWAY").unwrap_or_default() == "false";
+        if is_web_only {
+            return self;
+        }
+
         let path_ref = path.as_ref();
+        // Since sys2 and sys2_local share the same SkillRegistry (shared_skills),
+        // we only attach the watcher to sys2 to avoid duplicate FileSystem events.
         self.sys2 = self.sys2.watch_skills(path_ref);
-        self.sys2_local = self.sys2_local.watch_skills(path_ref);
         self
     }
 
@@ -680,8 +689,8 @@ impl CognitiveRouter {
         }
 
         // 3. Intelligent Routing (System 2)
-        // Use cloud if forced OR (not forced local AND complexity is high)
-        let use_cloud = force_cloud || (!force_local && complexity_score > config.system2_threshold); 
+        // Use cloud by default unless local is forced. Cloud is much faster.
+        let use_cloud = !force_local; 
 
         if use_cloud {
              let msg = if force_cloud {

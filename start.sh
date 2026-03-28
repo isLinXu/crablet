@@ -30,9 +30,13 @@ check_and_kill_port() {
     fi
 }
 
+# Default ports (can be overridden by environment variables)
+WEB_PORT=${CRABLET_WEB_PORT:-3333}
+GATEWAY_PORT=${CRABLET_GATEWAY_PORT:-18790}
+
 # Check ports before starting
-check_and_kill_port 3000
-check_and_kill_port 18789
+check_and_kill_port $WEB_PORT
+check_and_kill_port $GATEWAY_PORT
 
 # Function to kill child processes on exit
 cleanup() {
@@ -55,8 +59,8 @@ else
 fi
 
 # Start Web Server (Static + Basic API)
-echo -e "${BLUE}[1/2] Starting Web Server (Port 3000)...${NC}"
-(cd crablet && $BINARY serve-web --port 3000) &
+echo -e "${BLUE}[1/2] Starting Web Server (Port $WEB_PORT)...${NC}"
+(cd crablet && CRABLET_SERVE_WEB_START_GATEWAY=false $BINARY serve-web --port $WEB_PORT) &
 WEB_PID=$!
 
 sleep 2
@@ -66,8 +70,8 @@ if ! kill -0 "$WEB_PID" 2>/dev/null; then
     exit 1
 fi
 
-echo -e "${BLUE}[2/2] Starting Gateway (Port 18789)...${NC}"
-(cd crablet && $BINARY gateway --port 18789) &
+echo -e "${BLUE}[2/2] Starting Gateway (Port $GATEWAY_PORT)...${NC}"
+(cd crablet && CRABLET_AUTH_MODE=off $BINARY gateway --port $GATEWAY_PORT) &
 GATEWAY_PID=$!
 sleep 1
 if ! kill -0 "$GATEWAY_PID" 2>/dev/null; then
@@ -78,8 +82,8 @@ if ! kill -0 "$GATEWAY_PID" 2>/dev/null; then
 fi
 
 echo -e "${GREEN}✨ All services started!${NC}"
-echo -e "Frontend/Web UI: ${BLUE}http://localhost:3000${NC}"
-echo -e "Gateway API:     ${BLUE}http://localhost:18789${NC}"
+echo -e "Frontend/Web UI: ${BLUE}http://localhost:$WEB_PORT${NC}"
+echo -e "Gateway API:     ${BLUE}http://localhost:$GATEWAY_PORT${NC}"
 echo -e "Press Ctrl+C to stop."
 
 # Wait for both processes

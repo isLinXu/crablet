@@ -3,4 +3,4 @@ pub mod oidc;
 pub mod middleware;
 pub mod handlers;
 
-pub use context::UserContext;
+pub use context::{JwtClaims, UserContext};

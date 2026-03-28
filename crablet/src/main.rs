@@ -58,7 +58,9 @@ async fn main() -> anyhow::Result<()> {
     // Migration Check (Proper)
     if let Ok(pool) = sqlx::sqlite::SqlitePool::connect(&config.database_url).await {
         info!("Running database migrations...");
-        match sqlx::migrate!("./migrations").run(&pool).await {
+        let migrations_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations");
+        let migrator = sqlx::migrate::Migrator::new(migrations_dir.as_path()).await?;
+        match migrator.run(&pool).await {
             Ok(_) => info!("Migrations applied successfully."),
             Err(e) => {
                 tracing::error!("Migration failed: {}", e);

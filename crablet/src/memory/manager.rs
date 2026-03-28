@@ -217,6 +217,7 @@ impl MemoryManager {
     pub async fn get_or_create_working_memory(&self, session_id: &str, role: Option<&AgentRole>) -> Arc<RwLock<WorkingMemory>> {
         // 1. Check L1 Cache
         if let Some(wm_arc) = self.l1_cache.get(session_id).await {
+            let _ = self.working_store.get(session_id);
             let wm_arc_clone = wm_arc.clone();
             tokio::spawn(async move {
                 let mut wm = wm_arc_clone.write().await;

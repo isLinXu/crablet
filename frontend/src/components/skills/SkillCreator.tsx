@@ -152,7 +152,7 @@ export const SkillCreator: React.FC<SkillCreatorProps> = ({
       } else {
         toast.error(result.error || '创建失败');
       }
-    } catch (error) {
+    } catch {
       toast.error('创建技能时出错');
     } finally {
       setLoading(false);

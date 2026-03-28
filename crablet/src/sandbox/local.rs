@@ -15,6 +15,19 @@ impl Sandbox for LocalSandbox {
     }
 
     async fn execute(&self, language: Language, code: &str) -> Result<ExecutionResult> {
+        let allow_unsafe = std::env::var("CRABLET_ALLOW_UNSAFE_LOCAL_SANDBOX")
+            .map(|v| matches!(v.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
+            .unwrap_or(false);
+
+        if !allow_unsafe {
+            return Ok(ExecutionResult {
+                stdout: String::new(),
+                stderr: "LocalSandbox is disabled by default. Set CRABLET_ALLOW_UNSAFE_LOCAL_SANDBOX=true only for trusted local development.".to_string(),
+                exit_code: -1,
+                duration_ms: 0,
+            });
+        }
+
         warn!("EXECUTING IN LOCAL SANDBOX: No isolation for language {:?}. Code: {}", language, code);
         // DANGER: This is not sandboxed! Only for dev/test or when Docker is unavailable.
         let (program, args) = match language {

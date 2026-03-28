@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Settings, Search, Database, Network, Filter, BarChart3 } from 'lucide-react';
 import { Button } from '../ui/Button';
 import clsx from 'clsx';
@@ -59,22 +59,24 @@ interface RagConfigPanelProps {
   onConfigChange?: (config: RagConfig) => void;
 }
 
-export const RagConfigPanel = ({ isOpen, onClose, onConfigChange }: RagConfigPanelProps) => {
-  const [config, setConfig] = useState<RagConfig>(defaultConfig);
-  const [activeTab, setActiveTab] = useState<'strategies' | 'weights' | 'advanced'>('strategies');
+const ragTabs = [
+  { id: 'strategies', label: '检索策略', icon: Search },
+  { id: 'weights', label: '权重配置', icon: BarChart3 },
+  { id: 'advanced', label: '高级选项', icon: Filter },
+] as const;
 
-  useEffect(() => {
-    // 从 localStorage 加载配置
+export const RagConfigPanel = ({ isOpen, onClose, onConfigChange }: RagConfigPanelProps) => {
+  const [config, setConfig] = useState<RagConfig>(() => {
     const saved = localStorage.getItem('crablet-rag-config');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        setConfig({ ...defaultConfig, ...parsed });
-      } catch {
-        // 忽略解析错误
-      }
+    if (!saved) return defaultConfig;
+    try {
+      const parsed = JSON.parse(saved) as Partial<RagConfig>;
+      return { ...defaultConfig, ...parsed };
+    } catch {
+      return defaultConfig;
     }
-  }, []);
+  });
+  const [activeTab, setActiveTab] = useState<'strategies' | 'weights' | 'advanced'>('strategies');
 
   const handleSave = () => {
     localStorage.setItem('crablet-rag-config', JSON.stringify(config));
@@ -120,14 +122,10 @@ export const RagConfigPanel = ({ isOpen, onClose, onConfigChange }: RagConfigPan
 
         {/* Tabs */}
         <div className="flex border-b border-zinc-200 dark:border-zinc-800">
-          {[
-            { id: 'strategies', label: '检索策略', icon: Search },
-            { id: 'weights', label: '权重配置', icon: BarChart3 },
-            { id: 'advanced', label: '高级选项', icon: Filter },
-          ].map(tab => (
+          {ragTabs.map(tab => (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id as any)}
+              onClick={() => setActiveTab(tab.id)}
               className={clsx(
                 'flex items-center gap-2 px-6 py-3 text-sm font-medium transition-colors border-b-2',
                 activeTab === tab.id

@@ -1,6 +1,15 @@
 import { api } from '@/services/api';
 import type { ApiKeyInfo, McpOverview, RoutingEvaluationReport, RoutingSettings } from '@/types/domain';
 
+export interface SystemConfig {
+  openai_api_key?: string;
+  openai_api_base?: string;
+  openai_model_name?: string;
+  ollama_model?: string;
+  llm_vendor?: string;
+  [key: string]: unknown;
+}
+
 export const settingsService = {
   listApiKeys: () => api.get<ApiKeyInfo[]>('/v1/settings/keys'),
   createApiKey: (name: string) => api.post<{ key?: string; id?: string; name?: string }>('/v1/settings/keys', { name }),
@@ -8,7 +17,7 @@ export const settingsService = {
   getRoutingSettings: () => api.get<RoutingSettings>('/v1/settings/routing'),
   updateRoutingSettings: (payload: RoutingSettings) => api.put<RoutingSettings>('/v1/settings/routing', payload),
   getRoutingReport: (window = 200) => api.get<RoutingEvaluationReport>(`/v1/settings/routing/report?window=${window}`),
-  getSystemConfig: () => api.get<any>('/v1/settings/system/config'),
-  updateSystemConfig: (payload: any) => api.post<any>('/v1/settings/system/config', payload),
+  getSystemConfig: () => api.get<SystemConfig>('/v1/settings/system/config'),
+  updateSystemConfig: (payload: Partial<SystemConfig>) => api.post<SystemConfig>('/v1/settings/system/config', payload),
   getMcpOverview: () => api.get<McpOverview>('/v1/mcp/overview'),
 };

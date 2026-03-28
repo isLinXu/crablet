@@ -154,7 +154,7 @@ impl MetaCognitiveController {
         // 开始监控
         {
             let monitor = self.monitor.read().await;
-            let _ = monitor.start_execution(&request.task_id);
+            monitor.start_execution(&request.task_id).await;
         }
 
         // 执行任务

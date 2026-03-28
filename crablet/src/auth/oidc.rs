@@ -1,5 +1,5 @@
 use anyhow::{Result, Context};
-use openid::{Client, Options, DiscoveredClient};
+use openid::{Client, Options, DiscoveredClient, StandardClaims, Token, Userinfo};
 use std::sync::Arc;
 use url::Url;
 
@@ -29,8 +29,19 @@ impl OidcProvider {
         })
     }
 
-    pub async fn exchange_code(&self, code: &str) -> Result<openid::Bearer> {
-        let token = self.client.request_token(code).await.map_err(|e| anyhow::anyhow!("Token exchange failed: {}", e))?;
+    pub async fn exchange_code(&self, code: &str) -> Result<Token<StandardClaims>> {
+        let token = self
+            .client
+            .authenticate(code, None::<&str>, None::<&chrono::Duration>)
+            .await
+            .map_err(|e| anyhow::anyhow!("Token exchange failed: {}", e))?;
         Ok(token)
+    }
+
+    pub async fn request_userinfo(&self, token: &Token<StandardClaims>) -> Result<Userinfo> {
+        self.client
+            .request_userinfo(token)
+            .await
+            .map_err(|e| anyhow::anyhow!("Userinfo request failed: {}", e))
     }
 }

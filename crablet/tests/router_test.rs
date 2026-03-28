@@ -8,6 +8,11 @@ use async_trait::async_trait;
 use std::sync::{Arc, Mutex};
 use crablet::config::Config;
 
+fn test_config() -> Config {
+    std::env::set_var("OPENAI_API_KEY", "sk-test");
+    Config::default()
+}
+
 // Mock LLM
 struct MockLlm {
     calls: Arc<Mutex<Vec<String>>>,
@@ -43,7 +48,7 @@ impl LlmClient for MockLlm {
 #[tokio::test]
 async fn test_router_system1() {
     let event_bus = Arc::new(EventBus::new(100));
-    let config = Config::default();
+    let config = test_config();
     
     // We don't need real LLM for System 1 test
     let llm = Box::new(MockLlm::new("I am System 2"));
@@ -62,7 +67,7 @@ async fn test_router_system1() {
 #[tokio::test]
 async fn test_router_system2_force() {
     let event_bus = Arc::new(EventBus::new(100));
-    let config = Config::default();
+    let config = test_config();
     
     let mock_llm = MockLlm::new("System 2 Response");
     let calls = mock_llm.calls.clone();

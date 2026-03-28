@@ -5,8 +5,10 @@ use axum::{
     debug_handler,
 };
 use axum_extra::extract::cookie::{Cookie, CookieJar};
+use chrono::Utc;
+use jsonwebtoken::{encode, EncodingKey, Header};
 use crate::auth::oidc::OidcProvider;
-use crate::auth::UserContext;
+use crate::auth::{JwtClaims, UserContext};
 use std::sync::Arc;
 use serde::Deserialize;
 
@@ -40,8 +42,71 @@ pub async fn callback_handler(
     if let Some(oidc) = &state.oidc {
         match oidc.exchange_code(&query.code).await {
             Ok(token) => {
-                let access_token = token.access_token.clone();
-                let cookie = Cookie::build(("access_token", access_token))
+                let userinfo = match token
+                    .id_token
+                    .as_ref()
+                    .map(|id_token| id_token.payload())
+                    .transpose()
+                {
+                    Ok(Some(claims)) => claims.userinfo.clone(),
+                    Ok(None) => match oidc.request_userinfo(&token).await {
+                        Ok(userinfo) => userinfo,
+                        Err(e) => {
+                            return (
+                                axum::http::StatusCode::BAD_REQUEST,
+                                format!("Failed to load user info: {}", e),
+                            )
+                                .into_response();
+                        }
+                    },
+                    Err(e) => {
+                        return (
+                            axum::http::StatusCode::BAD_REQUEST,
+                            format!("Failed to decode ID token: {}", e),
+                        )
+                            .into_response();
+                    }
+                };
+
+                let user = UserContext {
+                    user_id: userinfo.sub.clone(),
+                    username: userinfo
+                        .preferred_username
+                        .clone()
+                        .or_else(|| userinfo.name.clone())
+                        .or_else(|| {
+                            userinfo
+                                .email
+                                .as_ref()
+                                .and_then(|email| email.split('@').next().map(|value| value.to_string()))
+                        })
+                        .unwrap_or_else(|| "user".to_string()),
+                    email: userinfo.email.clone(),
+                    roles: vec!["user".to_string()],
+                    tenant_id: None,
+                };
+
+                let expiration = Utc::now()
+                    .checked_add_signed(chrono::Duration::hours(24))
+                    .expect("valid timestamp")
+                    .timestamp() as usize;
+                let claims = JwtClaims::from_user_context(&user, expiration);
+                let session_token = match encode(
+                    &Header::default(),
+                    &claims,
+                    &EncodingKey::from_secret(state.jwt_secret.as_bytes()),
+                ) {
+                    Ok(token) => token,
+                    Err(e) => {
+                        return (
+                            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                            format!("Failed to create session token: {}", e),
+                        )
+                            .into_response();
+                    }
+                };
+
+                let cookie = Cookie::build(("access_token", session_token))
                     .path("/")
                     .http_only(true)
                     .same_site(axum_extra::extract::cookie::SameSite::Lax)

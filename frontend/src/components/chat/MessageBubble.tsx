@@ -1,14 +1,16 @@
 import React, { useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
+import type { Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { cn } from '../ui/Button';
+import { cn } from '../ui/cn';
+import type { ContentPart } from '@/types/domain';
 import type { ExtendedMessage } from '@/store/chatStore';
 import { CodeBlock } from './CodeBlock';
 import { Bot, User, Copy, Check, Download, Pencil, Trash2, X } from 'lucide-react';
 import { cognitiveLayerLabel } from '@/utils/cognitive';
 import { EnhancedThinkingVisualization, type ThinkingProcess } from './EnhancedThinkingVisualization';
 import { CrabThinking } from '../ui/CrabElements';
-import { sanitizeHtml, sanitizeUrl } from '@/utils/security';
+import { sanitizeUrl } from '@/utils/security';
 
 interface MessageBubbleProps {
   message: ExtendedMessage;
@@ -20,6 +22,24 @@ interface MessageBubbleProps {
   conversationHistory?: Array<{ role: string; content: string }>; // 新增：对话历史
   lastUserMessage?: string; // 新增：最后一条用户消息
 }
+
+const STEP_LABELS: Record<string, string> = {
+  reasoning: '推理思考',
+  search: '知识检索',
+  code: '代码分析',
+  insight: '洞察发现',
+};
+
+const getTimestampMs = (timestamp?: string) => {
+  if (!timestamp) return 0;
+  const parsed = new Date(timestamp).getTime();
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+type MarkdownCodeProps = React.ComponentPropsWithoutRef<'code'> & { inline?: boolean };
+type MarkdownLinkProps = React.ComponentPropsWithoutRef<'a'>;
+type MarkdownImageProps = React.ComponentPropsWithoutRef<'img'>;
+type MarkdownDivProps = React.ComponentPropsWithoutRef<'div'>;
 
 // 使用 React.memo 避免不必要的重渲染
 export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(({ 
@@ -36,6 +56,8 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(({
   const [copied, setCopied] = React.useState(false);
   const [isEditing, setIsEditing] = React.useState(false);
   const [editValue, setEditValue] = React.useState('');
+  const messageTimestampMs = useMemo(() => getTimestampMs(message.timestamp), [message.timestamp]);
+  const fileTimestamp = messageTimestampMs || Number.parseInt((message.id || '0').replace(/\D/g, ''), 10) || 0;
 
   const handleCopy = () => {
     if (typeof message.content === 'string') {
@@ -73,8 +95,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(({
 
   const downloadAllImages = async (urls: string[]) => {
     for (let i = 0; i < urls.length; i++) {
-      const ts = new Date(message.timestamp || Date.now()).getTime() || Date.now();
-      await downloadImage(urls[i], `crablet-image-${ts}-${i + 1}.png`);
+      await downloadImage(urls[i], `crablet-image-${fileTimestamp}-${i + 1}.png`);
       await new Promise((resolve) => setTimeout(resolve, 120));
     }
   };
@@ -94,7 +115,59 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(({
   };
 
   // 使用 useMemo 缓存 Markdown 渲染结果，避免流式输出时的频繁重渲染
-  const renderedContent = useMemo(() => {
+  const renderedContent = (() => {
+    const markdownComponents = {
+      code({ inline, className, children, ...props }: MarkdownCodeProps) {
+        const match = /language-(\w+)/.exec(className || '');
+        return !inline && match ? (
+          <CodeBlock language={match[1]} value={String(children).replace(/\n$/, '')} {...props} />
+        ) : (
+          <code className={cn(className, 'bg-gray-200 dark:bg-gray-800 rounded px-1 py-0.5 text-sm font-mono')} {...props}>
+            {children}
+          </code>
+        );
+      },
+      a({ href, children, ...props }: MarkdownLinkProps) {
+        const safeHref = sanitizeUrl(href || '');
+        if (!safeHref) {
+          return <span className="text-gray-400">{children}</span>;
+        }
+        return (
+          <a
+            href={safeHref}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 underline"
+            {...props}
+          >
+            {children}
+          </a>
+        );
+      },
+    } satisfies Components;
+
+    const richMarkdownComponents = {
+      ...markdownComponents,
+      img({ src, alt, ...props }: MarkdownImageProps) {
+        const safeSrc = sanitizeUrl(src || '');
+        if (!safeSrc) {
+          return null;
+        }
+        return (
+          <img
+            src={safeSrc}
+            alt={alt || 'Image'}
+            className="max-w-full h-auto rounded-lg"
+            loading="lazy"
+            {...props}
+          />
+        );
+      },
+      div({ children, ...props }: MarkdownDivProps) {
+        return <div {...props}>{children}</div>;
+      },
+    } satisfies Components;
+
     if (isEditing) {
         return (
             <div className="flex flex-col gap-2 w-full">
@@ -119,67 +192,16 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(({
       return (
         <ReactMarkdown
           remarkPlugins={[remarkGfm]}
-          components={{
-            // Safe code rendering
-            code({ node, inline, className, children, ...props }: any) {
-              const match = /language-(\w+)/.exec(className || '');
-              return !inline && match ? (
-                <CodeBlock language={match[1]} value={String(children).replace(/\n$/, '')} {...props} />
-              ) : (
-                <code className={cn(className, "bg-gray-200 dark:bg-gray-800 rounded px-1 py-0.5 text-sm font-mono")} {...props}>
-                  {children}
-                </code>
-              );
-            },
-            // Safe link rendering - validate and sanitize URLs
-            a({ node, href, children, ...props }: any) {
-              const safeHref = sanitizeUrl(href || '');
-              if (!safeHref) {
-                // If URL is unsafe, return just text without link
-                return <span className="text-gray-400">{children}</span>;
-              }
-              return (
-                <a
-                  href={safeHref}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 underline"
-                  {...props}
-                >
-                  {children}
-                </a>
-              );
-            },
-            // Safe image rendering
-            img({ node, src, alt, ...props }: any) {
-              const safeSrc = sanitizeUrl(src || '');
-              if (!safeSrc) {
-                // Don't render unsafe images
-                return null;
-              }
-              return (
-                <img
-                  src={safeSrc}
-                  alt={alt || 'Image'}
-                  className="max-w-full h-auto rounded-lg"
-                  loading="lazy"
-                  {...props}
-                />
-              );
-            },
-            // Prevent script execution through HTML sanitization
-            div({ node, children, ...props }: any) {
-              return <div {...props}>{children}</div>;
-            },
-          }}
+          components={richMarkdownComponents}
         >
           {message.content}
         </ReactMarkdown>
       );
     }
     
-    const textParts = message.content.filter((part) => part.type === 'text');
-    const imageParts = message.content.filter((part) => part.type === 'image_url');
+    const contentParts = message.content as ContentPart[];
+    const textParts = contentParts.filter((part): part is Extract<ContentPart, { type: 'text' }> => part.type === 'text');
+    const imageParts = contentParts.filter((part): part is Extract<ContentPart, { type: 'image_url' }> => part.type === 'image_url');
     // Sanitize all image URLs
     const imageUrls = imageParts.map((part) => part.image_url.url).filter(Boolean).map(sanitizeUrl).filter(Boolean);
     return (
@@ -188,36 +210,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(({
           <ReactMarkdown 
             key={`text-${index}`}
             remarkPlugins={[remarkGfm]}
-            components={{
-              code({ node, inline, className, children, ...props }: any) {
-                const match = /language-(\w+)/.exec(className || '');
-                return !inline && match ? (
-                  <CodeBlock language={match[1]} value={String(children).replace(/\n$/, '')} {...props} />
-                ) : (
-                  <code className={cn(className, "bg-gray-200 dark:bg-gray-800 rounded px-1 py-0.5 text-sm font-mono")} {...props}>
-                    {children}
-                  </code>
-                );
-              },
-              // Safe link rendering
-              a({ node, href, children, ...props }: any) {
-                const safeHref = sanitizeUrl(href || '');
-                if (!safeHref) {
-                  return <span className="text-gray-400">{children}</span>;
-                }
-                return (
-                  <a
-                    href={safeHref}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 underline"
-                    {...props}
-                  >
-                    {children}
-                  </a>
-                );
-              },
-            }}
+            components={markdownComponents}
           >
             {part.text}
           </ReactMarkdown>
@@ -237,12 +230,11 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(({
             )}
             <div className={cn("grid gap-2", imageUrls.length === 1 ? "grid-cols-1 max-w-sm" : "grid-cols-2")}>
               {imageUrls.map((url, index) => {
-                const ts = new Date(message.timestamp || Date.now()).getTime() || Date.now();
                 return (
                   <div key={`img-${index}`} className="relative group/image">
                     <img src={url} alt={`Generated ${index + 1}`} className="w-full rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 object-cover" loading="lazy" />
                     <button
-                      onClick={() => downloadImage(url, `crablet-image-${ts}-${index + 1}.png`)}
+                      onClick={() => downloadImage(url, `crablet-image-${fileTimestamp}-${index + 1}.png`)}
                       className="absolute top-2 right-2 opacity-0 group-hover/image:opacity-100 transition-opacity inline-flex items-center gap-1 text-xs px-2 py-1 rounded-md border border-zinc-300 dark:border-zinc-600 bg-white/90 dark:bg-zinc-900/90 hover:bg-white dark:hover:bg-zinc-900"
                     >
                       <Download className="w-3.5 h-3.5" />
@@ -256,19 +248,12 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(({
         )}
       </>
     );
-  }, [message.content, isEditing, editValue]);
+  })();
 
   const knowledgeJump = (source: string, snippet?: string) =>
     `/knowledge?q=${encodeURIComponent(source)}&source=${encodeURIComponent(source)}${snippet ? `&snippet=${encodeURIComponent(snippet.slice(0, 160))}` : ''}`;
 
   // 步骤类型标签映射
-  const stepLabels: Record<string, string> = {
-    reasoning: '推理思考',
-    search: '知识检索',
-    code: '代码分析',
-    insight: '洞察发现',
-  };
-  
   // 从消息中构建思考过程
   const messageThinkingProcess: ThinkingProcess | undefined = React.useMemo(() => {
     if (isUser) return undefined;
@@ -279,11 +264,12 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(({
     }
     
     // 否则从消息的 traceSteps 构建
-    if (message.traceSteps && message.traceSteps.length > 0) {
-      const steps: any[] = [];
+    const traceSteps = message.traceSteps;
+    if (traceSteps && traceSteps.length > 0) {
+      const steps: ThinkingProcess['steps'] = [];
       
       // 1. 添加意图识别步骤（基于第一条 trace）
-      const firstTrace = message.traceSteps[0];
+      const firstTrace = traceSteps[0];
       const firstText = (firstTrace.thought + ' ' + firstTrace.action).toLowerCase();
       
       // 检测意图类型
@@ -312,12 +298,11 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(({
         type: 'intent',
         title: '意图识别',
         content: `识别用户意图: ${intentDescription} (${intentType})`,
-        timestamp: new Date(message.timestamp || Date.now()).getTime() - message.traceSteps.length * 500 - 200,
+        timestamp: messageTimestampMs - traceSteps.length * 500 - 200,
         duration: 50,
         details: {
-          intentType,
-          intentDescription,
-          confidence: 0.95,
+          reason: `${intentDescription} (${intentType})`,
+          confidenceScore: 0.95,
         },
       });
       
@@ -335,18 +320,17 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(({
         type: 'system',
         title: '系统选择',
         content: `路由到: ${layerNames[currentLayer] || currentLayer}`,
-        timestamp: new Date(message.timestamp || Date.now()).getTime() - message.traceSteps.length * 500 - 100,
+        timestamp: messageTimestampMs - traceSteps.length * 500 - 100,
         duration: 30,
         details: {
-          selectedLayer: currentLayer,
           reason: intentType === 'Greeting' ? '简单问候，使用快速响应' : '基于复杂度评估',
         },
       });
       
       // 3. 添加原始 traceSteps
-      message.traceSteps.forEach((trace, index) => {
+      traceSteps.forEach((trace, index) => {
         const text = (trace.thought + ' ' + trace.action).toLowerCase();
-        let type: any = 'reasoning';
+        let type: 'reasoning' | 'search' | 'code' | 'insight' = 'reasoning';
         if (text.includes('search') || text.includes('检索') || text.includes('查找') || text.includes('query') || text.includes('rag')) {
           type = 'search';
         } else if (text.includes('code') || text.includes('代码') || text.includes('program') || text.includes('function')) {
@@ -358,9 +342,9 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(({
         steps.push({
           id: `trace-${index}`,
           type,
-          title: stepLabels[type] || '思考',
+          title: STEP_LABELS[type] || '思考',
           content: trace.thought || trace.action || 'Processing...',
-          timestamp: new Date(message.timestamp || Date.now()).getTime() - (message.traceSteps!.length - index) * 500,
+          timestamp: messageTimestampMs - (traceSteps.length - index) * 500,
           duration: trace.observation ? 500 : undefined,
           details: {
             thought: trace.thought,
@@ -377,13 +361,13 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(({
         callStack: [],
         currentLayer: message.cognitiveLayer || 'unknown',
         currentParadigm: 'unknown',
-        startTime: new Date(message.timestamp || Date.now()).getTime(),
+        startTime: messageTimestampMs,
         confidence: 0,
       };
     }
     
     return undefined;
-  }, [message.traceSteps, message.timestamp, message.cognitiveLayer, thinkingProcess, isUser]);
+  }, [message.traceSteps, message.cognitiveLayer, messageTimestampMs, thinkingProcess, isUser]);
   
   // 判断是否是最后一条正在思考的消息
   const showThinking = !!isThinking;

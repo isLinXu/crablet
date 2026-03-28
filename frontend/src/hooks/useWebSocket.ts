@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 interface UseWebSocketOptions {
   onOpen?: () => void;
   onClose?: () => void;
   onError?: (error: Event) => void;
+  onMessage?: (event: MessageEvent) => void;
   reconnectAttempts?: number;
   reconnectInterval?: number;
 }
@@ -16,6 +17,7 @@ export function useWebSocket(
     onOpen,
     onClose,
     onError,
+    onMessage,
     reconnectAttempts = 5,
     reconnectInterval = 3000,
   } = options;
@@ -24,7 +26,8 @@ export function useWebSocket(
   const [lastMessage, setLastMessage] = useState<MessageEvent | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectCountRef = useRef(0);
-  const reconnectTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const reconnectTimerRef = useRef<number | null>(null);
+  const connectRef = useRef<(() => void) | null>(null);
 
   const connect = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -44,6 +47,7 @@ export function useWebSocket(
 
     ws.onmessage = (event) => {
       setLastMessage(event);
+      onMessage?.(event);
     };
 
     ws.onclose = () => {
@@ -53,8 +57,8 @@ export function useWebSocket(
       // Attempt to reconnect
       if (reconnectCountRef.current < reconnectAttempts) {
         reconnectCountRef.current += 1;
-        reconnectTimerRef.current = setTimeout(() => {
-          connect();
+        reconnectTimerRef.current = window.setTimeout(() => {
+          connectRef.current?.();
         }, reconnectInterval);
       }
     };
@@ -63,10 +67,14 @@ export function useWebSocket(
       setConnectionStatus('disconnected');
       onError?.(error);
     };
-  }, [url, onOpen, onClose, onError, reconnectAttempts, reconnectInterval]);
+  }, [url, onOpen, onClose, onError, onMessage, reconnectAttempts, reconnectInterval]);
+
+  useEffect(() => {
+    connectRef.current = connect;
+  }, [connect]);
 
   const disconnect = useCallback(() => {
-    if (reconnectTimerRef.current) {
+    if (reconnectTimerRef.current !== null) {
       clearTimeout(reconnectTimerRef.current);
       reconnectTimerRef.current = null;
     }
@@ -86,12 +94,15 @@ export function useWebSocket(
   }, []);
 
   useEffect(() => {
-    connect();
+    const timer = window.setTimeout(() => {
+      connectRef.current?.();
+    }, 0);
 
     return () => {
+      clearTimeout(timer);
       disconnect();
     };
-  }, [connect, disconnect]);
+  }, [disconnect]);
 
   return {
     connectionStatus,

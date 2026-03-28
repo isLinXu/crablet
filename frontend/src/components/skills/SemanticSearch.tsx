@@ -39,7 +39,7 @@ export const SemanticSearch: React.FC<SemanticSearchProps> = ({
       if (res.results?.length === 0) {
         toast('未找到匹配的技能，请尝试其他关键词');
       }
-    } catch (error) {
+    } catch {
       toast.error('搜索失败，请稍后重试');
       setResults([]);
     } finally {

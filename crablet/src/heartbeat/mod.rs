@@ -50,7 +50,7 @@ impl HeartbeatEngine {
         self
     }
 
-    pub async fn start(self: Arc<Self>) {
+    pub async fn start(self: Arc<Self>, cancel_token: tokio_util::sync::CancellationToken) {
         info!("Starting Heartbeat Engine (Interval: {:?}, Idle Threshold: {:?})", 
             self.check_interval, self.idle_threshold);
             
@@ -58,25 +58,32 @@ impl HeartbeatEngine {
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(engine.check_interval);
             loop {
-                interval.tick().await;
-                debug!("Heartbeat tick");
-                
-                // 1. Check for User Idleness and Run Proactive Tasks
-                if engine.memory_mgr.is_idle(engine.idle_threshold).await {
-                    debug!("User is idle, running enhanced background maintenance...");
-                    if let Err(e) = engine.enhanced_background_think().await {
-                        warn!("Failed to run enhanced background think: {}", e);
+                tokio::select! {
+                    _ = interval.tick() => {
+                        debug!("Heartbeat tick");
+                        
+                        // 1. Check for User Idleness and Run Proactive Tasks
+                        if engine.memory_mgr.is_idle(engine.idle_threshold).await {
+                            debug!("User is idle, running enhanced background maintenance...");
+                            if let Err(e) = engine.enhanced_background_think().await {
+                                warn!("Failed to run enhanced background think: {}", e);
+                            }
+                            
+                            // Run Draft Mode proactive refinement
+                            if let Err(e) = engine.proactive_draft_refinement().await {
+                                warn!("Draft refinement failed: {}", e);
+                            }
+                        }
+                        
+                        // 2. Periodic Memory Consolidation (always check)
+                        if let Err(e) = engine.check_consolidation().await {
+                            warn!("Failed to check memory consolidation: {}", e);
+                        }
                     }
-                    
-                    // Run Draft Mode proactive refinement
-                    if let Err(e) = engine.proactive_draft_refinement().await {
-                        warn!("Draft refinement failed: {}", e);
+                    _ = cancel_token.cancelled() => {
+                        info!("Heartbeat Engine shutting down...");
+                        break;
                     }
-                }
-                
-                // 2. Periodic Memory Consolidation (always check)
-                if let Err(e) = engine.check_consolidation().await {
-                    warn!("Failed to check memory consolidation: {}", e);
                 }
             }
         });
@@ -163,7 +170,7 @@ impl HeartbeatEngine {
     async fn run_proactive_tasks(&self) -> Result<()> {
         let skills = self.skills.read().await;
         if skills.get_skill("proactive-agent").is_some() {
-            info!("Running proactive-agent skill...");
+            debug!("Running proactive-agent skill...");
             // Execute the skill logic here
         }
         

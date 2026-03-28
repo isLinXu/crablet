@@ -134,7 +134,7 @@ pub struct CrabletGateway {
 }
 
 impl CrabletGateway {
-    pub async fn new(config: GatewayConfig, router: Arc<CognitiveRouter>) -> anyhow::Result<Self> {
+    pub async fn new(config: GatewayConfig, router: Arc<CognitiveRouter>, cancel_token: tokio_util::sync::CancellationToken) -> anyhow::Result<Self> {
         let event_bus = crate::events::EventBus::new(100);
 
         // Parse auth mode from config
@@ -222,8 +222,9 @@ impl CrabletGateway {
         
         let heartbeat_arc = Arc::new(heartbeat);
         let heartbeat_clone = heartbeat_arc.clone();
+        let cancel_token_clone = cancel_token.clone();
         tokio::spawn(async move {
-            heartbeat_clone.start().await;
+            heartbeat_clone.start(cancel_token_clone).await;
         });
 
         Ok(Self {
@@ -244,7 +245,7 @@ impl CrabletGateway {
         })
     }
 
-    pub async fn start(self) -> Result<(), axum::BoxError> {
+    pub async fn start(self, cancel_token: tokio_util::sync::CancellationToken) -> Result<(), axum::BoxError> {
         let gateway = Arc::new(self);
         let port = gateway.config.port;
 
@@ -349,6 +350,8 @@ impl CrabletGateway {
                 .allow_origin([
                     HeaderValue::from_static("http://localhost:3000"),
                     HeaderValue::from_static("http://127.0.0.1:3000"),
+                    HeaderValue::from_static("http://localhost:3333"),
+                    HeaderValue::from_static("http://127.0.0.1:3333"),
                     HeaderValue::from_static("http://localhost:5173"),
                     HeaderValue::from_static("http://127.0.0.1:5173"),
                     HeaderValue::from_static("http://localhost:8080"),
@@ -372,7 +375,12 @@ impl CrabletGateway {
         axum::serve(
             listener, 
             app.into_make_service_with_connect_info::<SocketAddr>()
-        ).await?;
+        )
+        .with_graceful_shutdown(async move {
+            cancel_token.cancelled().await;
+            tracing::info!("Gateway server shutting down gracefully...");
+        })
+        .await?;
 
         Ok(())
     }

@@ -28,7 +28,8 @@ describe('useChatStore', () => {
     
     const state = useChatStore.getState();
     expect(state.messages).toHaveLength(1);
-    expect(state.messages[0]).toEqual(msg);
+    expect(state.messages[0]).toMatchObject(msg);
+    expect(state.messages[0].id).toBeTruthy();
   });
 
   it('should update connection status', () => {

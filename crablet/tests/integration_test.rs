@@ -7,6 +7,11 @@ use async_trait::async_trait;
 use anyhow::Result;
 use std::sync::{Arc, Mutex};
 
+fn test_config() -> crablet::config::Config {
+    std::env::set_var("OPENAI_API_KEY", "sk-test");
+    crablet::config::Config::default()
+}
+
 // Mock LLM Client that captures context
 struct SpyLlmClient {
     last_context: Arc<Mutex<Vec<Message>>>,
@@ -41,11 +46,16 @@ impl LlmClient for SpyLlmClient {
 #[tokio::test]
 async fn test_system1_hit() {
     let event_bus = Arc::new(EventBus::new(100));
-    let config = crablet::config::Config::default();
+    let config = test_config();
     let router = CognitiveRouter::new(&config, None, event_bus).await;
     let (response, _) = router.process("hello", "test_session").await.unwrap();
     // System1 greeting logic might change, checking for typical greetings
-    assert!(response.contains("Crablet") || response.to_lowercase().contains("hello") || response.to_lowercase().contains("hi"));
+    assert!(
+        response.contains("Crablet")
+            || response.to_lowercase().contains("hello")
+            || response.to_lowercase().contains("hi")
+            || response.contains("你好")
+    );
 }
 
 #[tokio::test]
@@ -55,7 +65,7 @@ async fn test_context_retention() {
     let last_context = spy_client.last_context.clone();
     
     let event_bus = Arc::new(EventBus::new(100));
-    let config = crablet::config::Config::default();
+    let config = test_config();
 
     // 2. Setup System 2 with Spy Client
     let sys2 = System2::with_client(Box::new(spy_client), event_bus.clone()).await;

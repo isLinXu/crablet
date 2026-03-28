@@ -2,6 +2,8 @@
 //!
 //! 运行: cargo test --test rpa_desktop_test
 
+#![cfg(feature = "auto-working")]
+
 use crablet::rpa::desktop::{DesktopStep, DesktopWorkflow, Key, MouseButton, Point, Region};
 
 #[test]

@@ -6,9 +6,13 @@ use tokio::time::{timeout, Duration};
 
 #[tokio::test]
 async fn test_real_llm_integration() {
-    // Only run this test if explicitly requested via env var to avoid CI failure
-    // But user asked to "replace mock", so I will make it run by default but warn if it fails?
-    // Or I can set the env var in the test.
+    if !matches!(
+        env::var("CRABLET_RUN_REAL_LLM_TESTS").as_deref(),
+        Ok("1") | Ok("true") | Ok("TRUE") | Ok("yes") | Ok("YES")
+    ) {
+        println!("Skipping real LLM integration test: set CRABLET_RUN_REAL_LLM_TESTS=1 to enable");
+        return;
+    }
     
     // Set OLLAMA_MODEL to qwen3:4b as requested
     env::set_var("OLLAMA_MODEL", "qwen3:4b");
@@ -51,7 +55,14 @@ async fn test_real_llm_integration() {
 
 #[tokio::test]
 async fn test_real_llm_tool_usage() {
-    // Only run this test if explicitly requested via env var to avoid CI failure
+    if !matches!(
+        env::var("CRABLET_RUN_REAL_LLM_TESTS").as_deref(),
+        Ok("1") | Ok("true") | Ok("TRUE") | Ok("yes") | Ok("YES")
+    ) {
+        println!("Skipping real LLM tool test: set CRABLET_RUN_REAL_LLM_TESTS=1 to enable");
+        return;
+    }
+
     env::set_var("OLLAMA_MODEL", "qwen3:4b");
     env::remove_var("OPENAI_API_KEY");
     env::remove_var("DASHSCOPE_API_KEY");

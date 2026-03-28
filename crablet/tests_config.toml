@@ -1,0 +1,42 @@
+# Crablet 测试配置文件
+# 用于配置测试行为和覆盖率选项
+
+[coverage]
+# 覆盖率目标
+target = 80
+
+# 覆盖报告格式
+format = ["html", "lcov", "cobertura"]
+
+# 输出目录
+output_dir = "coverage"
+
+[coverage.features]
+# 需要覆盖的特性组合
+full = ["qdrant-support", "web", "auto-working", "knowledge"]
+
+[testing]
+# 测试线程数
+test_threads = 4
+
+# 是否在失败时立即停止
+fail_fast = false
+
+# Mock 外部依赖
+use_mocks = true
+
+[testing.timeouts]
+# 测试超时设置（秒）
+unit = 60
+integration = 300
+e2e = 600
+
+[reporting]
+# 报告详细程度
+verbose = true
+
+# 是否打开 HTML 报告
+open_html = false
+
+# 是否上传到 Codecov
+upload_codecov = true

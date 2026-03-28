@@ -1,0 +1,119 @@
+name: Container
+
+on:
+  push:
+    branches: [main, develop]
+    tags:
+      - "v*"
+    paths:
+      - "Dockerfile"
+      - "docker-compose.yml"
+      - "crablet/**"
+      - "frontend/**"
+      - ".github/workflows/container.yml"
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - "Dockerfile"
+      - "docker-compose.yml"
+      - "crablet/**"
+      - "frontend/**"
+      - ".github/workflows/container.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: container-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  REGISTRY_IMAGE: ghcr.io/${{ github.repository }}
+
+jobs:
+  compose-validate:
+    name: Compose Validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate docker compose configuration
+        run: docker compose -f docker-compose.yml config -q
+        env:
+          NEO4J_PASSWORD: ci-password
+          OPENAI_API_KEY: sk-test
+          MOONSHOT_API_KEY: sk-test
+          ZHIPU_API_KEY: sk-test
+          OPENAI_API_BASE: https://api.openai.com/v1
+          OPENAI_MODEL_NAME: gpt-4o-mini
+
+  image-build:
+    name: Container Build Validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    needs: compose-validate
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build container image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: false
+          load: false
+          tags: crablet:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  image-publish:
+    name: Publish GHCR Image
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    needs: image-build
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY_IMAGE }}
+          tags: |
+            type=ref,event=tag
+            type=sha,prefix=sha-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and publish image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

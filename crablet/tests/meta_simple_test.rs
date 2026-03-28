@@ -10,9 +10,14 @@ use crablet::cognitive::meta_controller::{
 };
 use std::time::{Duration, Instant};
 
+fn test_config() -> Config {
+    std::env::set_var("OPENAI_API_KEY", "sk-test");
+    Config::default()
+}
+
 #[tokio::test]
 async fn test_meta_controller_creation() {
-    let config = Config::default();
+    let config = test_config();
     let llm = create_llm_client(&config).await.unwrap();
     let controller = MetaCognitiveController::new(llm).await;
     
@@ -21,7 +26,7 @@ async fn test_meta_controller_creation() {
 
 #[tokio::test]
 async fn test_execute_simple_task() {
-    let config = Config::default();
+    let config = test_config();
     let llm = create_llm_client(&config).await.unwrap();
     let controller = MetaCognitiveController::new(llm).await.unwrap();
     
@@ -49,7 +54,7 @@ async fn test_execute_simple_task() {
 
 #[tokio::test]
 async fn test_get_statistics() {
-    let config = Config::default();
+    let config = test_config();
     let llm = create_llm_client(&config).await.unwrap();
     let controller = MetaCognitiveController::new(llm).await.unwrap();
     
@@ -60,7 +65,7 @@ async fn test_get_statistics() {
 
 #[tokio::test]
 async fn test_custom_config() {
-    let config = Config::default();
+    let config = test_config();
     let llm = create_llm_client(&config).await.unwrap();
     
     let custom_config = MetaConfig {

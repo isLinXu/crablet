@@ -5,7 +5,7 @@
 //! - Cold data (history, versions) → SQLite
 //!
 //! ## Data Flow
-//! ```
+//! ```text
 //! User Request → Redis (hot cache) → SQLite (persistent)
 //!                     ↑                   ↓
 //!                     ←←←←←←←←←←←←←←←←←←←←←

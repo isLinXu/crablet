@@ -4,11 +4,11 @@ import type { AgentInfo, DashboardStats, HitlReview, SwarmStatsData, SwarmTasksR
 export const dashboardService = {
   getDashboardStats: () => api.get<DashboardStats>('/dashboard'),
   getSwarmGraphs: async (page = 1, limit = 10, status = 'Active', query = '') => {
-    const payload = await api.get<any>('/swarm/tasks', { page, limit, status, q: query });
+    const payload = await api.get<SwarmTasksResponse>('/swarm/tasks', { page, limit, status, q: query });
     return {
       graphs: payload?.graphs || [],
       pagination: payload?.pagination,
-    } as SwarmTasksResponse;
+    };
   },
   batchSwarmAction: (action: 'pause' | 'resume' | 'delete', ids: string[]) =>
     api.post<void>('/swarm/tasks/batch', { action, ids }),

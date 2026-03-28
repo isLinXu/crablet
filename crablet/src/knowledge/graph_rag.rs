@@ -319,6 +319,10 @@ impl GraphRAG {
         Ok(results)
     }
 
+    pub(crate) fn knowledge_graph(&self) -> &SharedKnowledgeGraph {
+        &self.knowledge_graph
+    }
+
     fn calculate_graph_boost(
         &self,
         content: &str,

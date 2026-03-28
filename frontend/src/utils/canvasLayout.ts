@@ -88,7 +88,6 @@ export function applyHierarchicalLayout(
 ): Node[] {
   const {
     nodeWidth = 200,
-    nodeHeight = 100,
     horizontalSpacing = 250,
     verticalSpacing = 150,
     align = 'center',
@@ -182,7 +181,7 @@ export function applyTreeLayout(
   }
   
   // Position nodes recursively
-  function positionNode(nodeId: string, x: number, y: number, availableWidth: number) {
+  function positionNode(nodeId: string, x: number, y: number) {
     positions.set(nodeId, { x, y });
     
     const nodeChildren = children.get(nodeId) || [];
@@ -196,14 +195,13 @@ export function applyTreeLayout(
       positionNode(
         childId,
         currentX + childWidth / 2,
-        y + verticalSpacing,
-        childWidth
+        y + verticalSpacing
       );
       currentX += childWidth + horizontalSpacing;
     });
   }
   
-  positionNode(root.id, 0, 100, calculateSubtreeWidth(root.id));
+  positionNode(root.id, 0, 100);
   
   nodes.forEach(node => {
     const pos = positions.get(node.id);

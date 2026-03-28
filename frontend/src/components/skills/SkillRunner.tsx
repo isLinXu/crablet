@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { Play, Clock, CheckCircle, XCircle, Terminal, Loader2 } from 'lucide-react';
+import { Play, Clock, CheckCircle, XCircle, Terminal } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';

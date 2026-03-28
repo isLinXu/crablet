@@ -113,7 +113,7 @@ impl OpenAiClient {
              tracing::warn!("Using OpenAI API Base URL for DashScope without DASHSCOPE_API_KEY. This might fail if the key format is incorrect.");
         }
         
-        info!("Initializing OpenAiClient with Base URL: {}", base_url);
+        tracing::debug!("Initializing OpenAiClient with Base URL: {}", base_url);
         
         // Log which key source is being used (masked)
         let key_source = if env::var("DASHSCOPE_API_KEY").is_ok() { "DASHSCOPE_API_KEY" } else { "OPENAI_API_KEY" };
@@ -122,7 +122,7 @@ impl OpenAiClient {
         } else {
              "***".to_string()
         };
-        info!("Using API Key from: {} ({})", key_source, masked_key);
+        tracing::debug!("Using API Key from: {} ({})", key_source, masked_key);
 
         Ok(Self {
             api_key,
@@ -415,6 +415,17 @@ struct OllamaFunction {
     arguments: serde_json::Value,
 }
 
+#[derive(Deserialize, Debug)]
+struct OllamaStreamResponse {
+    message: Option<OllamaStreamMessage>,
+    done: bool,
+}
+
+#[derive(Deserialize, Debug)]
+struct OllamaStreamMessage {
+    content: Option<String>,
+}
+
 #[async_trait]
 impl LlmClient for OllamaClient {
     async fn chat_complete(&self, messages: &[Message]) -> Result<String> {
@@ -566,5 +577,91 @@ impl LlmClient for OllamaClient {
 
     fn model_name(&self) -> &str {
         &self.model
+    }
+
+    async fn chat_stream(&self, messages: &[Message]) -> Result<Pin<Box<dyn Stream<Item = Result<ChatChunk>> + Send>>> {
+        let ollama_messages: Vec<OllamaMessage> = messages.iter().map(|m| {
+            let mut content_str = String::new();
+            let mut images = Vec::new();
+            
+            if let Some(parts) = &m.content {
+                for part in parts {
+                    match part {
+                        ContentPart::Text { text } => content_str.push_str(text),
+                        ContentPart::ImageUrl { image_url } => {
+                            if let Some(base64) = image_url.url.split(',').nth(1) {
+                                images.push(base64.to_string());
+                            }
+                        }
+                    }
+                }
+            }
+            
+            OllamaMessage {
+                role: m.role.clone(),
+                content: content_str,
+                images: if images.is_empty() { None } else { Some(images) },
+                tool_calls: None,
+            }
+        }).collect();
+
+        let request = OllamaRequest {
+            model: self.model.clone(),
+            messages: ollama_messages,
+            stream: true,
+            tools: None,
+        };
+
+        let url = format!("{}/api/chat", self.base_url.trim_end_matches('/'));
+
+        let response = self.client
+            .post(&url)
+            .header("Content-Type", "application/json")
+            .json(&request)
+            .send()
+            .await?;
+
+        let status = response.status();
+        if !status.is_success() {
+            let text = response.text().await?;
+            error!("Ollama API Stream Error: Status={}, Body={}", status, text);
+            return Err(anyhow::anyhow!("Ollama API returned error: {}", status));
+        }
+
+        let stream = response.bytes_stream();
+        
+        let chunk_stream = async_stream::try_stream! {
+            let mut buffer = Vec::new();
+            
+            for await chunk in stream {
+                let chunk = chunk?;
+                buffer.extend_from_slice(&chunk);
+                
+                // Find newline which separates NDJSON events
+                while let Some(pos) = buffer.iter().position(|&b| b == b'\n') {
+                    let line_bytes: Vec<u8> = buffer.drain(..pos+1).collect();
+                    
+                    if let Ok(line_str) = String::from_utf8(line_bytes) {
+                        let line = line_str.trim();
+                        if line.is_empty() {
+                            continue;
+                        }
+                        
+                        if let Ok(resp) = serde_json::from_str::<OllamaStreamResponse>(line) {
+                            if let Some(msg) = resp.message {
+                                if let Some(content) = msg.content {
+                                    yield ChatChunk {
+                                        delta: content,
+                                        finish_reason: if resp.done { Some("stop".to_string()) } else { None },
+                                    };
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        };
+
+        Ok(Box::pin(chunk_stream))
     }
 }

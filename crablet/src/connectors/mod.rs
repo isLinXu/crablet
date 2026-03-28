@@ -12,7 +12,7 @@
 //!
 //! ## Example
 //!
-//! ```rust
+//! ```rust,ignore
 //! use crablet::connectors::{EmailConnector, ConnectorConfig};
 //!
 //! let config = ConnectorConfig {

@@ -2,44 +2,87 @@ name: Coverage
 
 on:
   push:
-    branches: [ main ]
+    branches: [main, develop]
+    paths:
+      - "crablet/**"
+      - "frontend/**"
+      - ".github/workflows/coverage.yml"
+      - "scripts/check_lcov_threshold.sh"
+      - "Justfile"
   pull_request:
-    branches: [ main ]
-    types: [ opened, synchronize, reopened ]
+    branches: [main, develop]
+    types: [opened, synchronize, reopened]
+    paths:
+      - "crablet/**"
+      - "frontend/**"
+      - ".github/workflows/coverage.yml"
+      - "scripts/check_lcov_threshold.sh"
+      - "Justfile"
+  workflow_dispatch:
+
+concurrency:
+  group: coverage-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  OPENAI_API_KEY: sk-test
+  CRABLET_RUN_REAL_LLM_TESTS: 0
+  COVERAGE_THRESHOLD: "80"
 
 jobs:
-  coverage-report:
-    name: Generate Coverage Report
+  backend-coverage:
+    name: Backend Coverage
     runs-on: ubuntu-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        working-directory: ./crablet
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Install Rust
         uses: dtolnay/rust-action@stable
+        with:
+          toolchain: stable
+          components: llvm-tools-preview
 
-      - name: Install llvm-cov
-        run: cargo install cargo-llvm-cov
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
 
-      - name: Cache cargo registry
+      - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: crablet
+          workspaces: |
+            ./crablet -> target
 
-      - name: Generate coverage report
+      - name: Generate LCOV report
         run: |
-          cd crablet
           mkdir -p coverage
-          cargo llvm-cov --workspace --lcov --output-path coverage/lcov.info
+          cargo llvm-cov --workspace --no-default-features --features web --lcov --output-path coverage/lcov.info
+
+      - name: Enforce coverage gate
+        run: bash ../scripts/check_lcov_threshold.sh coverage/lcov.info "${COVERAGE_THRESHOLD}" backend-web
+
+      - name: Upload LCOV artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-web-lcov
+          path: ./crablet/coverage/lcov.info
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v3
+        uses: codecov/codecov-action@v4
         with:
           files: ./crablet/coverage/lcov.info
-          flags: unittests
-          name: crablet-coverage
-          fail_ci_if_error: true
-          verbose: true
+          flags: backend-web
+          name: crablet-backend-coverage
+          fail_ci_if_error: false
 
       - name: Comment coverage on PR
         if: github.event_name == 'pull_request'
@@ -49,50 +92,46 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           delete-old-comments: true
 
-  coverage-check:
-    name: Coverage Check (80% Gate)
+  frontend-coverage:
+    name: Frontend Coverage
     runs-on: ubuntu-latest
-    needs: coverage-report
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: ./frontend
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install Rust
-        uses: dtolnay/rust-action@stable
-
-      - name: Install llvm-cov
-        run: cargo install cargo-llvm-cov
-
-      - name: Cache cargo registry
-        uses: Swatinem/rust-cache@v2
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          workspaces: crablet
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: ./frontend/package-lock.json
 
-      - name: Check coverage gate
-        run: |
-          cd crablet
-          mkdir -p coverage
-          cargo llvm-cov --workspace --lcov --output-path coverage/lcov.info
-          COVERAGE=$(awk -F: '
-            /^LF:/ { lf += $2 }
-            /^LH:/ { lh += $2 }
-            END {
-              if (lf == 0) {
-                print "0.00"
-              } else {
-                printf "%.2f", (lh / lf) * 100
-              }
-            }
-          ' coverage/lcov.info)
-          echo "Current coverage: ${COVERAGE}%"
+      - name: Install dependencies
+        run: npm ci
 
-          THRESHOLD=80
-          awk -v coverage="$COVERAGE" -v threshold="$THRESHOLD" '
-            BEGIN {
-              if (coverage + 0 < threshold + 0) {
-                printf "ERROR: Coverage %s%% is below %s%% threshold!\n", coverage, threshold
-                exit 1
-              }
-              printf "SUCCESS: Coverage %s%% meets %s%% threshold\n", coverage, threshold
-            }
-          '
+      - name: Generate frontend coverage
+        run: npm run test:coverage
+
+      - name: Upload frontend LCOV artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-lcov
+          path: ./frontend/coverage/lcov.info
+
+      - name: Upload frontend HTML coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-coverage-html
+          path: ./frontend/coverage
+
+      - name: Upload frontend coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./frontend/coverage/lcov.info
+          flags: frontend
+          name: crablet-frontend-coverage
+          fail_ci_if_error: false

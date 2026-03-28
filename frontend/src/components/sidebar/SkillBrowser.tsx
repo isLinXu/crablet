@@ -4,13 +4,13 @@ import type { BatchTestResult, RegistrySkillItem, SkillsShTopItem, Skill, SkillR
 import { skillService } from '@/services/skillService';
 import { Card, CardHeader, CardTitle, CardContent } from '../ui/Card';
 import { Button } from '../ui/Button';
-import { Loader2, Terminal, CheckCircle, XCircle, Search, Download, PlayCircle, Wrench, Sparkles, Brain, Clock, FileText } from 'lucide-react';
+import { Loader2, Terminal, CheckCircle, XCircle, Search, Download, PlayCircle, Wrench, Sparkles, Brain, Clock } from 'lucide-react';
 import { EmptyState } from '../ui/EmptyState';
 import toast from 'react-hot-toast';
 import { Input } from '../ui/Input';
 import { SemanticSearch } from '../skills/SemanticSearch';
-import { SkillRunner, QuickRunButton } from '../skills/SkillRunner';
-import { SkillLogs, ViewLogsButton } from '../skills/SkillLogs';
+import { SkillRunner } from '../skills/SkillRunner';
+import { SkillLogs } from '../skills/SkillLogs';
 import { CreateSkillButton } from '../skills/SkillCreator';
 
 export const SkillBrowser: React.FC = () => {
@@ -47,7 +47,7 @@ export const SkillBrowser: React.FC = () => {
   useEffect(() => {
     fetchSkills().catch(() => {});
     skillService.getTopSkills(100)
-      .then((res: any) => setTopSkills(res?.items || []))
+      .then((res: { items?: SkillsShTopItem[] }) => setTopSkills(res?.items || []))
       .catch(() => setTopSkills([]));
   }, [fetchSkills]);
 
@@ -74,7 +74,7 @@ export const SkillBrowser: React.FC = () => {
   const topPageItems = sortedTopSkills.slice((topPage - 1) * topPageSize, topPage * topPageSize);
 
   const runBatchTest = async (skillNames: string[]) => {
-    const res: any = await skillService.batchTest(skillNames);
+    const res = await skillService.batchTest(skillNames) as { results?: BatchTestResult[] };
     const results = Array.isArray(res?.results) ? res.results : [];
     setBatchResults(results);
     setBatchTestExecuted(true);
@@ -192,7 +192,7 @@ export const SkillBrowser: React.FC = () => {
     for (let i = 0; i < items.length; i += 1) {
       const item = items[i];
       try {
-        const res: any = await skillService.install({ source: item.source, skill_id: item.skill_id });
+        const res = await skillService.install({ source: item.source, skill_id: item.skill_id }) as { status?: string };
         const status = res?.status;
         if (status === 'installed' || status === 'already_installed') {
           success += 1;

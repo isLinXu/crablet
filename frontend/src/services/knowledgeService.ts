@@ -1,14 +1,29 @@
 import { api } from '@/services/api';
 import client from '@/api/client';
+import { isAxiosError } from 'axios';
 import type { KnowledgeDocument } from '@/types/domain';
+
+interface KnowledgeDocumentsResponse {
+  documents?: KnowledgeDocument[];
+}
+
+interface KnowledgeSearchResult {
+  content: string;
+  score: number;
+  source?: string;
+}
+
+interface KnowledgeSearchResponse {
+  results?: KnowledgeSearchResult[];
+}
 
 export const knowledgeService = {
   listDocuments: async () => {
-    const payload = await api.get<any>('/v1/knowledge/documents');
-    return Array.isArray(payload) ? payload as KnowledgeDocument[] : (Array.isArray(payload?.documents) ? payload.documents : []);
+    const payload = await api.get<KnowledgeDocument[] | KnowledgeDocumentsResponse>('/v1/knowledge/documents');
+    return Array.isArray(payload) ? payload : (Array.isArray(payload?.documents) ? payload.documents : []);
   },
   search: async (q: string) => {
-    const payload = await api.get<any>('/v1/knowledge/search', { q });
+    const payload = await api.get<KnowledgeSearchResponse>('/v1/knowledge/search', { q });
     return Array.isArray(payload?.results) ? payload.results : [];
   },
   uploadFile: async (
@@ -38,8 +53,8 @@ export const knowledgeService = {
   deleteDocument: async (docId: string) => {
     try {
       return await api.delete<void>(`/v1/knowledge/documents/${docId}`);
-    } catch (error: any) {
-      if (error?.response?.status === 404) {
+    } catch (error: unknown) {
+      if (isAxiosError(error) && error.response?.status === 404) {
         throw new Error('KNOWLEDGE_DELETE_UNSUPPORTED');
       }
       throw error;

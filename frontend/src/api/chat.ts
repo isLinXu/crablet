@@ -15,7 +15,10 @@ export const chatApi = {
     const data = await chatService.getSessions();
     return { data, status: 'ok' };
   },
-  createSession: (title?: string) => client.post<any, ApiResponse<ChatSession>>('/sessions', { title }),
+  createSession: async (title?: string): Promise<ApiResponse<ChatSession>> => {
+    const response = await client.post<ChatSession>('/sessions', { title });
+    return { data: response.data, status: 'ok' };
+  },
   deleteSession: async (sessionId: string): Promise<ApiResponse<void>> => {
     await chatService.deleteSession(sessionId);
     return { data: undefined, status: 'ok' };

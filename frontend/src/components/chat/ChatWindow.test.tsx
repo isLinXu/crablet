@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import { ChatWindow } from './ChatWindow';
 import { describe, it, expect, vi } from 'vitest';
+import { MemoryRouter } from 'react-router-dom';
 
 // Mock useWebSocket
 vi.mock('../../hooks/useWebSocket', () => ({
@@ -24,7 +25,11 @@ vi.mock('react-virtuoso', () => ({
 
 describe('ChatWindow', () => {
   it('renders chat header', () => {
-    render(<ChatWindow />);
-    expect(screen.getByText(/Crablet Agent/i)).toBeInTheDocument();
+    render(
+      <MemoryRouter>
+        <ChatWindow />
+      </MemoryRouter>
+    );
+    expect(screen.getByRole('heading', { name: /Crablet/i })).toBeInTheDocument();
   });
 });

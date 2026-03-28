@@ -122,7 +122,7 @@ export const useCanvasStore = create<CanvasState>()(
               data: { label, type: 'task', status: 'pending' },
             };
 
-            let newEdges = [...state.edges];
+            const newEdges = [...state.edges];
             if (parentId) {
                 const edgeId = `e-${parentId}-${id}`;
                 if (!newEdges.find(e => e.id === edgeId)) {

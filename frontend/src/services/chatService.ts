@@ -1,4 +1,5 @@
 import { api } from '@/services/api';
+import { isAxiosError } from 'axios';
 import type { ChatSession, Message } from '@/types/domain';
 
 interface SendChatResponse {
@@ -22,22 +23,28 @@ interface SendImageResponse {
   error?: string;
 }
 
+interface RouteSelection {
+  provider_id: string;
+  vendor: string;
+  model: string;
+  version: string;
+  reason: string;
+  priority: 'speed' | 'quality' | 'balanced';
+  question_type: string;
+  api_base_url: string;
+  api_key: string;
+  model_type: 'chat' | 'image';
+}
+
+const shouldRetryWithLegacyPath = (error: unknown) =>
+  isAxiosError(error) &&
+  [401, 404, 405].includes(error.response?.status ?? 0);
+
 export const chatService = {
   sendMessage: async (
     message: string,
     sessionId?: string,
-    route?: {
-      provider_id: string;
-      vendor: string;
-      model: string;
-      version: string;
-      reason: string;
-      priority: 'speed' | 'quality' | 'balanced';
-      question_type: string;
-      api_base_url: string;
-      api_key: string;
-      model_type: 'chat' | 'image';
-    }
+    route?: RouteSelection
   ) => {
     const payload = {
       message,
@@ -46,9 +53,8 @@ export const chatService = {
     };
     try {
       return await api.post<SendChatResponse>('/v1/chat', payload);
-    } catch (error: any) {
-      const status = error?.response?.status;
-      if (status === 401 || status === 404 || status === 405) {
+    } catch (error: unknown) {
+      if (shouldRetryWithLegacyPath(error)) {
         return api.post<SendChatResponse>('/api/v1/chat', payload);
       }
       throw error;
@@ -58,18 +64,7 @@ export const chatService = {
     prompt: string,
     sessionId?: string,
     n?: number,
-    route?: {
-      provider_id: string;
-      vendor: string;
-      model: string;
-      version: string;
-      reason: string;
-      priority: 'speed' | 'quality' | 'balanced';
-      question_type: string;
-      api_base_url: string;
-      api_key: string;
-      model_type: 'chat' | 'image';
-    }
+    route?: RouteSelection
   ) => {
     const payload = {
       prompt,
@@ -79,9 +74,8 @@ export const chatService = {
     };
     try {
       return await api.post<SendImageResponse>('/v1/images', payload);
-    } catch (error: any) {
-      const status = error?.response?.status;
-      if (status === 401 || status === 404 || status === 405) {
+    } catch (error: unknown) {
+      if (shouldRetryWithLegacyPath(error)) {
         return api.post<SendImageResponse>('/api/v1/images', payload);
       }
       throw error;

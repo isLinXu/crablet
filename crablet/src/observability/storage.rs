@@ -5,6 +5,7 @@
 use super::{TraceSession, AgentSpan, ExecutionRecording};
 use async_trait::async_trait;
 use anyhow::Result;
+use sqlx::{Row, sqlite::SqliteRow};
 use std::collections::HashMap;
 
 use tokio::sync::RwLock;
@@ -272,7 +273,6 @@ impl TraceStorage for PersistentStorage {
 }
 
 // Helper structs for database operations
-#[derive(sqlx::FromRow)]
 struct SessionRow {
     execution_id: String,
     workflow_id: String,
@@ -280,6 +280,19 @@ struct SessionRow {
     ended_at: Option<i64>,
     status: String,
     metadata: String,
+}
+
+impl<'r> sqlx::FromRow<'r, SqliteRow> for SessionRow {
+    fn from_row(row: &'r SqliteRow) -> std::result::Result<Self, sqlx::Error> {
+        Ok(Self {
+            execution_id: row.try_get("execution_id")?,
+            workflow_id: row.try_get("workflow_id")?,
+            started_at: row.try_get("started_at")?,
+            ended_at: row.try_get("ended_at")?,
+            status: row.try_get("status")?,
+            metadata: row.try_get("metadata")?,
+        })
+    }
 }
 
 impl From<SessionRow> for TraceSession {
@@ -297,13 +310,24 @@ impl From<SessionRow> for TraceSession {
     }
 }
 
-#[derive(sqlx::FromRow)]
 struct SpanRow {
     execution_id: String,
     span_index: i64,
     span_type: String,
     content: String,
     timestamp: i64,
+}
+
+impl<'r> sqlx::FromRow<'r, SqliteRow> for SpanRow {
+    fn from_row(row: &'r SqliteRow) -> std::result::Result<Self, sqlx::Error> {
+        Ok(Self {
+            execution_id: row.try_get("execution_id")?,
+            span_index: row.try_get("span_index")?,
+            span_type: row.try_get("span_type")?,
+            content: row.try_get("content")?,
+            timestamp: row.try_get("timestamp")?,
+        })
+    }
 }
 
 fn serialize_span(span: &AgentSpan) -> (String, String) {

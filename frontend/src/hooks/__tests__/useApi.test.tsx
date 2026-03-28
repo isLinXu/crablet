@@ -46,7 +46,7 @@ describe('useApi', () => {
     await act(async () => {
         try {
             await result.current.execute();
-        } catch (e) {
+        } catch {
             // Expected to throw
         }
     });

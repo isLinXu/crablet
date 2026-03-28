@@ -33,8 +33,8 @@ export const getApiBaseUrl = () => {
     return fallback;
   }
 
-  // Auto-fix if pointing to serve-web (3000)
-  if (url === '/api' || url.includes(':3000')) {
+  // Auto-fix if pointing to serve-web (3333/3000) or the stale 18790 gateway port.
+  if (url === '/api' || url.includes(':3333') || url.includes(':3000') || url.includes(':18790')) {
       localStorage.setItem(LOCAL_STORAGE_KEYS.API_BASE_URL, fallback);
       return fallback;
   }
@@ -91,14 +91,44 @@ export const getApiBaseUrl = () => {
   }
 };
 
-export const getWsUrl = () => {
-  // If we are proxying, use window.location.host
-  // But if we have a custom API URL, we should probably use that host?
-  // For now, let's just make sure localhost -> 127.0.0.1 if explicitly set
-  const wsUrl = import.meta.env.VITE_WS_URL || (window.location.protocol === 'https:' ? 'wss://' : 'ws://') + window.location.host + '/ws';
-  // Do NOT force 127.0.0.1 for WS if we are using the proxy (port 5173)
-  // The browser needs to connect to the same host as the page to avoid CORS/Origin issues with the proxy.
-  return wsUrl;
+const getDefaultWsBase = () => {
+  if (typeof window === 'undefined' || !window.location) {
+    return 'ws://127.0.0.1:18789';
+  }
+
+  const apiBaseUrl = getApiBaseUrl();
+  if (apiBaseUrl.startsWith('/')) {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    return `${protocol}//${window.location.host}`;
+  }
+
+  try {
+    const parsed = new URL(apiBaseUrl);
+    parsed.protocol = parsed.protocol === 'https:' ? 'wss:' : 'ws:';
+    parsed.pathname = '';
+    parsed.search = '';
+    parsed.hash = '';
+    return parsed.toString().replace(/\/$/, '');
+  } catch {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    return `${protocol}//${window.location.host}`;
+  }
+};
+
+export const getWsUrl = (path = '/ws') => {
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+  const configured = import.meta.env.VITE_WS_URL?.trim();
+  const wsBase = configured || getDefaultWsBase();
+
+  if (/^wss?:\/\//i.test(wsBase)) {
+    const parsed = new URL(wsBase);
+    parsed.pathname = normalizedPath;
+    parsed.search = '';
+    parsed.hash = '';
+    return parsed.toString();
+  }
+
+  return `${wsBase.replace(/\/+$/, '')}${normalizedPath}`;
 };
 
 export const ROUTES = {

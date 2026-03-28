@@ -5,11 +5,14 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
-    "type-check": "tsc -b --pretty false",
+    "build": "npm run type-check && vite build",
+    "type-check": "tsc -p tsconfig.app.json --pretty false && tsc -p tsconfig.node.json --pretty false",
     "lint": "eslint .",
+    "lint:ci": "node ./scripts/lint-ci.mjs",
     "preview": "vite preview",
-    "test": "vitest"
+    "test": "vitest",
+    "test:ci": "vitest --run --configLoader runner",
+    "test:coverage": "node ./scripts/test-coverage.mjs"
   },
   "dependencies": {
     "@tailwindcss/postcss": "^4.2.1",
@@ -51,6 +54,7 @@
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
     "@types/tesseract.js": "^0.0.2",
+    "@vitest/coverage-v8": "^3.2.4",
     "@vitejs/plugin-react": "^5.1.1",
     "autoprefixer": "^10.4.27",
     "eslint": "^9.39.1",

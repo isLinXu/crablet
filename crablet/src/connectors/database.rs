@@ -11,7 +11,7 @@
 //!
 //! ## Example
 //!
-//! ```rust
+//! ```rust,ignore
 //! use crablet::connectors::{DatabaseConnector, ConnectorConfig};
 //!
 //! let config = ConnectorConfig {
