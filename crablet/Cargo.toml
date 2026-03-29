@@ -100,7 +100,7 @@ opentelemetry-prometheus = "0.31.0"
 prometheus = "0.14.0"
 sqlite-vec = "0.1.6"
 parking_lot = "0.12.5"
-jsonwebtoken = "9.2.0"
+jsonwebtoken = "10.3.0"
 governor = { version = "0.6.3", features = ["std", "dashmap", "jitter", "quanta"] }
 tower = { version = "0.4.13", features = ["util", "limit"] }
 tower_governor = "0.4.2"
