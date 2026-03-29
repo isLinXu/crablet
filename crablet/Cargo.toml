@@ -87,7 +87,7 @@ imap = { version = "3.0.0-alpha.15", optional = true }
 data-encoding = "2.4"
 colored = "3.1.1"
 scraper = "0.26.0"
-evalexpr = "11.0"
+evalexpr = "13.1"
 tiktoken-rs = "0.5.8"
 which = "6.0"
 argon2 = "0.5.3"
