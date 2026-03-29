@@ -11,7 +11,7 @@ COPY frontend/ .
 RUN npm run build
 
 # Stage 1: Chef (Pre-computation)
-FROM lukemathwalker/cargo-chef:latest-rust-1.88 AS chef
+FROM lukemathwalker/cargo-chef:latest-rust-1.94 AS chef
 WORKDIR /app
 
 # Stage 2: Planner
