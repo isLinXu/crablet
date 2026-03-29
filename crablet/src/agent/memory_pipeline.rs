@@ -290,9 +290,9 @@ pub struct MemoryPipeline {
     /// Working memory entries (short-term)
     working_memory: Arc<RwLock<VecDeque<MemoryEntry>>>,
     /// Episodic memory entries (medium-term)
-    episodic_memory: Arc<RwLock<Vec<MemoryEntry>>>,
+    episodic_memory: Arc<RwLock<VecDeque<MemoryEntry>>>,
     /// Semantic memory entries (long-term)
-    semantic_memory: Arc<RwLock<Vec<MemoryEntry>>>,
+    semantic_memory: Arc<RwLock<VecDeque<MemoryEntry>>>,
     /// Pattern extraction cache
     pattern_cache: Arc<RwLock<HashMap<String, Vec<String>>>>,
     /// Access statistics
@@ -360,8 +360,8 @@ impl MemoryPipeline {
 
         Self {
             working_memory: Arc::new(RwLock::new(VecDeque::with_capacity(config.working_memory_capacity))),
-            episodic_memory: Arc::new(RwLock::new(Vec::with_capacity(config.episodic_memory_max_size))),
-            semantic_memory: Arc::new(RwLock::new(Vec::with_capacity(config.semantic_memory_max_size))),
+            episodic_memory: Arc::new(RwLock::new(VecDeque::with_capacity(config.episodic_memory_max_size))),
+            semantic_memory: Arc::new(RwLock::new(VecDeque::with_capacity(config.semantic_memory_max_size))),
             pattern_cache: Arc::new(RwLock::new(HashMap::new())),
             access_stats: Arc::new(RwLock::new(AccessStatistics::default())),
             config,
@@ -416,11 +416,11 @@ impl MemoryPipeline {
         let id = memory_entry.id.clone();
 
         let mut episodic = self.episodic_memory.write().await;
-        episodic.push(memory_entry.clone());
+        episodic.push_back(memory_entry.clone());
 
-        // Enforce max size (remove oldest if needed)
+        // Enforce max size (remove oldest if needed) - O(1) with VecDeque
         while episodic.len() > self.config.episodic_memory_max_size {
-            episodic.remove(0);
+            episodic.pop_front();
         }
 
         let _ = self.event_tx.send(PipelineEvent::MemoryStored {
@@ -446,11 +446,11 @@ impl MemoryPipeline {
         let id = memory_entry.id.clone();
 
         let mut semantic = self.semantic_memory.write().await;
-        semantic.push(memory_entry.clone());
+        semantic.push_back(memory_entry.clone());
 
-        // Enforce max size
+        // Enforce max size - O(1) with VecDeque
         while semantic.len() > self.config.semantic_memory_max_size {
-            semantic.remove(0);
+            semantic.pop_front();
         }
 
         let _ = self.event_tx.send(PipelineEvent::MemoryStored {
@@ -533,7 +533,8 @@ impl MemoryPipeline {
         }
 
         // Sort by final score
-        scored_entries.sort_by(|a, b| b.final_score.partial_cmp(&a.final_score).unwrap());
+        // Use total_cmp for NaN-safe floating point comparison (NaN treated as less than all numbers)
+        scored_entries.sort_by(|a, b| b.final_score.total_cmp(&a.final_score));
 
         // Limit results
         let results: Vec<_> = scored_entries.into_iter().take(query.limit).collect();
@@ -579,16 +580,68 @@ impl MemoryPipeline {
         intersection as f64 / query_words.len() as f64
     }
 
-    /// Calculate semantic score (placeholder - would use actual embeddings)
-    fn calculate_semantic_score(&self, _content: &str, _query: &str) -> f64 {
-        // TODO: Integrate with actual embedding model
-        // For now, return a random score between 0.3 and 0.9
-        use std::time::SystemTime;
-        let seed = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap()
-            .subsec_nanos();
-        (seed % 70 + 30) as f64 / 100.0
+    /// Calculate semantic score (deterministic fallback when no embedding model)
+    ///
+    /// Uses character n-gram overlap as a proxy for semantic similarity.
+    /// This provides stable, deterministic results unlike the previous random implementation.
+    /// Once an embedding model is integrated, this should be replaced with actual cosine similarity.
+    fn calculate_semantic_score(&self, content: &str, query: &str) -> f64 {
+        // Character n-gram based similarity (bigrams and trigrams)
+        // This approximates semantic similarity without requiring embeddings
+        let content_chars: Vec<char> = content.chars().collect();
+        let query_chars: Vec<char> = query.chars().collect();
+
+        // Extract character n-grams
+        let content_bigrams: HashSet<String> = (0..content_chars.len().saturating_sub(1))
+            .map(|i| format!("{}{}", content_chars[i], content_chars[i + 1]))
+            .collect();
+
+        let query_bigrams: HashSet<String> = (0..query_chars.len().saturating_sub(1))
+            .map(|i| format!("{}{}", query_chars[i], query_chars[i + 1]))
+            .collect();
+
+        if query_bigrams.is_empty() {
+            return 0.0;
+        }
+
+        // Jaccard-like similarity on bigrams
+        let intersection: usize = content_bigrams.intersection(&query_bigrams).count();
+        let union: usize = content_bigrams.union(&query_bigrams).count();
+
+        let bigram_sim = if union > 0 {
+            intersection as f64 / union as f64
+        } else {
+            0.0
+        };
+
+        // Also extract trigrams for higher precision
+        let content_trigrams: HashSet<String> = (0..content_chars.len().saturating_sub(2))
+            .map(|i| format!("{}{}{}", content_chars[i], content_chars[i + 1], content_chars[i + 2]))
+            .collect();
+
+        let query_trigrams: HashSet<String> = (0..query_chars.len().saturating_sub(2))
+            .map(|i| format!("{}{}{}", query_chars[i], query_chars[i + 1], query_chars[i + 2]))
+            .collect();
+
+        let trigram_sim = if !query_trigrams.is_empty() {
+            let t_intersection: usize = content_trigrams.intersection(&query_trigrams).count();
+            let t_union: usize = content_trigrams.union(&query_trigrams).count();
+            if t_union > 0 {
+                t_intersection as f64 / t_union as f64
+            } else {
+                0.0
+            }
+        } else {
+            0.0
+        };
+
+        // Weighted combination: bigrams (40%) + trigrams (60%)
+        // Trigrams capture more semantic content
+        let combined = 0.4 * bigram_sim + 0.6 * trigram_sim;
+
+        // Apply a mild non-linear boost to make scores more differentiated
+        // while keeping them in [0, 1] range
+        (combined * 1.5).min(0.95)
     }
 
     // --- Access Operations ---
@@ -730,7 +783,7 @@ impl MemoryPipeline {
             for entry in to_consolidate {
                 let mut new_entry = entry.clone();
                 new_entry.id = uuid::Uuid::new_v4().to_string();
-                semantic.push(new_entry);
+                semantic.push_back(new_entry);
 
                 let _ = self.event_tx.send(PipelineEvent::MemoryConsolidated {
                     from_type: MemoryType::Episodic,
@@ -829,7 +882,7 @@ pub trait HarnessMemoryIntegration: Send + Sync {
     fn create_pipeline_from_harness(&self) -> MemoryPipeline;
 
     /// Store current harness state to memory
-    fn snapshot_to_memory(&self, pipeline: &MemoryPipeline);
+    fn snapshot_to_memory_sync(&self, pipeline: &MemoryPipeline) -> tokio::task::JoinHandle<()>;
 }
 
 impl HarnessMemoryIntegration for super::harness::AgentHarnessContext {
@@ -837,10 +890,39 @@ impl HarnessMemoryIntegration for super::harness::AgentHarnessContext {
         MemoryPipeline::with_default()
     }
 
-    fn snapshot_to_memory(&self, _pipeline: &MemoryPipeline) {
-        // Placeholder implementation - stores current harness state to memory
-        // Note: This is a simplified version; full implementation would capture
-        // step_count, tool_call_count, error_history, etc.
+    fn snapshot_to_memory_sync(&self, pipeline: &MemoryPipeline) -> tokio::task::JoinHandle<()> {
+        let working_entry = WorkingMemoryEntry {
+            session_id: self.config().metadata.get("session_id")
+                .cloned().unwrap_or_default(),
+            step_count: self.metadata().step_count,
+            tool_call_count: self.metadata().tool_call_count,
+            tool_failure_count: self.metadata().tool_failure_count,
+            llm_tokens_used: self.metadata().llm_tokens_used,
+            current_thought: None,
+            last_tool: None,
+            last_tool_args: None,
+            last_tool_result: None,
+            resource_usage: ResourceSnapshot {
+                memory_bytes: self.resource_tracker().get_usage().memory_bytes,
+                cpu_time_ms: self.resource_tracker().get_usage().cpu_time_ms,
+                network_requests: 0,
+            },
+            error_history: self.error_history().iter().map(|e| e.to_string()).collect(),
+        };
+
+        let pipeline_clone = MemoryPipeline {
+            working_memory: pipeline.working_memory.clone(),
+            episodic_memory: pipeline.episodic_memory.clone(),
+            semantic_memory: pipeline.semantic_memory.clone(),
+            pattern_cache: pipeline.pattern_cache.clone(),
+            access_stats: pipeline.access_stats.clone(),
+            config: pipeline.config.clone(),
+            event_tx: pipeline.event_tx.clone(),
+        };
+
+        tokio::spawn(async move {
+            pipeline_clone.store_working(working_entry).await;
+        })
     }
 }
 

@@ -104,7 +104,7 @@ impl VectorStore {
                         .bind(id)
                         .bind(&contents[i])
                         .bind(embedding_json)
-                        .bind(metadata)
+                        .bind(serde_json::to_string(metadata).unwrap_or_default())
                         .execute(&mut *tx)
                         .await?;
                 }
@@ -144,7 +144,7 @@ impl VectorStore {
                         .bind(id)
                         .bind(&contents[i])
                         .bind(embedding_json)
-                        .bind(metadata)
+                        .bind(serde_json::to_string(metadata).unwrap_or_default())
                         .execute(&mut *tx)
                         .await?;
                 }
@@ -210,7 +210,7 @@ impl VectorStore {
                         .bind(id)
                         .bind(chunk)
                         .bind(embedding_json)
-                        .bind(meta.clone())
+                        .bind(serde_json::to_string(&meta).unwrap_or_default())
                         .execute(&mut *tx)
                         .await?;
                 }
@@ -319,7 +319,8 @@ impl VectorStore {
                         let similarity = cosine_similarity(&query_vec, &embedding);
                         
                         let content: String = row.get("content");
-                        let metadata: serde_json::Value = row.get("metadata");
+                        let metadata_str: String = row.get("metadata");
+                        let metadata: serde_json::Value = serde_json::from_str(&metadata_str).unwrap_or(json!({}));
                         
                         results.push((content, similarity, metadata));
                         
@@ -471,7 +472,8 @@ impl VectorStore {
                 let mut chunks = Vec::new();
                 for row in rows {
                     let content: String = row.get("content");
-                    let metadata: serde_json::Value = row.get("metadata");
+                    let metadata_str: String = row.get("metadata");
+                    let metadata: serde_json::Value = serde_json::from_str(&metadata_str).unwrap_or(json!({}));
                     chunks.push(json!({
                         "content": content,
                         "metadata": metadata
@@ -492,7 +494,8 @@ impl VectorStore {
                 let mut chunks = Vec::new();
                 for row in rows {
                     let content: String = row.get("content");
-                    let metadata: serde_json::Value = row.get("metadata");
+                    let metadata_str: String = row.get("metadata");
+                    let metadata: serde_json::Value = serde_json::from_str(&metadata_str).unwrap_or(json!({}));
                     chunks.push(json!({
                         "content": content,
                         "metadata": metadata
