@@ -71,7 +71,7 @@ jobs:
         run: bash ../scripts/check_lcov_threshold.sh coverage/lcov.info "${COVERAGE_THRESHOLD}" backend-web
 
       - name: Upload LCOV artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: backend-web-lcov
           path: ./crablet/coverage/lcov.info
@@ -117,13 +117,13 @@ jobs:
         run: npm run test:coverage
 
       - name: Upload frontend LCOV artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: frontend-lcov
           path: ./frontend/coverage/lcov.info
 
       - name: Upload frontend HTML coverage artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: frontend-coverage-html
           path: ./frontend/coverage
