@@ -10,7 +10,7 @@ export const LOCAL_STORAGE_KEYS = {
 
 const getDefaultApiFallback = () => {
   if (typeof window === 'undefined' || !window.location) {
-    return 'http://127.0.0.1:18789/api';
+    return 'http://127.0.0.1:18790/api';
   }
 
   const { protocol, hostname, port } = window.location;
@@ -21,7 +21,7 @@ const getDefaultApiFallback = () => {
   }
 
   const apiProtocol = protocol === 'https:' ? 'https:' : 'http:';
-  return `${apiProtocol}//${hostname}:18789/api`;
+  return `${apiProtocol}//${hostname}:18790/api`;
 };
 
 export const getApiBaseUrl = () => {
@@ -33,8 +33,8 @@ export const getApiBaseUrl = () => {
     return fallback;
   }
 
-  // Auto-fix if pointing to serve-web (3333/3000) or the stale 18790 gateway port.
-  if (url === '/api' || url.includes(':3333') || url.includes(':3000') || url.includes(':18790')) {
+  // Auto-fix if pointing to serve-web (3333/3000) or the stale 18789 gateway port.
+  if (url === '/api' || url.includes(':3333') || url.includes(':3000') || url.includes(':18789')) {
       localStorage.setItem(LOCAL_STORAGE_KEYS.API_BASE_URL, fallback);
       return fallback;
   }
@@ -93,7 +93,7 @@ export const getApiBaseUrl = () => {
 
 const getDefaultWsBase = () => {
   if (typeof window === 'undefined' || !window.location) {
-    return 'ws://127.0.0.1:18789';
+    return 'ws://127.0.0.1:18790';
   }
 
   const apiBaseUrl = getApiBaseUrl();

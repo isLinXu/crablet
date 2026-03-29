@@ -302,7 +302,7 @@ pub enum Commands {
         #[arg(long, default_value = "127.0.0.1")]
         host: String,
         /// Port to listen on
-        #[arg(long, default_value = "18789")]
+        #[arg(long, default_value = "18790")]
         port: u16,
     },
     
