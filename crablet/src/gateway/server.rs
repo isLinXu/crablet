@@ -51,6 +51,7 @@ use tokio_stream::StreamExt as _;
 use futures::stream::Stream;
 use tower_http::services::ServeDir;
 use tower_http::cors::{CorsLayer, Any};
+use tower_http::set_header::SetResponseHeaderLayer;
 use tower_http::trace::TraceLayer;
 use std::net::SocketAddr;
 #[cfg(feature = "knowledge")]
@@ -364,6 +365,27 @@ impl CrabletGateway {
         let app = public_routes
             .merge(protected_routes)
             .fallback_service(ServeDir::new("static"))
+            // Security response headers
+            .layer(SetResponseHeaderLayer::overriding(
+                header::X_CONTENT_TYPE_OPTIONS,
+                header::HeaderValue::from_static("nosniff"),
+            ))
+            .layer(SetResponseHeaderLayer::overriding(
+                header::X_FRAME_OPTIONS,
+                header::HeaderValue::from_static("DENY"),
+            ))
+            .layer(SetResponseHeaderLayer::overriding(
+                header::HeaderName::from_static("x-xss-protection"),
+                header::HeaderValue::from_static("1; mode=block"),
+            ))
+            .layer(SetResponseHeaderLayer::overriding(
+                header::HeaderName::from_static("referrer-policy"),
+                header::HeaderValue::from_static("strict-origin-when-cross-origin"),
+            ))
+            .layer(SetResponseHeaderLayer::if_not_present(
+                header::STRICT_TRANSPORT_SECURITY,
+                header::HeaderValue::from_static("max-age=31536000; includeSubDomains"),
+            ))
             .layer(cors) // Cors first (outermost)
             .layer(TraceLayer::new_for_http())
             .with_state(gateway);

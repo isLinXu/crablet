@@ -393,36 +393,39 @@ impl OnlineLearner {
 
     /// Add an experience to the replay buffer
     pub fn add_experience(&mut self, experience: Experience) -> Result<()> {
-        let mut buffer = self.replay_buffer.write().unwrap();
-        
+        let mut buffer = self.replay_buffer.write()
+            .map_err(|e| anyhow!("Replay buffer lock poisoned: {e}"))?;
+
         // Add to buffer
         if buffer.len() >= self.config.buffer_size {
             buffer.pop_front();
         }
-        
+
         // Calculate priority based on TD error
         let mut exp_with_priority = experience;
         let priority = self.calculate_priority(&exp_with_priority);
         exp_with_priority.priority = priority;
-        
+
         buffer.push_back(exp_with_priority.clone());
-        
+
         // Add to priority queue
-        let mut pq = self.priority_queue.write().unwrap();
+        let mut pq = self.priority_queue.write()
+            .map_err(|e| anyhow!("Priority queue lock poisoned: {e}"))?;
         pq.push(PrioritizedExperience {
             experience: exp_with_priority,
             priority,
             index: self.experience_counter,
         });
-        
+
         self.experience_counter += 1;
-        
+
         // Update statistics
         {
-            let mut stats = self.stats.write().unwrap();
+            let mut stats = self.stats.write()
+                .map_err(|e| anyhow!("Stats lock poisoned: {e}"))?;
             stats.total_experiences = buffer.len();
         }
-        
+
         Ok(())
     }
 
@@ -443,29 +446,31 @@ impl OnlineLearner {
 
     /// Sample a batch of experiences
     pub fn sample_batch(&self) -> Result<Vec<Experience>> {
-        let buffer = self.replay_buffer.read().unwrap();
-        
+        let buffer = self.replay_buffer.read()
+            .map_err(|e| anyhow!("Replay buffer lock poisoned: {e}"))?;
+
         if buffer.is_empty() {
             return Err(anyhow!("Replay buffer is empty"));
         }
-        
+
         let batch_size = self.config.batch_size.min(buffer.len());
         let mut batch = Vec::with_capacity(batch_size);
-        
+
         // Sample from priority queue
-        let pq = self.priority_queue.read().unwrap();
+        let pq = self.priority_queue.read()
+            .map_err(|e| anyhow!("Priority queue lock poisoned: {e}"))?;
         let samples: Vec<_> = pq.iter().take(batch_size).collect();
-        
+
         for sample in samples {
             batch.push(sample.experience.clone());
         }
-        
+
         // If not enough samples, fill with random
         while batch.len() < batch_size {
             let idx = rand_idx(buffer.len());
             batch.push(buffer[idx].clone());
         }
-        
+
         Ok(batch)
     }
 
@@ -473,123 +478,132 @@ impl OnlineLearner {
     pub async fn learn(&mut self) -> Result<f32> {
         // Check if we have enough experiences
         {
-            let buffer = self.replay_buffer.read().unwrap();
+            let buffer = self.replay_buffer.read()
+                .map_err(|e| anyhow!("Replay buffer lock poisoned: {e}"))?;
             if buffer.len() < self.config.batch_size {
                 return Err(anyhow!("Not enough experiences to learn"));
             }
         }
-        
+
         // Sample batch
         let batch = self.sample_batch()?;
-        
+
         // Compute learning rate
         let lr = self.compute_learning_rate()?;
-        
+
         // Update policy
         let loss = self.update_policy(&batch, lr).await?;
-        
+
         // Update statistics
         {
-            let mut stats = self.stats.write().unwrap();
+            let mut stats = self.stats.write()
+                .map_err(|e| anyhow!("Stats lock poisoned: {e}"))?;
             stats.total_steps += 1;
             stats.current_lr = lr;
             stats.avg_loss = 0.9 * stats.avg_loss + 0.1 * loss;
         }
-        
+
         // Adaptive learning rate adjustment
         if self.config.adaptive_lr {
             self.maybe_adjust_learning_rate()?;
         }
-        
+
         Ok(loss)
     }
 
     /// Compute current learning rate
     fn compute_learning_rate(&self) -> Result<f32> {
-        let step = *self.learning_step.read().unwrap();
-        
+        let step = *self.learning_step.read()
+            .map_err(|e| anyhow!("Learning step lock poisoned: {e}"))?;
+
         // Linear decay with warm restarts
         let progress = step as f32 / (self.config.lr_adjust_interval as f32);
         let lr = self.config.learning_rate * (1.0 - progress.min(1.0) * 0.5);
-        
+
         Ok(lr.clamp(self.config.min_lr, self.config.max_lr))
     }
 
     /// Maybe adjust learning rate based on performance
     fn maybe_adjust_learning_rate(&self) -> Result<()> {
-        let step = *self.learning_step.read().unwrap();
-        
+        let step = *self.learning_step.read()
+            .map_err(|e| anyhow!("Learning step lock poisoned: {e}"))?;
+
         if step % self.config.lr_adjust_interval != 0 {
             return Ok(());
         }
-        
-        let perf_history = self.performance_history.read().unwrap();
-        
+
+        let perf_history = self.performance_history.read()
+            .map_err(|e| anyhow!("Performance history lock poisoned: {e}"))?;
+
         if perf_history.len() < 2 {
             return Ok(());
         }
-        
+
         // Compare recent performance
         let recent: Vec<_> = perf_history.iter().rev().take(10).collect();
         let older: Vec<_> = perf_history.iter().rev().skip(10).take(10).collect();
-        
+
         if recent.is_empty() || older.is_empty() {
             return Ok(());
         }
-        
+
         let recent_avg = recent.iter().map(|p| p.episode_reward).sum::<f32>() / recent.len() as f32;
         let old_avg = older.iter().map(|p| p.episode_reward).sum::<f32>() / older.len() as f32;
-        
+
         // If performance is degrading, reduce learning rate
         if recent_avg < old_avg * 0.95 {
-            let mut stats = self.stats.write().unwrap();
+            let mut stats = self.stats.write()
+                .map_err(|e| anyhow!("Stats lock poisoned: {e}"))?;
             stats.current_lr *= 0.9;
             stats.current_lr = stats.current_lr.max(self.config.min_lr);
         }
-        
+
         Ok(())
     }
 
     /// Update policy network
     async fn update_policy(&self, batch: &[Experience], lr: f32) -> Result<f32> {
-        let mut policy = self.policy.write().unwrap();
-        
+        let mut policy = self.policy.write()
+            .map_err(|e| anyhow!("Policy lock poisoned: {e}"))?;
+
         let mut total_loss = 0.0;
-        
+
         for exp in batch {
             // Compute TD error
             let state_values = policy.forward(&exp.state);
             let next_values = policy.forward(&exp.next_state);
-            
+
             let value = state_values.first().copied().unwrap_or(0.0);
             let next_value = next_values.first().copied().unwrap_or(0.0);
-            
+
             let td_error = exp.td_error(value, next_value, self.config.discount_factor);
-            
+
             // Compute gradient
             let gradients = policy.compute_gradient_approximation(&exp.state, exp.action, td_error);
-            
+
             // Apply EWC penalty
             let ewc_penalty = self.compute_ewc_penalty(&policy)?;
-            
+
             // Update weights
             policy.update(&gradients, lr);
-            
+
             total_loss += td_error + ewc_penalty;
         }
-        
+
         // Update learning step
         {
-            let mut step = self.learning_step.write().unwrap();
+            let mut step = self.learning_step.write()
+                .map_err(|e| anyhow!("Learning step lock poisoned: {e}"))?;
             *step += 1;
         }
-        
+
         Ok(total_loss / batch.len() as f32)
     }
 
     /// Compute EWC penalty for catastrophic forgetting prevention
     fn compute_ewc_penalty(&self, policy: &PolicyNetwork) -> Result<f32> {
-        let ewc_params = self.ewc_params.read().unwrap();
+        let ewc_params = self.ewc_params.read()
+            .map_err(|e| anyhow!("EWC params lock poisoned: {e}"))?;
         let mut penalty = 0.0;
         
         for params in ewc_params.iter() {
@@ -609,40 +623,43 @@ impl OnlineLearner {
 
     /// Save EWC parameters for a task (call when task is complete)
     pub fn save_task_params(&mut self, task_id: String, importance: f32) -> Result<()> {
-        let policy = self.policy.read().unwrap();
-        
+        let policy = self.policy.read()
+            .map_err(|e| anyhow!("Policy lock poisoned: {e}"))?;
+
         let mut fisher_diagonal = HashMap::new();
         let mut optimal_weights = HashMap::new();
-        
+
         for (layer, weights) in &policy.weights {
             // Approximate Fisher information (diagonal)
             let fisher = weights.iter().map(|w| w.powi(2) * self.config.fisher_importance).collect();
             fisher_diagonal.insert(layer.clone(), fisher);
             optimal_weights.insert(layer.clone(), weights.clone());
         }
-        
+
         drop(policy);
-        
+
         let params = EwcParams {
             task_id,
             fisher_diagonal,
             optimal_weights,
             importance,
         };
-        
-        let mut ewc_params = self.ewc_params.write().unwrap();
+
+        let mut ewc_params = self.ewc_params.write()
+            .map_err(|e| anyhow!("EWC params lock poisoned: {e}"))?;
         ewc_params.push(params);
-        
+
         Ok(())
     }
 
     /// Record performance
     pub fn record_performance(&mut self, episode: usize, episode_reward: f32, episode_length: usize, loss: f32) -> Result<()> {
         let stats = {
-            let s = self.stats.read().unwrap();
+            let s = self.stats.read()
+                .map_err(|e| anyhow!("Stats lock poisoned: {e}"))?;
             s.current_lr
         };
-        
+
         let record = PerformanceRecord {
             episode,
             episode_reward,
@@ -651,73 +668,85 @@ impl OnlineLearner {
             learning_rate: stats,
             timestamp: current_timestamp(),
         };
-        
-        let mut history = self.performance_history.write().unwrap();
+
+        let mut history = self.performance_history.write()
+            .map_err(|e| anyhow!("Performance history lock poisoned: {e}"))?;
         history.push_back(record);
-        
+
         // Update average reward
         {
-            let mut stats = self.stats.write().unwrap();
+            let mut stats = self.stats.write()
+                .map_err(|e| anyhow!("Stats lock poisoned: {e}"))?;
             stats.avg_reward = 0.99 * stats.avg_reward + 0.01 * episode_reward;
         }
-        
+
         Ok(())
     }
 
     /// Get current policy
-    pub fn get_policy(&self) -> PolicyNetwork {
-        self.policy.read().unwrap().clone()
+    pub fn get_policy(&self) -> Result<PolicyNetwork> {
+        let policy = self.policy.read()
+            .map_err(|e| anyhow!("Policy lock poisoned: {e}"))?;
+        Ok(policy.clone())
     }
 
     /// Get learning statistics
-    pub fn get_statistics(&self) -> LearningStatistics {
-        self.stats.read().unwrap().clone()
+    pub fn get_statistics(&self) -> Result<LearningStatistics> {
+        let stats = self.stats.read()
+            .map_err(|e| anyhow!("Stats lock poisoned: {e}"))?;
+        Ok(stats.clone())
     }
 
     /// Get performance history
-    pub fn get_performance_history(&self) -> Vec<PerformanceRecord> {
-        let history = self.performance_history.read().unwrap();
-        history.iter().cloned().collect()
+    pub fn get_performance_history(&self) -> Result<Vec<PerformanceRecord>> {
+        let history = self.performance_history.read()
+            .map_err(|e| anyhow!("Performance history lock poisoned: {e}"))?;
+        Ok(history.iter().cloned().collect())
     }
 
     /// Clear replay buffer
     pub fn clear_buffer(&self) -> Result<()> {
-        let mut buffer = self.replay_buffer.write().unwrap();
+        let mut buffer = self.replay_buffer.write()
+            .map_err(|e| anyhow!("Replay buffer lock poisoned: {e}"))?;
         buffer.clear();
-        
-        let mut pq = self.priority_queue.write().unwrap();
+
+        let mut pq = self.priority_queue.write()
+            .map_err(|e| anyhow!("Priority queue lock poisoned: {e}"))?;
         pq.clear();
-        
+
         Ok(())
     }
 
     /// Compute forgetting measure
-    pub fn compute_forgetting_measure(&self) -> f32 {
-        let history = self.performance_history.read().unwrap();
+    pub fn compute_forgetting_measure(&self) -> Result<f32> {
+        let history = self.performance_history.read()
+            .map_err(|e| anyhow!("Performance history lock poisoned: {e}"))?;
         
         if history.len() < 10 {
-            return 0.0;
+            return Ok(0.0);
         }
-        
+
         // Compare initial and final performance on recent tasks
         let recent: Vec<_> = history.iter().rev().take(5).collect();
         let older: Vec<_> = history.iter().rev().skip(5).take(5).collect();
-        
+
         if recent.is_empty() || older.is_empty() {
-            return 0.0;
+            return Ok(0.0);
         }
-        
+
         let recent_avg = recent.iter().map(|p| p.episode_reward).sum::<f32>() / recent.len() as f32;
         let older_avg = older.iter().map(|p| p.episode_reward).sum::<f32>() / older.len() as f32;
-        
+
         // Forgetting = old - recent (positive means forgetting)
-        (older_avg - recent_avg).max(0.0)
+        Ok((older_avg - recent_avg).max(0.0))
     }
 
     /// Prioritize experiences based on learning progress
     pub fn update_priorities(&self) -> Result<()> {
-        let buffer = self.replay_buffer.read().unwrap();
-        let mut pq = self.priority_queue.write().unwrap();
+        let buffer = self.replay_buffer.read()
+            .map_err(|e| anyhow!("Replay buffer lock poisoned: {e}"))?;
+        let mut pq = self.priority_queue.write()
+            .map_err(|e| anyhow!("Priority queue lock poisoned: {e}"))?;
         
         let mut new_pq = BinaryHeap::new();
         
@@ -736,30 +765,34 @@ impl OnlineLearner {
     }
 
     /// Check if learning should continue
-    pub fn should_continue(&self, min_experiences: usize, max_steps: usize) -> bool {
-        let stats = self.stats.read().unwrap();
+    pub fn should_continue(&self, min_experiences: usize, max_steps: usize) -> Result<bool> {
+        let stats = self.stats.read()
+            .map_err(|e| anyhow!("Stats lock poisoned: {e}"))?;
         
         if stats.total_experiences < min_experiences {
-            return true;
+            return Ok(true);
         }
-        
+
         if stats.total_steps >= max_steps {
-            return false;
+            return Ok(false);
         }
-        
+
         // Stop if loss is very low
         if stats.avg_loss < 0.001 {
-            return false;
+            return Ok(false);
         }
-        
-        true
+
+        Ok(true)
     }
 
     /// Export learner state
     pub fn export_state(&self) -> Result<LearnerState> {
-        let policy = self.policy.read().unwrap();
-        let ewc_params = self.ewc_params.read().unwrap();
-        let stats = self.stats.read().unwrap();
+        let policy = self.policy.read()
+            .map_err(|e| anyhow!("Policy lock poisoned: {e}"))?;
+        let ewc_params = self.ewc_params.read()
+            .map_err(|e| anyhow!("EWC params lock poisoned: {e}"))?;
+        let stats = self.stats.read()
+            .map_err(|e| anyhow!("Stats lock poisoned: {e}"))?;
         
         Ok(LearnerState {
             policy: policy.clone(),
@@ -771,9 +804,12 @@ impl OnlineLearner {
 
     /// Import learner state
     pub fn import_state(&mut self, state: LearnerState) -> Result<()> {
-        *self.policy.write().unwrap() = state.policy;
-        *self.ewc_params.write().unwrap() = state.ewc_params;
-        *self.stats.write().unwrap() = state.stats;
+        *self.policy.write()
+            .map_err(|e| anyhow!("Policy lock poisoned: {e}"))? = state.policy;
+        *self.ewc_params.write()
+            .map_err(|e| anyhow!("EWC params lock poisoned: {e}"))? = state.ewc_params;
+        *self.stats.write()
+            .map_err(|e| anyhow!("Stats lock poisoned: {e}"))? = state.stats;
         self.config = state.config;
         
         Ok(())
@@ -797,7 +833,7 @@ pub struct LearnerState {
 fn current_timestamp() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .expect("system clock before UNIX epoch")
         .as_secs()
 }
 
@@ -806,7 +842,7 @@ fn rand_idx(max: usize) -> usize {
     use std::time::SystemTime;
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .expect("system clock before UNIX epoch")
         .as_nanos() as usize;
     now % max.max(1)
 }
@@ -841,7 +877,7 @@ mod tests {
     #[test]
     fn test_online_learner_creation() {
         let learner = OnlineLearner::new(OnlineLearningConfig::default());
-        let stats = learner.get_statistics();
+        let stats = learner.get_statistics().expect("stats lock");
         assert_eq!(stats.total_experiences, 0);
         assert_eq!(stats.current_lr, 0.001);
     }
@@ -857,15 +893,15 @@ mod tests {
             false,
         );
         
-        learner.add_experience(exp).unwrap();
-        let stats = learner.get_statistics();
+        learner.add_experience(exp).expect("add experience");
+        let stats = learner.get_statistics().expect("stats lock");
         assert_eq!(stats.total_experiences, 1);
     }
 
     #[test]
     fn test_forgetting_measure() {
         let learner = OnlineLearner::new(OnlineLearningConfig::default());
-        let forgetting = learner.compute_forgetting_measure();
+        let forgetting = learner.compute_forgetting_measure().expect("history lock");
         assert_eq!(forgetting, 0.0);
     }
 }

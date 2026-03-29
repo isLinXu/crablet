@@ -580,14 +580,16 @@ impl VerifiableReasoner {
         };
         
         // Initialize with standard inference rules
-        reasoner.init_standard_rules();
+        if let Err(e) = reasoner.init_standard_rules() {
+            eprintln!("failed to init standard rules: {e}");
+        }
         
         reasoner
     }
 
     /// Initialize standard inference rules
-    fn init_standard_rules(&self) {
-        let mut rules = self.rules.write().unwrap();
+    fn init_standard_rules(&self) -> Result<()> {
+        let mut rules = self.rules.write().map_err(|e| anyhow!("lock poisoned: {e}"))?;
         rules.push(InferenceRule::modus_ponens());
         rules.push(InferenceRule::modus_tollens());
         rules.push(InferenceRule::custom(
@@ -617,15 +619,16 @@ impl VerifiableReasoner {
                 Box::new(LogicalExpression::Variable("B".to_string())),
             ),
         ));
+        Ok(())
     }
 
     /// Add a fact to the knowledge base
     pub fn add_fact(&self, fact: LogicalExpression) -> Result<()> {
-        let mut kb = self.knowledge_base.write().unwrap();
+        let mut kb = self.knowledge_base.write().map_err(|e| anyhow!("lock poisoned: {e}"))?;
         kb.insert(fact.clone());
         
         // Audit log
-        self.add_audit_entry(AuditAction::FactAdded, &fact.to_string());
+        self.add_audit_entry(AuditAction::FactAdded, &fact.to_string())?;
         
         Ok(())
     }
@@ -638,11 +641,11 @@ impl VerifiableReasoner {
 
     /// Add an inference rule
     pub fn add_rule(&self, rule: InferenceRule) -> Result<()> {
-        let mut rules = self.rules.write().unwrap();
+        let mut rules = self.rules.write().map_err(|e| anyhow!("lock poisoned: {e}"))?;
         rules.push(rule.clone());
         
         // Audit log
-        self.add_audit_entry(AuditAction::RuleAdded, &rule.name);
+        self.add_audit_entry(AuditAction::RuleAdded, &rule.name)?;
         
         Ok(())
     }
@@ -661,7 +664,7 @@ impl VerifiableReasoner {
         let target = LogicalExpression::parse(target_str)?;
         
         // Check cache
-        if let Some(cached) = self.proof_cache.read().unwrap().get(target_str) {
+        if let Some(cached) = self.proof_cache.read().map_err(|e| anyhow!("lock poisoned: {e}"))?.get(target_str) {
             return Ok(VerificationResult {
                 is_valid: cached.is_valid,
                 proof_chain: Some(cached.clone()),
@@ -672,7 +675,7 @@ impl VerifiableReasoner {
         }
         
         // Audit log
-        self.add_audit_entry(AuditAction::ReasoningPerformed, target_str);
+        self.add_audit_entry(AuditAction::ReasoningPerformed, target_str)?;
         
         // Try to prove the target
         let proof_result = self.prove(target.clone()).await;
@@ -709,11 +712,11 @@ impl VerifiableReasoner {
         // Cache the proof
         if let Some(mut proof) = proof_chain {
             proof.generation_time_ms = generation_time_ms;
-            self.proof_cache.write().unwrap().insert(target_str.to_string(), proof);
+            self.proof_cache.write().map_err(|e| anyhow!("lock poisoned: {e}"))?.insert(target_str.to_string(), proof);
         }
         
         // Audit log
-        self.add_audit_entry(AuditAction::VerificationPerformed, &format!("valid={}", is_valid));
+        self.add_audit_entry(AuditAction::VerificationPerformed, &format!("valid={}", is_valid))?;
         
         Ok(result)
     }
@@ -721,8 +724,8 @@ impl VerifiableReasoner {
     /// Try to prove a target expression
     async fn prove(&self, target: LogicalExpression) -> Result<ProofChain> {
         let mut proof = ProofChain::new(uuid::Uuid::new_v4().to_string());
-        let kb = self.knowledge_base.read().unwrap();
-        let rules = self.rules.read().unwrap();
+        let kb = self.knowledge_base.read().map_err(|e| anyhow!("lock poisoned: {e}"))?;
+        let rules = self.rules.read().map_err(|e| anyhow!("lock poisoned: {e}"))?;
         
         // Clone target for later use
         let target_for_comparison = target.clone();
@@ -846,8 +849,8 @@ impl VerifiableReasoner {
     }
 
     /// Add an audit log entry
-    fn add_audit_entry(&self, action: AuditAction, details: &str) {
-        let mut log = self.audit_log.write().unwrap();
+    fn add_audit_entry(&self, action: AuditAction, details: &str) -> Result<()> {
+        let mut log = self.audit_log.write().map_err(|e| anyhow!("lock poisoned: {e}"))?;
         let prev_hash = log.last().map(|e| e.hash.clone()).unwrap_or_else(|| "genesis".to_string());
         let timestamp = current_timestamp();
         
@@ -861,6 +864,7 @@ impl VerifiableReasoner {
         };
         
         log.push(entry);
+        Ok(())
     }
 
     /// Compute a simple hash
@@ -875,13 +879,16 @@ impl VerifiableReasoner {
 
     /// Get the audit log
     pub fn get_audit_log(&self) -> Vec<AuditEntry> {
-        self.add_audit_entry(AuditAction::AuditLogAccessed, "Audit log retrieved");
-        self.audit_log.read().unwrap().clone()
+        let _ = self.add_audit_entry(AuditAction::AuditLogAccessed, "Audit log retrieved");
+        match self.audit_log.read() {
+            Ok(log) => log.clone(),
+            Err(_) => Vec::new(),
+        }
     }
 
     /// Verify audit log integrity
     pub fn verify_audit_integrity(&self) -> Result<bool> {
-        let log = self.audit_log.read().unwrap();
+        let log = self.audit_log.read().map_err(|e| anyhow!("lock poisoned: {e}"))?;
         let mut prev_hash = "genesis".to_string();
         
         for entry in log.iter() {
@@ -902,17 +909,26 @@ impl VerifiableReasoner {
 
     /// Get knowledge base facts
     pub fn get_knowledge_base(&self) -> Vec<LogicalExpression> {
-        self.knowledge_base.read().unwrap().iter().cloned().collect()
+        match self.knowledge_base.read() {
+            Ok(kb) => kb.iter().cloned().collect(),
+            Err(_) => Vec::new(),
+        }
     }
 
     /// Get available inference rules
     pub fn get_rules(&self) -> Vec<InferenceRule> {
-        self.rules.read().unwrap().clone()
+        match self.rules.read() {
+            Ok(rules) => rules.clone(),
+            Err(_) => Vec::new(),
+        }
     }
 
     /// Clear the knowledge base
     pub fn clear_knowledge_base(&self) {
-        self.knowledge_base.write().unwrap().clear();
+        match self.knowledge_base.write() {
+            Ok(mut kb) => kb.clear(),
+            Err(e) => eprintln!("knowledge base lock poisoned: {e}"),
+        }
     }
 }
 
@@ -926,7 +942,7 @@ impl Default for VerifiableReasoner {
 fn current_timestamp() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .expect("system clock before UNIX epoch")
         .as_secs()
 }
 
@@ -936,13 +952,13 @@ mod tests {
 
     #[test]
     fn test_parse_variable() {
-        let expr = LogicalExpression::parse("X").unwrap();
+        let expr = LogicalExpression::parse("X").expect("parse variable should succeed");
         assert_eq!(expr, LogicalExpression::Variable("X".to_string()));
     }
 
     #[test]
     fn test_parse_and() {
-        let expr = LogicalExpression::parse("A AND B").unwrap();
+        let expr = LogicalExpression::parse("A AND B").expect("parse AND expression should succeed");
         assert_eq!(
             expr,
             LogicalExpression::And(
@@ -954,7 +970,7 @@ mod tests {
 
     #[test]
     fn test_parse_implies() {
-        let expr = LogicalExpression::parse("A IMPLIES B").unwrap();
+        let expr = LogicalExpression::parse("A IMPLIES B").expect("parse IMPLIES expression should succeed");
         assert_eq!(
             expr,
             LogicalExpression::Implies(
@@ -966,15 +982,15 @@ mod tests {
 
     #[test]
     fn test_evaluate() {
-        let expr = LogicalExpression::parse("A AND B").unwrap();
+        let expr = LogicalExpression::parse("A AND B").expect("parse A AND B should succeed");
         let mut context = HashMap::new();
         context.insert("A".to_string(), true);
         context.insert("B".to_string(), true);
         
-        assert_eq!(expr.evaluate(&context).unwrap(), true);
+        assert_eq!(expr.evaluate(&context).expect("evaluate with true context should succeed"), true);
         
         context.insert("B".to_string(), false);
-        assert_eq!(expr.evaluate(&context).unwrap(), false);
+        assert_eq!(expr.evaluate(&context).expect("evaluate with false context should succeed"), false);
     }
 
     #[tokio::test]
@@ -989,8 +1005,8 @@ mod tests {
         let reasoner = VerifiableReasoner::new();
 
         // Add facts
-        reasoner.add_fact_string("A").unwrap();
-        reasoner.add_fact_string("A IMPLIES B").unwrap();
+        reasoner.add_fact_string("A").expect("add fact string 'A' should succeed");
+        reasoner.add_fact_string("A IMPLIES B").expect("add fact string 'A IMPLIES B' should succeed");
 
         // Verify
         let result = reasoner.verify("B").await;
@@ -1000,10 +1016,10 @@ mod tests {
     #[test]
     fn test_audit_integrity() {
         let reasoner = VerifiableReasoner::new();
-        reasoner.add_fact_string("A").unwrap();
+        reasoner.add_fact_string("A").expect("add fact string 'A' should succeed");
         
         let is_valid = reasoner.verify_audit_integrity();
         assert!(is_valid.is_ok());
-        assert!(is_valid.unwrap());
+        assert!(is_valid.expect("audit integrity should be valid"));
     }
 }
