@@ -71,13 +71,13 @@ jobs:
         run: bash ../scripts/check_lcov_threshold.sh coverage/lcov.info "${COVERAGE_THRESHOLD}" backend-web
 
       - name: Upload LCOV artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: backend-web-lcov
           path: ./crablet/coverage/lcov.info
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v6
         with:
           files: ./crablet/coverage/lcov.info
           flags: backend-web
@@ -104,7 +104,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: "20"
           cache: npm
@@ -117,19 +117,19 @@ jobs:
         run: npm run test:coverage
 
       - name: Upload frontend LCOV artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: frontend-lcov
           path: ./frontend/coverage/lcov.info
 
       - name: Upload frontend HTML coverage artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: frontend-coverage-html
           path: ./frontend/coverage
 
       - name: Upload frontend coverage to Codecov
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v6
         with:
           files: ./frontend/coverage/lcov.info
           flags: frontend

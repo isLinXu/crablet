@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # Stage: Frontend Builder
-FROM node:20-alpine AS frontend-builder
+FROM node:25-alpine AS frontend-builder
 WORKDIR /app/frontend
 # COPY frontend/package.json frontend/package-lock.json ./
 COPY frontend/package*.json ./
@@ -11,7 +11,7 @@ COPY frontend/ .
 RUN npm run build
 
 # Stage 1: Chef (Pre-computation)
-FROM lukemathwalker/cargo-chef:latest-rust-1.88 AS chef
+FROM lukemathwalker/cargo-chef:latest-rust-1.94 AS chef
 WORKDIR /app
 
 # Stage 2: Planner
