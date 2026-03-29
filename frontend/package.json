@@ -28,7 +28,7 @@
     "dompurify": "^3.3.3",
     "i18next": "^25.8.13",
     "i18next-browser-languagedetector": "^8.2.1",
-    "lucide-react": "^0.575.0",
+    "lucide-react": "^1.7.0",
     "pdf-parse": "^2.4.5",
     "pdfjs-dist": "^5.5.207",
     "react": "^19.2.0",
