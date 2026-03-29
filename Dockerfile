@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # Stage: Frontend Builder
-FROM node:20-alpine AS frontend-builder
+FROM node:25-alpine AS frontend-builder
 WORKDIR /app/frontend
 # COPY frontend/package.json frontend/package-lock.json ./
 COPY frontend/package*.json ./
