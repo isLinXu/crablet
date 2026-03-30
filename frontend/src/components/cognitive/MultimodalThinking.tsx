@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { sanitizeHtml } from '@/utils/security';
 import './MultimodalThinking.css';
 
 // 内容块类型
@@ -288,7 +289,7 @@ export const MultimodalThinking: React.FC<MultimodalThinkingProps> = ({
   // 渲染 Markdown
   const renderMarkdownBlock = (block: ContentBlock) => {
     // 简单的 Markdown 渲染（实际项目中可使用 react-markdown）
-    const html = block.content
+    const rawHtml = block.content
       .replace(/^### (.*$)/gim, '<h3>$1</h3>')
       .replace(/^## (.*$)/gim, '<h2>$1</h2>')
       .replace(/^# (.*$)/gim, '<h1>$1</h1>')
@@ -296,6 +297,9 @@ export const MultimodalThinking: React.FC<MultimodalThinkingProps> = ({
       .replace(/\*(.*)\*/gim, '<em>$1</em>')
       .replace(/`([^`]+)`/gim, '<code>$1</code>')
       .replace(/\n/gim, '<br />');
+
+    // Sanitize to prevent XSS — strip dangerous tags while preserving safe formatting
+    const html = sanitizeHtml(rawHtml);
     
     return (
       <div 

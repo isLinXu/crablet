@@ -226,9 +226,14 @@ impl LlmClient for OpenAiClient {
         let base_url = self.base_url.trim_end_matches('/');
         let url = format!("{}/chat/completions", base_url);
 
-        let response = self.client
-            .post(&url)
-            .header("Authorization", format!("Bearer {}", self.api_key))
+        let mut request_builder = self.client.post(&url);
+        
+        // Only append Bearer token if API key is not empty
+        if !self.api_key.trim().is_empty() {
+            request_builder = request_builder.header("Authorization", format!("Bearer {}", self.api_key));
+        }
+
+        let response = request_builder
             .json(&request)
             .send()
             .await?;
@@ -263,9 +268,14 @@ impl LlmClient for OpenAiClient {
         let base_url = self.base_url.trim_end_matches('/');
         let url = format!("{}/chat/completions", base_url);
 
-        let response = self.client
-            .post(&url)
-            .header("Authorization", format!("Bearer {}", self.api_key))
+        let mut request_builder = self.client.post(&url);
+        
+        // Only append Bearer token if API key is not empty
+        if !self.api_key.trim().is_empty() {
+            request_builder = request_builder.header("Authorization", format!("Bearer {}", self.api_key));
+        }
+
+        let response = request_builder
             .json(&request)
             .send()
             .await?;
