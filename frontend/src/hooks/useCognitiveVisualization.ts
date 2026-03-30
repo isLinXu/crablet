@@ -124,7 +124,7 @@ export function useCognitiveVisualization(
   const [isProcessing, setIsProcessing] = useState(false);
 
   // Refs
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // 手动覆盖认知层
   const overrideLayer = useCallback((layer: CognitiveLayer, reason: string) => {

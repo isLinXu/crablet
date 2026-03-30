@@ -295,7 +295,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(({
       
       steps.push({
         id: 'intent-recognition',
-        type: 'intent',
+        type: 'decision' as any,
         title: '意图识别',
         content: `识别用户意图: ${intentDescription} (${intentType})`,
         timestamp: messageTimestampMs - traceSteps.length * 500 - 200,

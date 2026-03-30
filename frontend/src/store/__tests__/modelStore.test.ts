@@ -7,7 +7,7 @@ vi.mock('@/services/settingsService', () => ({
 }));
 
 vi.mock('@/utils/constants', () => ({
-  getApiBaseUrl: vi.fn(() => 'http://127.0.0.1:18789/api'),
+  getApiBaseUrl: vi.fn(() => 'http://127.0.0.1:18790/api'),
 }));
 
 import { settingsService } from '@/services/settingsService';

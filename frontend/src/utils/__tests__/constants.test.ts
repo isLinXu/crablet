@@ -5,7 +5,7 @@ describe('getApiBaseUrl', () => {
   const getExpectedFallback = () => {
     if (window.location.port === '5173') return '/api';
     const apiProtocol = window.location.protocol === 'https:' ? 'https:' : 'http:';
-    return `${apiProtocol}//${window.location.hostname}:18789/api`;
+    return `${apiProtocol}//${window.location.hostname}:18790/api`;
   };
 
   beforeEach(() => {
@@ -18,8 +18,8 @@ describe('getApiBaseUrl', () => {
   });
 
   it('keeps explicit localhost url unchanged', () => {
-    localStorage.setItem(LOCAL_STORAGE_KEYS.API_BASE_URL, 'http://localhost:18789/api');
-    expect(getApiBaseUrl()).toBe('http://localhost:18789/api');
+    localStorage.setItem(LOCAL_STORAGE_KEYS.API_BASE_URL, 'http://localhost:18790/api');
+    expect(getApiBaseUrl()).toBe('http://localhost:18790/api');
   });
 
   it('normalizes relative api path', () => {
@@ -37,8 +37,8 @@ describe('getApiBaseUrl', () => {
     expect(getApiBaseUrl()).toBe(getExpectedFallback());
   });
 
-  it('migrates stale 18790 gateway url to the current default gateway', () => {
-    localStorage.setItem(LOCAL_STORAGE_KEYS.API_BASE_URL, 'http://localhost:18790/api');
+  it('migrates stale 18789 gateway url to the current default gateway', () => {
+    localStorage.setItem(LOCAL_STORAGE_KEYS.API_BASE_URL, 'http://localhost:18789/api');
     expect(getApiBaseUrl()).toBe(getExpectedFallback());
   });
 });

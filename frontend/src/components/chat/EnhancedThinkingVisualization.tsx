@@ -22,119 +22,14 @@ function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-// 认知层类型
-export type CognitiveLayer = 'system1' | 'system2' | 'system3' | 'unknown';
+import type { CognitiveLayer, AgentParadigm, DecisionStepDetails, DecisionStep, SystemSwitch, ParadigmSwitch, StackFrame, ThinkingProcess } from './thinkingTypes';
+export type { CognitiveLayer, AgentParadigm, DecisionStepDetails, DecisionStep, SystemSwitch, ParadigmSwitch, StackFrame, ThinkingProcess } from './thinkingTypes';
 
-// Agent 范式类型
-export type AgentParadigm = 'single-turn' | 'react' | 'reflexion' | 'plan-and-execute' | 'swarm' | 'unknown';
-
-// 决策步骤类型
-export type DecisionStepType = 
+// Enhanced 版特有的决策步骤类型（包含 'intent'）
+export type DecisionStepType =
   | 'routing' | 'system' | 'paradigm' | 'agent' | 'reasoning'
   | 'search' | 'code' | 'insight' | 'reflection' | 'planning'
   | 'tool-call' | 'context' | 'state-change' | 'confidence' | 'intent';
-
-// 决策步骤详情
-export interface DecisionStepDetails {
-  provider?: string;
-  model?: string;
-  vendor?: string;
-  reason?: string;
-  systemPrompt?: string;
-  triggerCondition?: string;
-  complexityScore?: number;
-  fromParadigm?: string;
-  toParadigm?: string;
-  paradigmReason?: string;
-  agentName?: string;
-  agentType?: string;
-  params?: Record<string, any>;
-  thought?: string;
-  observation?: string;
-  action?: string;
-  actionInput?: string;
-  toolName?: string;
-  toolInput?: any;
-  toolOutput?: any;
-  toolDuration?: number;
-  contextWindow?: number;
-  tokenCount?: number;
-  memoryAccessed?: boolean;
-  previousState?: string;
-  currentState?: string;
-  stateDiff?: any;
-  confidenceScore?: number;
-  confidenceReason?: string;
-  alternatives?: string[];
-  duration?: number;
-  latency?: number;
-  throughput?: number;
-}
-
-// 决策步骤
-export interface DecisionStep {
-  id: string;
-  type: DecisionStepType;
-  title: string;
-  content: string;
-  timestamp: number;
-  duration?: number;
-  confidence?: number;
-  details?: DecisionStepDetails;
-  subSteps?: DecisionStep[];
-  metadata?: {
-    layer?: CognitiveLayer;
-    paradigm?: AgentParadigm;
-    iteration?: number;
-    depth?: number;
-  };
-}
-
-// 系统切换记录
-export interface SystemSwitch {
-  id: string;
-  from: CognitiveLayer;
-  to: CognitiveLayer;
-  reason: string;
-  trigger: string;
-  timestamp: number;
-  confidence: number;
-}
-
-// 范式切换记录
-export interface ParadigmSwitch {
-  id: string;
-  from: AgentParadigm;
-  to: AgentParadigm;
-  reason: string;
-  trigger: string;
-  timestamp: number;
-}
-
-// 调用栈帧
-export interface StackFrame {
-  id: string;
-  function: string;
-  args: any;
-  result?: any;
-  startTime: number;
-  endTime?: number;
-  status: 'running' | 'completed' | 'error';
-}
-
-// 完整思考过程
-export interface ThinkingProcess {
-  steps: DecisionStep[];
-  systemSwitches: SystemSwitch[];
-  paradigmSwitches: ParadigmSwitch[];
-  callStack: StackFrame[];
-  currentLayer: CognitiveLayer;
-  currentParadigm: AgentParadigm;
-  startTime: number;
-  endTime?: number;
-  totalDuration?: number;
-  confidence: number;
-}
 
 // 质量指标
 interface QualityMetrics {
@@ -339,7 +234,7 @@ export const EnhancedThinkingVisualization: React.FC<EnhancedThinkingVisualizati
   const [showIntervention, setShowIntervention] = useState(false);
   const [selectedStepId, setSelectedStepId] = useState<string | null>(null);
   const [streamTokens, setStreamTokens] = useState<ThinkingToken[]>([]);
-  const streamRef = useRef<NodeJS.Timeout | null>(null);
+  const streamRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // 计算质量指标
   const qualityMetrics: QualityMetrics = useMemo(() => {
