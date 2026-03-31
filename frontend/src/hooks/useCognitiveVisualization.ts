@@ -128,9 +128,6 @@ export function useCognitiveVisualization(
 
   // 手动覆盖认知层
   const overrideLayer = useCallback((layer: CognitiveLayer, reason: string) => {
-    console.log(`[CognitiveOverride] Layer: ${layer}, Reason: ${reason}`);
-    
-    // 创建覆盖决策
     const overrideDecision: CognitiveRouteDecision = {
       timestamp: Date.now(),
       input: `手动覆盖: ${reason}`,
@@ -152,7 +149,6 @@ export function useCognitiveVisualization(
 
   // 请求详情
   const requestDetails = useCallback((decisionId: string) => {
-    console.log(`[CognitiveDetails] Requesting details for: ${decisionId}`);
     // TODO: 调用后端 API 获取详细决策信息
   }, []);
 

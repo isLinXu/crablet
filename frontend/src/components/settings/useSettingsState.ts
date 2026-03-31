@@ -149,14 +149,14 @@ export function useSettingsState(): UseSettingsState {
     setProfileEmail(savedProfileEmail);
     setProfileOrg(savedProfileOrg);
     setAutoFillEndpointOnCopy(savedAutoFill !== '0');
-    settingsService.listApiKeys().then((res: any) => setApiKeys(res || [])).catch(() => {});
-    settingsService.getMcpOverview().then((res: any) => setMcpOverview(res || null)).catch(() => {});
-    settingsService.getRoutingSettings().then((res: any) => { if (res) setRoutingSettings(res); }).catch(() => {});
-    settingsService.getRoutingReport(200).then((res: any) => { if (res) setRoutingReport(res); }).catch(() => {});
+    settingsService.listApiKeys().then((res) => setApiKeys(res || [])).catch(() => {});
+    settingsService.getMcpOverview().then((res) => setMcpOverview(res || null)).catch(() => {});
+    settingsService.getRoutingSettings().then((res) => { if (res) setRoutingSettings(res); }).catch(() => {});
+    settingsService.getRoutingReport(200).then((res) => { if (res) setRoutingReport(res); }).catch(() => {});
     setDraftProviders(providers);
     setLoadingSystemConfig(true);
     settingsService.getSystemConfig()
-      .then((res: any) => setSystemConfig(res?.data || res || {}))
+      .then((res) => setSystemConfig(res?.data || res || {}))
       .catch((e) => console.error('Failed to load system config', e))
       .finally(() => setLoadingSystemConfig(false));
   }, []);
@@ -274,8 +274,8 @@ export function useSettingsState(): UseSettingsState {
     localStorage.setItem('crablet-auto-fill-endpoint-on-copy', checked ? '1' : '0');
   }, []);
 
-  const fetchFirstAvailable = useCallback(async (endpoints: string[], headers?: Record<string, string>) => {
-    for (const endpoint of endpoints) { try { const res = await fetch(endpoint, { headers }); if (res.ok) return await res.json(); } catch {} }
+  const fetchFirstAvailable = useCallback(async <T = unknown>(endpoints: string[], headers?: Record<string, string>): Promise<T | null> => {
+    for (const endpoint of endpoints) { try { const res = await fetch(endpoint, { headers }); if (res.ok) return await res.json() as T; } catch {} }
     return null;
   }, []);
 
@@ -306,29 +306,29 @@ export function useSettingsState(): UseSettingsState {
         if (autoVendor === 'OpenAI') {
           const res = await fetch(`${normalizedBase.replace(/\/v1$/i, '')}/v1/models`, { headers: { Authorization: `Bearer ${rawKey}` } });
           if (!res.ok) throw new Error(`OpenAI 模型列表获取失败：HTTP ${res.status}`);
-          discoveredModels.push(...((await res.json())?.data || []).map((x: any) => x?.id).filter(Boolean));
+          discoveredModels.push(...((await res.json()) as { data?: Array<{ id?: string }> }).data?.map((x) => x?.id).filter(Boolean) ?? []);
         } else if (autoVendor === 'Anthropic') {
           const res = await fetch(`${normalizedBase.replace(/\/v1$/i, '')}/v1/models`, { headers: { 'x-api-key': rawKey, 'anthropic-version': '2023-06-01' } });
           if (!res.ok) throw new Error(`Anthropic 模型列表获取失败：HTTP ${res.status}`);
-          discoveredModels.push(...((await res.json())?.data || []).map((x: any) => x?.id).filter(Boolean));
+          discoveredModels.push(...((await res.json()) as { data?: Array<{ id?: string }> }).data?.map((x) => x?.id).filter(Boolean) ?? []);
         } else if (autoVendor === 'Google') {
           const res = await fetch(`${normalizedBase.replace(/\?key=.*/i, '')}/models?key=${encodeURIComponent(rawKey)}`);
           if (!res.ok) throw new Error(`Google 模型列表获取失败：HTTP ${res.status}`);
-          discoveredModels.push(...((await res.json())?.models || []).map((x: any) => String(x?.name || '').replace(/^models\//, '')).filter(Boolean));
+          discoveredModels.push(...((await res.json()) as { models?: Array<{ name?: string }> }).models?.map((x) => String(x?.name || '').replace(/^models\//, '')).filter(Boolean) ?? []);
         } else if (autoVendor === 'Aliyun') {
           const base = normalizedBase.replace(/\/+$/, '');
-          const json: any = await fetchFirstAvailable([`${base.replace(/\/v1$/i, '')}/v1/models`, `${base.replace(/\/compatible-mode\/v1$/i, '')}/compatible-mode/v1/models`], { Authorization: `Bearer ${rawKey}` });
-          discoveredModels.push(...((json?.data || []).map((x: any) => x?.id).filter(Boolean)));
+          const json = await fetchFirstAvailable<{ data?: Array<{ id?: string }> }>([`${base.replace(/\/v1$/i, '')}/v1/models`, `${base.replace(/\/compatible-mode\/v1$/i, '')}/compatible-mode/v1/models`], { Authorization: `Bearer ${rawKey}` });
+          discoveredModels.push(...(json?.data?.map((x) => x?.id).filter(Boolean)) ?? []);
           if (!discoveredModels.length) discoveredModels.push('qwen-plus', 'qwen-turbo', 'qwen-max', 'qwen2.5-72b-instruct');
         } else if (autoVendor === 'ByteDance') {
           const base = normalizedBase.replace(/\/+$/, '');
-          const json: any = await fetchFirstAvailable([`${base.replace(/\/api\/v3$/i, '')}/api/v3/models`, `${base.replace(/\/v1$/i, '')}/v1/models`], { Authorization: `Bearer ${rawKey}` });
-          discoveredModels.push(...((json?.data || []).map((x: any) => x?.id).filter(Boolean)));
+          const json = await fetchFirstAvailable<{ data?: Array<{ id?: string }> }>([`${base.replace(/\/api\/v3$/i, '')}/api/v3/models`, `${base.replace(/\/v1$/i, '')}/v1/models`], { Authorization: `Bearer ${rawKey}` });
+          discoveredModels.push(...(json?.data?.map((x) => x?.id).filter(Boolean)) ?? []);
           if (!discoveredModels.length) discoveredModels.push('doubao-pro-32k', 'doubao-pro-4k', 'doubao-lite-32k');
         } else if (autoVendor === 'Tencent') {
           const base = normalizedBase.replace(/\/+$/, '');
-          const json: any = await fetchFirstAvailable([`${base.replace(/\/v1$/i, '')}/v1/models`, `${base.replace(/\/hunyuan\/v1$/i, '')}/hunyuan/v1/models`], { Authorization: `Bearer ${rawKey}` });
-          discoveredModels.push(...((json?.data || []).map((x: any) => x?.id || x?.name).filter(Boolean)));
+          const json = await fetchFirstAvailable<{ data?: Array<{ id?: string; name?: string }> }>([`${base.replace(/\/v1$/i, '')}/v1/models`, `${base.replace(/\/hunyuan\/v1$/i, '')}/hunyuan/v1/models`], { Authorization: `Bearer ${rawKey}` });
+          discoveredModels.push(...(json?.data?.map((x) => x?.id || x?.name).filter(Boolean)) ?? []);
           if (!discoveredModels.length) discoveredModels.push('hunyuan-pro', 'hunyuan-standard', 'hunyuan-lite');
         }
         const picked = [...new Set(discoveredModels)].slice(0, 20);
@@ -356,8 +356,8 @@ export function useSettingsState(): UseSettingsState {
       };
       const count = await syncModels();
       if (count > 0) toast.success(`连接成功，已自动同步 ${autoVendor} 模型 ${count} 个`);
-    } catch (err: any) {
-      const msg = String(err?.message || '');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
       const m = msg.match(/HTTP\s*(\d+)/i);
       if (m) showHttpError(Number(m[1]), '模型同步失败');
       else toast.error('连接测试失败：跨域限制或网络不可达');
@@ -418,7 +418,7 @@ export function useSettingsState(): UseSettingsState {
     if (Number.isNaN(mctsExploration) || mctsExploration < 0.1 || mctsExploration > 3) { toast.error('mcts_exploration_weight 必须在 0.1~3'); return; }
     setSavingRoutingSettings(true);
     try {
-      const saved: any = await settingsService.updateRoutingSettings({
+      const saved = await settingsService.updateRoutingSettings({
         enable_adaptive_routing: routingSettings.enable_adaptive_routing, system2_threshold: s2, system3_threshold: s3,
         bandit_exploration: exp, enable_hierarchical_reasoning: routingSettings.enable_hierarchical_reasoning,
         deliberate_threshold: deliberate, meta_reasoning_threshold: meta,
@@ -434,7 +434,7 @@ export function useSettingsState(): UseSettingsState {
     const window = Math.max(10, Math.min(2000, Number(routingReportWindow) || 200));
     setRoutingReportWindow(window);
     setLoadingRoutingReport(true);
-    try { const report: any = await settingsService.getRoutingReport(window); if (report) setRoutingReport(report); }
+    try { const report = await settingsService.getRoutingReport(window); if (report) setRoutingReport(report); }
     catch { toast.error('读取路由评估报告失败'); } finally { setLoadingRoutingReport(false); }
   }, [routingReportWindow]);
 

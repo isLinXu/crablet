@@ -393,8 +393,8 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(({
           <EnhancedThinkingVisualization
             process={messageThinkingProcess}
             isThinking={showThinking || false}
-            onIntervene={(request) => console.log('Intervention:', request)}
-            onSuggestionClick={(suggestion) => console.log('Suggestion:', suggestion)}
+            onIntervene={(request) => { if (import.meta.env.DEV) console.debug('Intervention:', request); }}
+            onSuggestionClick={(suggestion) => { if (import.meta.env.DEV) console.debug('Suggestion:', suggestion); }}
             onSendMessage={onSendMessage}
             lastUserMessage={lastUserMessage}
             lastAssistantMessage={typeof message.content === 'string' ? message.content : ''}
