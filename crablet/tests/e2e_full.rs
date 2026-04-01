@@ -83,7 +83,7 @@ async fn test_e2e_full_flow() -> Result<()> {
     assert!(json["skills_count"].is_number());
 
     // 5. Test Knowledge API (Empty initially)
-    let docs = crablet::gateway::web_handlers::list_documents(State(gateway))
+    let docs = crablet::gateway::knowledge_handlers::list_documents(State(gateway))
         .await
         .0;
     assert_eq!(docs["status"], "success");

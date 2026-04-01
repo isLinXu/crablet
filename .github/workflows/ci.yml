@@ -20,6 +20,7 @@ env:
   OPENAI_API_KEY: sk-test
   CRABLET_RUN_REAL_LLM_TESTS: 0
   CI: true
+  CARGO_INCREMENTAL: 0
 
 jobs:
   backend-quality:
@@ -48,10 +49,10 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: Run clippy
-        run: cargo clippy --all-targets --no-default-features --features web -- -D warnings
+        run: cargo clippy --locked --all-targets --no-default-features --features web -- -D warnings
 
       - name: Check documentation build
-        run: cargo doc --no-deps --document-private-items --no-default-features --features web
+        run: cargo doc --locked --no-deps --document-private-items --no-default-features --features web
         env:
           RUSTDOCFLAGS: -D warnings
 
@@ -64,11 +65,11 @@ jobs:
       matrix:
         suite:
           - name: Web Test Suite
-            command: cargo test --no-default-features --features web
+            command: cargo test --locked --no-default-features --features web
           - name: Doc Tests
-            command: cargo test --doc --no-default-features --features web
+            command: cargo test --locked --doc --no-default-features --features web
           - name: All Features Compile
-            command: cargo check --all-features
+            command: cargo check --locked --all-features
     defaults:
       run:
         working-directory: ./crablet
@@ -88,6 +89,30 @@ jobs:
 
       - name: Run ${{ matrix.suite.name }}
         run: ${{ matrix.suite.command }}
+
+  backend-msrv:
+    name: Backend MSRV (Rust 1.80)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: ./crablet
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust (MSRV)
+        uses: dtolnay/rust-action@stable
+        with:
+          toolchain: 1.80.1
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            ./crablet -> target
+
+      - name: MSRV compile check (web)
+        run: cargo check --locked --no-default-features --features web
 
   backend-build:
     name: Backend Build (${{ matrix.os }})
@@ -115,7 +140,7 @@ jobs:
             ./crablet -> target
 
       - name: Build Web profile
-        run: cargo build --release --no-default-features --features web
+        run: cargo build --locked --release --no-default-features --features web
 
   frontend-checks:
     name: Frontend Checks

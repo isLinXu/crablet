@@ -171,6 +171,9 @@ pub async fn upload_knowledge(
         })));
     }
 
+    #[cfg(feature = "knowledge")]
+    return Err(StatusCode::NOT_IMPLEMENTED);
+
     #[cfg(not(feature = "knowledge"))]
     Err(StatusCode::NOT_IMPLEMENTED)
 }

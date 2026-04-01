@@ -66,9 +66,10 @@ impl AuthManager {
                 "crablet-secret-key-change-me".to_string()
             } else {
                 tracing::error!("JWT_SECRET not set in production! Generating random secret.");
-                use rand::Rng;
+                use rand::RngExt;
                 use base64::prelude::*;
-                let random_bytes: Vec<u8> = (0..32).map(|_| rand::thread_rng().gen()).collect();
+                let mut rng = rand::rng();
+                let random_bytes: Vec<u8> = (0..32).map(|_| rng.random::<u8>()).collect();
                 BASE64_STANDARD.encode(&random_bytes)
             }
         });

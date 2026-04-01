@@ -96,7 +96,9 @@ export const SwarmGraph: React.FC = () => {
     
     const connectWs = () => {
         const ws = new WebSocket(wsUrl);
-        ws.onopen = () => console.log('Swarm WS Connected');
+        ws.onopen = () => {
+          if (import.meta.env.DEV) console.debug('Swarm WS Connected');
+        };
         ws.onmessage = (event) => {
             const msg = event.data;
             if (typeof msg === 'string') {
@@ -192,7 +194,7 @@ export const SwarmGraph: React.FC = () => {
             }
         };
         ws.onclose = () => {
-            console.log('Swarm WS Disconnected. Reconnecting...');
+            if (import.meta.env.DEV) console.debug('Swarm WS Disconnected. Reconnecting...');
             setTimeout(connectWs, 3000);
         };
         wsRef.current = ws;

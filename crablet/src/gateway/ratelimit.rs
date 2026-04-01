@@ -150,3 +150,142 @@ impl MultiLayerRateLimiter {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::net::{IpAddr, Ipv4Addr};
+
+    fn test_ip() -> IpAddr {
+        IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))
+    }
+
+    fn another_ip() -> IpAddr {
+        IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1))
+    }
+
+    #[test]
+    fn test_create_limiter() {
+        let limiter = create_limiter();
+        assert!(Arc::strong_count(&limiter) >= 1);
+    }
+
+    #[test]
+    fn test_check_key_allows_normal_requests() {
+        let limiter = create_limiter();
+        // A single request should always pass
+        let result = limiter.check_key(&test_ip());
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_check_user_allows_normal_requests() {
+        let limiter = create_limiter();
+        let result = limiter.check_user("user-1");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_check_api_key_allows_normal_requests() {
+        let limiter = create_limiter();
+        let result = limiter.check_api_key("sk-test-key");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_ip_rate_limiting() {
+        let limiter = create_limiter();
+        let ip = another_ip();
+
+        // IP quota is 10 req/s, burst 20
+        // Send many requests rapidly to trigger rate limit
+        let mut blocked = false;
+        for _ in 0..50 {
+            if limiter.check_key(&ip).is_err() {
+                blocked = true;
+                break;
+            }
+        }
+        assert!(blocked, "IP rate limit should have been triggered after many requests");
+    }
+
+    #[test]
+    fn test_global_rate_limiting() {
+        let limiter = create_limiter();
+
+        // Global quota is 1000 req/s — we can't easily exhaust this in a test
+        // Just verify it doesn't panic with concurrent-like access
+        for i in 0..100 {
+            let ip = IpAddr::V4(Ipv4Addr::new(10, 0, 0, (i % 256) as u8));
+            let _ = limiter.check_key(&ip);
+        }
+    }
+
+    #[test]
+    fn test_track_slow_request() {
+        let limiter = create_limiter();
+        let ip = test_ip();
+
+        // Track a slow request (>5000ms threshold)
+        limiter.track_slow_request(&ip, 6000);
+
+        // Verify tracker was created
+        assert!(limiter.slow_request_tracker.contains_key(&ip));
+        let tracker = limiter.slow_request_tracker.get(&ip).unwrap();
+        assert_eq!(tracker.request_count, 1);
+        assert_eq!(tracker.total_duration_ms, 6000);
+    }
+
+    #[test]
+    fn test_track_fast_request_ignored() {
+        let limiter = create_limiter();
+        let ip = test_ip();
+
+        // Fast request should be ignored
+        limiter.track_slow_request(&ip, 1000);
+        assert!(!limiter.slow_request_tracker.contains_key(&ip));
+    }
+
+    #[test]
+    fn test_cleanup_old_trackers() {
+        let limiter = create_limiter();
+        let ip = test_ip();
+
+        limiter.track_slow_request(&ip, 6000);
+        assert!(limiter.slow_request_tracker.contains_key(&ip));
+
+        // Manually set last_check to the past
+        {
+            let mut tracker = limiter.slow_request_tracker.get_mut(&ip).unwrap();
+            tracker.last_check = std::time::Instant::now() - Duration::from_secs(600);
+        }
+
+        limiter.cleanup_slow_request_trackers();
+        assert!(!limiter.slow_request_tracker.contains_key(&ip));
+    }
+
+    #[test]
+    fn test_multiple_users_independent() {
+        let limiter = create_limiter();
+
+        // Each user should have independent rate limits
+        for _ in 0..50 {
+            assert!(limiter.check_user("user-a").is_ok());
+        }
+
+        // A fresh user should still be allowed
+        assert!(limiter.check_user("user-fresh").is_ok());
+    }
+
+    #[test]
+    fn test_multiple_api_keys_independent() {
+        let limiter = create_limiter();
+
+        for _ in 0..100 {
+            assert!(limiter.check_api_key("sk-key-1").is_ok());
+        }
+
+        // A fresh API key should still be allowed
+        assert!(limiter.check_api_key("sk-key-fresh").is_ok());
+    }
+}
+

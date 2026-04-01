@@ -68,6 +68,14 @@ jobs:
       - name: Install cargo-audit
         uses: taiki-e/install-action@cargo-audit
 
+      - name: Cache RustSec advisory DB
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/advisory-db
+          key: advisory-db-${{ runner.os }}-${{ hashFiles('crablet/Cargo.lock') }}
+          restore-keys: |
+            advisory-db-${{ runner.os }}-
+
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
@@ -75,7 +83,25 @@ jobs:
             ./crablet -> target
 
       - name: Run cargo audit
-        run: cargo audit --no-fetch --stale
+        run: cargo audit
+
+  cargo-deny:
+    name: Rust Supply Chain (cargo-deny)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-action@stable
+        with:
+          toolchain: stable
+
+      - name: Install cargo-deny
+        uses: taiki-e/install-action@cargo-deny
+
+      - name: Run cargo deny
+        run: cargo deny check --manifest-path ./crablet/Cargo.toml
 
   frontend-audit:
     name: Frontend Dependency Audit

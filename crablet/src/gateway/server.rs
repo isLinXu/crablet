@@ -17,14 +17,21 @@ use crate::events::EventBus;
 use crate::gateway::types::GatewayConfig;
 use crate::gateway::canvas_manager::CanvasManager;
 use crate::gateway::web_handlers::{
-    chat_handler, chat_stream, image_handler, list_skills, upload_knowledge,
-    list_documents, get_document_chunks, search_knowledge, list_api_keys,
-    create_api_key, revoke_api_key, list_audit_logs, get_routing_settings, update_routing_settings, get_routing_report,
+    chat_handler, chat_stream, image_handler, list_skills,
     get_swarm_state, list_agents, cancel_task,
     get_dashboard_stats, get_swarm_stats, get_swarm_tasks, toggle_skill,
     search_registry_skills, install_skill, batch_test_skills, get_mcp_overview, list_swarm_reviews, decide_swarm_review,
-    get_skills_sh_top, get_system_config, update_system_config,
+    get_skills_sh_top,
     semantic_search_skills, run_skill, get_skill_logs, get_all_skill_logs
+};
+use crate::gateway::admin_handlers::list_audit_logs;
+use crate::gateway::routing_handlers::{
+    get_routing_settings, update_routing_settings, get_routing_report,
+    list_api_keys, create_api_key, revoke_api_key,
+    get_system_config, update_system_config,
+};
+use crate::gateway::knowledge_handlers::{
+    list_documents, get_document_chunks, search_knowledge, upload_knowledge,
 };
 use crate::gateway::session_handlers::{
     list_sessions as list_chat_sessions,
@@ -130,6 +137,8 @@ pub struct CrabletGateway {
     pub workflow_engine: Arc<WorkflowEngine>,
     pub workflow_registry: Arc<WorkflowRegistry>,
     pub heartbeat: Arc<HeartbeatEngine>,
+    /// Server start time for uptime calculation
+    pub started_at: std::sync::Arc<std::time::Instant>,
     #[cfg(feature = "knowledge")]
     pub ingestion: Option<Arc<IngestionService>>,
 }
@@ -241,6 +250,7 @@ impl CrabletGateway {
             workflow_engine,
             workflow_registry,
             heartbeat: heartbeat_arc,
+            started_at: std::sync::Arc::new(std::time::Instant::now()),
             #[cfg(feature = "knowledge")]
             ingestion,
         })
@@ -385,6 +395,12 @@ impl CrabletGateway {
             .layer(SetResponseHeaderLayer::if_not_present(
                 header::STRICT_TRANSPORT_SECURITY,
                 header::HeaderValue::from_static("max-age=31536000; includeSubDomains"),
+            ))
+            .layer(SetResponseHeaderLayer::overriding(
+                header::HeaderName::from_static("content-security-policy"),
+                header::HeaderValue::from_static(
+                    "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ws: wss: http: https:; frame-ancestors 'none'"
+                ),
             ))
             .layer(cors) // Cors first (outermost)
             .layer(TraceLayer::new_for_http())

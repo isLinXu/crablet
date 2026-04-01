@@ -706,12 +706,12 @@ mod tests {
 
     #[test]
     fn test_semver_parsing() {
-        let v = SemVer::parse("1.2.3").unwrap();
+        let v = SemVer::parse("1.2.3").expect("failed to parse 1.2.3");
         assert_eq!(v.major, 1);
         assert_eq!(v.minor, 2);
         assert_eq!(v.patch, 3);
         
-        let v = SemVer::parse("v2.0.0-alpha.1+build.123").unwrap();
+        let v = SemVer::parse("v2.0.0-alpha.1+build.123").expect("failed to parse v2.0.0-alpha.1+build.123");
         assert_eq!(v.major, 2);
         assert_eq!(v.prerelease, Some("alpha.1".to_string()));
         assert_eq!(v.build, Some("build.123".to_string()));
@@ -719,48 +719,48 @@ mod tests {
 
     #[test]
     fn test_semver_comparison() {
-        let v1 = SemVer::parse("1.0.0").unwrap();
-        let v2 = SemVer::parse("1.0.1").unwrap();
+        let v1 = SemVer::parse("1.0.0").expect("failed to parse 1.0.0");
+        let v2 = SemVer::parse("1.0.1").expect("failed to parse 1.0.1");
         assert!(v1 < v2);
         
-        let v3 = SemVer::parse("2.0.0").unwrap();
+        let v3 = SemVer::parse("2.0.0").expect("failed to parse 2.0.0");
         assert!(v2 < v3);
         
-        let v4 = SemVer::parse("1.0.0-alpha").unwrap();
+        let v4 = SemVer::parse("1.0.0-alpha").expect("failed to parse 1.0.0-alpha");
         assert!(v4 < v1); // 预发布版本 < 正式版本
     }
 
     #[test]
     fn test_version_constraint() {
-        let v = SemVer::parse("1.2.3").unwrap();
+        let v = SemVer::parse("1.2.3").expect("failed to parse 1.2.3");
         
         // 精确匹配
-        let c = VersionConstraint::parse("=1.2.3").unwrap();
+        let c = VersionConstraint::parse("=1.2.3").expect("failed to parse =1.2.3");
         assert!(c.matches(&v));
         
         // 兼容版本
-        let c = VersionConstraint::parse("^1.0.0").unwrap();
+        let c = VersionConstraint::parse("^1.0.0").expect("failed to parse ^1.0.0");
         assert!(c.matches(&v));
         
-        let v2 = SemVer::parse("2.0.0").unwrap();
+        let v2 = SemVer::parse("2.0.0").expect("failed to parse 2.0.0");
         assert!(!c.matches(&v2)); // 主版本不匹配
         
         // 通配符
-        let c = VersionConstraint::parse("1.*").unwrap();
+        let c = VersionConstraint::parse("1.*").expect("failed to parse 1.*");
         assert!(c.matches(&v));
         assert!(!c.matches(&v2));
     }
 
     #[test]
     fn test_version_diff() {
-        let v1 = SemVer::parse("1.0.0").unwrap();
-        let v2 = SemVer::parse("2.0.0").unwrap();
+        let v1 = SemVer::parse("1.0.0").expect("failed to parse 1.0.0");
+        let v2 = SemVer::parse("2.0.0").expect("failed to parse 2.0.0");
         assert_eq!(VersionDiff::between(&v1, &v2), VersionDiff::Major);
         
-        let v3 = SemVer::parse("1.1.0").unwrap();
+        let v3 = SemVer::parse("1.1.0").expect("failed to parse 1.1.0");
         assert_eq!(VersionDiff::between(&v1, &v3), VersionDiff::Minor);
         
-        let v4 = SemVer::parse("1.0.1").unwrap();
+        let v4 = SemVer::parse("1.0.1").expect("failed to parse 1.0.1");
         assert_eq!(VersionDiff::between(&v1, &v4), VersionDiff::Patch);
     }
 }

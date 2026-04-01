@@ -5,8 +5,6 @@ import './index.css'
 import './i18n/config'
 import App from './App.tsx'
 
-console.log('Mounting React App...');
-
 try {
   const root = document.getElementById('root');
   if (!root) throw new Error('Root element not found');
@@ -18,7 +16,6 @@ try {
       </BrowserRouter>
     </StrictMode>,
   )
-  console.log('React App mounted successfully');
 } catch (e) {
   console.error('Failed to mount React App:', e);
   document.body.replaceChildren();

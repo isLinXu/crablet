@@ -18,6 +18,7 @@ pub mod capability;
 pub mod smart_allocator;
 pub mod hitl;
 pub mod handoff;
+pub mod hooks;
 
 // Harness subsystem - core execution context and fault tolerance
 pub mod harness;

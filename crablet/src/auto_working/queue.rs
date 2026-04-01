@@ -537,7 +537,7 @@ mod tests {
     
     #[tokio::test]
     async fn test_sqlite_queue_basic() {
-        let queue = SqliteQueue::new("sqlite::memory:").await.unwrap();
+        let queue = SqliteQueue::new("sqlite::memory:").await.expect("failed to create sqlite queue");
         
         // Enqueue a task
         let task = QueuedTask::new(
@@ -548,24 +548,24 @@ mod tests {
             50
         );
         
-        queue.enqueue(task.clone()).await.unwrap();
-        assert_eq!(queue.len().await.unwrap(), 1);
+        queue.enqueue(task.clone()).await.expect("failed to enqueue task");
+        assert_eq!(queue.len().await.expect("failed to get queue len"), 1);
         
         // Dequeue the task
-        let dequeued = queue.dequeue(Duration::from_secs(1)).await.unwrap();
+        let dequeued = queue.dequeue(Duration::from_secs(1)).await.expect("failed to dequeue task");
         assert!(dequeued.is_some());
-        let dequeued = dequeued.unwrap();
+        let dequeued = dequeued.expect("dequeued task should be Some");
         assert_eq!(dequeued.id, task.id);
         assert_eq!(dequeued.priority, task.priority);
         
         // Acknowledge
-        queue.ack(&dequeued.id).await.unwrap();
-        assert_eq!(queue.len().await.unwrap(), 0);
+        queue.ack(&dequeued.id).await.expect("failed to ack task");
+        assert_eq!(queue.len().await.expect("failed to get queue len"), 0);
     }
     
     #[tokio::test]
     async fn test_priority_ordering() {
-        let queue = SqliteQueue::new("sqlite::memory:").await.unwrap();
+        let queue = SqliteQueue::new("sqlite::memory:").await.expect("failed to create sqlite queue");
         
         // Enqueue tasks with different priorities
         let low_priority = QueuedTask::new(
@@ -581,26 +581,26 @@ mod tests {
             50
         );
         
-        queue.enqueue(low_priority).await.unwrap();
-        queue.enqueue(high_priority).await.unwrap();
-        queue.enqueue(medium_priority).await.unwrap();
+        queue.enqueue(low_priority).await.expect("failed to enqueue low priority task");
+        queue.enqueue(high_priority).await.expect("failed to enqueue high priority task");
+        queue.enqueue(medium_priority).await.expect("failed to enqueue medium priority task");
         
         // Dequeue should return highest priority first
-        let first = queue.dequeue(Duration::from_secs(1)).await.unwrap().unwrap();
+        let first = queue.dequeue(Duration::from_secs(1)).await.expect("failed to dequeue first task").expect("first dequeued task should be Some");
         assert_eq!(first.priority, 90);
-        queue.ack(&first.id).await.unwrap();
+        queue.ack(&first.id).await.expect("failed to ack first task");
         
-        let second = queue.dequeue(Duration::from_secs(1)).await.unwrap().unwrap();
+        let second = queue.dequeue(Duration::from_secs(1)).await.expect("failed to dequeue second task").expect("second dequeued task should be Some");
         assert_eq!(second.priority, 50);
-        queue.ack(&second.id).await.unwrap();
+        queue.ack(&second.id).await.expect("failed to ack second task");
         
-        let third = queue.dequeue(Duration::from_secs(1)).await.unwrap().unwrap();
+        let third = queue.dequeue(Duration::from_secs(1)).await.expect("failed to dequeue third task").expect("third dequeued task should be Some");
         assert_eq!(third.priority, 10);
     }
     
     #[tokio::test]
     async fn test_scheduled_task() {
-        let queue = SqliteQueue::new("sqlite::memory:").await.unwrap();
+        let queue = SqliteQueue::new("sqlite::memory:").await.expect("failed to create sqlite queue");
         
         // Create a future task
         let future_time = Utc::now() + chrono::Duration::seconds(2);
@@ -610,33 +610,33 @@ mod tests {
         );
         future_task.scheduled_at = future_time;
         
-        queue.enqueue(future_task).await.unwrap();
+        queue.enqueue(future_task).await.expect("failed to enqueue future task");
         
         // Should not get the task immediately
-        let immediate = queue.dequeue(Duration::from_millis(100)).await.unwrap();
+        let immediate = queue.dequeue(Duration::from_millis(100)).await.expect("failed to dequeue (should be none)");
         assert!(immediate.is_none());
         
         // Wait and try again
         tokio::time::sleep(Duration::from_secs(3)).await;
-        let later = queue.dequeue(Duration::from_secs(1)).await.unwrap();
+        let later = queue.dequeue(Duration::from_secs(1)).await.expect("failed to dequeue later task");
         assert!(later.is_some());
     }
     
     #[tokio::test]
     async fn test_dead_letter_queue() {
-        let queue = SqliteQueue::new("sqlite::memory:").await.unwrap();
+        let queue = SqliteQueue::new("sqlite::memory:").await.expect("failed to create sqlite queue");
         
         let task = QueuedTask::new(
             TaskPayload { task_type: "failing".to_string(), data: serde_json::Value::Null },
             50
         );
         
-        queue.enqueue(task.clone()).await.unwrap();
+        queue.enqueue(task.clone()).await.expect("failed to enqueue task for dlq test");
         
         // Move to DLQ
-        queue.move_to_dlq(&task, "Test error").await.unwrap();
+        queue.move_to_dlq(&task, "Test error").await.expect("failed to move task to dlq");
         
         // Task should be removed from main queue
-        assert_eq!(queue.len().await.unwrap(), 0);
+        assert_eq!(queue.len().await.expect("failed to get queue len"), 0);
     }
 }

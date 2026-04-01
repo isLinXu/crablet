@@ -37,7 +37,9 @@ client.interceptors.request.use(
         delete config.headers.Authorization;
       }
     }
-    console.log(`[API Request] ${config.method?.toUpperCase()} ${config.baseURL}${config.url}`, config);
+    if (import.meta.env.DEV) {
+      console.debug(`[API Request] ${config.method?.toUpperCase()} ${config.baseURL}${config.url}`);
+    }
     return config;
   },
   (error) => {

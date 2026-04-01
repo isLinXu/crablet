@@ -32,19 +32,22 @@
 
 pub mod browser;
 pub mod desktop;
+pub mod safety;
 pub mod workflow;
 
 pub use browser::{BrowserAutomation, BrowserConfig, BrowserWorkflow, BrowserStep};
 pub use desktop::{DesktopAutomation, DesktopWorkflow, DesktopStep};
+pub use safety::{RpaSafetyLayer, RpaSafetyConfig, RpaSafetyDecision, ScreenRegion};
 pub use workflow::{RpaWorkflowEngine, WorkflowDefinition, WorkflowStep};
 
 use std::sync::Arc;
+use tokio::sync::Mutex;
 use crate::error::Result;
 
 /// RPA system coordinator
 pub struct RpaSystem {
     browser: Option<Arc<BrowserAutomation>>,
-    desktop: Option<Arc<DesktopAutomation>>,
+    desktop: Option<Arc<Mutex<DesktopAutomation>>>,
     workflow_engine: Arc<RpaWorkflowEngine>,
 }
 
@@ -64,16 +67,16 @@ impl RpaSystem {
     pub async fn init_browser(&mut self, config: browser::BrowserConfig) -> Result<()> {
         let browser = BrowserAutomation::new(config).await?;
         self.browser = Some(Arc::new(browser));
-        self.workflow_engine.set_browser(self.browser.clone());
+        self.workflow_engine.set_browser(self.browser.clone()).await;
         Ok(())
     }
     
     /// Initialize desktop automation
-    pub fn init_desktop(&mut self) -> Result<()> {
+    pub async fn init_desktop(&mut self) -> Result<()> {
         let desktop = DesktopAutomation::new()
             .map_err(|e| crate::error::CrabletError::RpaError(e.to_string()))?;
-        self.desktop = Some(Arc::new(desktop));
-        self.workflow_engine.set_desktop(self.desktop.clone());
+        self.desktop = Some(Arc::new(Mutex::new(desktop)));
+        self.workflow_engine.set_desktop(self.desktop.clone()).await;
         Ok(())
     }
     
@@ -83,7 +86,7 @@ impl RpaSystem {
     }
     
     /// Get desktop automation
-    pub fn desktop(&self) -> Option<Arc<DesktopAutomation>> {
+    pub fn desktop(&self) -> Option<Arc<Mutex<DesktopAutomation>>> {
         self.desktop.clone()
     }
     

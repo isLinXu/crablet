@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 use serde::{Deserialize, Serialize};
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex, RwLock};
 use tracing::{debug, error, info, warn};
 
 use crate::error::Result;
@@ -17,7 +17,7 @@ use crate::rpa::desktop::{DesktopAutomation, DesktopWorkflow};
 /// RPA Workflow Engine
 pub struct RpaWorkflowEngine {
     browser: Arc<RwLock<Option<Arc<BrowserAutomation>>>>,
-    desktop: Arc<RwLock<Option<Arc<DesktopAutomation>>>>,
+    desktop: Arc<RwLock<Option<Arc<Mutex<DesktopAutomation>>>>>,
 }
 
 impl RpaWorkflowEngine {
@@ -30,21 +30,15 @@ impl RpaWorkflowEngine {
     }
     
     /// Set browser automation
-    pub fn set_browser(&self, browser: Option<Arc<BrowserAutomation>>) {
-        let rt = tokio::runtime::Handle::current();
-        rt.block_on(async {
-            let mut b = self.browser.write().await;
-            *b = browser;
-        });
+    pub async fn set_browser(&self, browser: Option<Arc<BrowserAutomation>>) {
+        let mut b = self.browser.write().await;
+        *b = browser;
     }
     
     /// Set desktop automation
-    pub fn set_desktop(&self, desktop: Option<Arc<DesktopAutomation>>) {
-        let rt = tokio::runtime::Handle::current();
-        rt.block_on(async {
-            let mut d = self.desktop.write().await;
-            *d = desktop;
-        });
+    pub async fn set_desktop(&self, desktop: Option<Arc<Mutex<DesktopAutomation>>>) {
+        let mut d = self.desktop.write().await;
+        *d = desktop;
     }
     
     /// Execute a workflow definition
@@ -64,66 +58,86 @@ impl RpaWorkflowEngine {
                 }
             }
             
-            // Execute step
-            let result = match &step.step_type {
-                StepType::Browser { workflow: browser_workflow } => {
-                    self.execute_browser_workflow(browser_workflow, context).await
-                }
-                StepType::Desktop { workflow: desktop_workflow } => {
-                    self.execute_desktop_workflow(desktop_workflow, context).await
-                }
-                StepType::Cognitive { prompt, system } => {
-                    self.execute_cognitive(prompt, system, context).await
-                }
-                StepType::Http { request } => {
-                    self.execute_http(request, context).await
-                }
-                StepType::File { operation } => {
-                    self.execute_file_operation(operation, context).await
-                }
-                StepType::Condition { branches } => {
-                    self.execute_condition(branches, context).await
-                }
-                StepType::Loop { condition, steps } => {
-                    self.execute_loop(condition, steps, context).await
-                }
-                StepType::Parallel { branches } => {
-                    self.execute_parallel(branches, context).await
-                }
-                StepType::Wait { duration } => {
-                    tokio::time::sleep(*duration).await;
-                    Ok(StepResult::success())
-                }
-                StepType::SetVariable { name, value } => {
-                    let resolved_value = self.resolve_variables(value, &context.variables);
-                    context.variables.insert(name.clone(), resolved_value);
-                    Ok(StepResult::success())
-                }
-            };
-            
-            match result {
-                Ok(step_result) => {
-                    // Store outputs
-                    for output in &step.outputs {
-                        if let Some(value) = step_result.outputs.get(output) {
-                            context.variables.insert(output.clone(), value.clone());
-                        }
+            // Execute step with error policy (continue/retry/fail)
+            let mut attempts: u32 = 0;
+            loop {
+                attempts += 1;
+
+                let result = match &step.step_type {
+                    StepType::Browser { workflow: browser_workflow } => {
+                        self.execute_browser_workflow(browser_workflow, context).await
                     }
-                }
-                Err(e) => {
-                    error!("Step {} failed: {}", step.name, e);
-                    
-                    // Check error handling
-                    match &step.on_error {
-                        ErrorAction::Continue => {
-                            warn!("Continuing after error");
+                    StepType::Desktop { workflow: desktop_workflow } => {
+                        self.execute_desktop_workflow(desktop_workflow, context).await
+                    }
+                    StepType::Cognitive { prompt, system } => {
+                        self.execute_cognitive(prompt, system, context).await
+                    }
+                    StepType::Http { request } => {
+                        self.execute_http(request, context).await
+                    }
+                    StepType::File { operation } => {
+                        self.execute_file_operation(operation, context).await
+                    }
+                    StepType::Condition { branches } => {
+                        self.execute_condition(branches, context).await
+                    }
+                    StepType::Loop { condition, steps } => {
+                        self.execute_loop(condition, steps, context).await
+                    }
+                    StepType::Parallel { branches } => {
+                        self.execute_parallel(branches, context).await
+                    }
+                    StepType::Wait { duration } => {
+                        tokio::time::sleep(*duration).await;
+                        Ok(StepResult::success())
+                    }
+                    StepType::SetVariable { name, value } => {
+                        let resolved_value = self.resolve_variables(value, &context.variables);
+                        context.variables.insert(name.clone(), resolved_value);
+                        Ok(StepResult::success())
+                    }
+                };
+
+                match result {
+                    Ok(step_result) => {
+                        // Store outputs
+                        for output in &step.outputs {
+                            if let Some(value) = step_result.outputs.get(output) {
+                                context.variables.insert(output.clone(), value.clone());
+                            }
                         }
-                        ErrorAction::Retry { max_retries: _, delay: _ } => {
-                            // TODO: Implement retry logic
-                            return Err(e);
-                        }
-                        ErrorAction::Fail => {
-                            return Err(e);
+                        break;
+                    }
+                    Err(e) => {
+                        error!(
+                            "Step '{}' failed (attempt {}): {}",
+                            step.name, attempts, e
+                        );
+                        context.variables.insert("last_error".to_string(), e.to_string());
+
+                        match step.on_error {
+                            ErrorAction::Continue => {
+                                warn!("Continuing after error in step '{}'", step.name);
+                                break;
+                            }
+                            ErrorAction::Retry { max_retries, delay } => {
+                                if attempts <= max_retries.saturating_add(1) {
+                                    warn!(
+                                        "Retrying step '{}' in {:?} (attempt {}/{})",
+                                        step.name,
+                                        delay,
+                                        attempts,
+                                        max_retries.saturating_add(1)
+                                    );
+                                    tokio::time::sleep(delay).await;
+                                    continue;
+                                }
+                                return Err(e);
+                            }
+                            ErrorAction::Fail => {
+                                return Err(e);
+                            }
                         }
                     }
                 }
@@ -164,14 +178,22 @@ impl RpaWorkflowEngine {
     async fn execute_desktop_workflow(&self, workflow: &DesktopWorkflow, _context: &WorkflowContext) -> RpaResult<StepResult> {
         let desktop = self.desktop.read().await;
         
-        if let Some(_desktop) = desktop.as_ref() {
-            // Clone the workflow to avoid borrowing issues
-            let _workflow = workflow.clone();
-            
-            // We need to clone the desktop automation to execute
-            // In real implementation, this would be handled differently
-            // For now, return a simulated result
-            Ok(StepResult::success())
+        if let Some(desktop) = desktop.as_ref() {
+            let mut desktop = desktop.lock().await;
+            let result = desktop.execute_workflow(workflow).await?;
+
+            let mut outputs = HashMap::new();
+            for (k, v) in result.variables {
+                outputs.insert(k, v);
+            }
+            if let Some(last) = result.screenshots.last() {
+                outputs.insert("last_screenshot".to_string(), last.clone());
+            }
+
+            Ok(StepResult {
+                success: result.success,
+                outputs,
+            })
         } else {
             Err(RpaError::DesktopError("Desktop automation not initialized".to_string()))
         }
@@ -479,6 +501,8 @@ pub struct WorkflowResult {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::tempdir;
+    use tokio::sync::Mutex;
     
     #[test]
     fn test_workflow_definition_serialization() {
@@ -521,5 +545,86 @@ mod tests {
         let yaml = serde_yaml::to_string(&request).unwrap();
         assert!(yaml.contains("https://api.example.com/data"));
         assert!(yaml.contains("GET"));
+    }
+
+    #[tokio::test]
+    async fn test_desktop_step_executes_workflow() {
+        let engine = RpaWorkflowEngine::new().unwrap();
+
+        let desktop = crate::rpa::desktop::DesktopAutomation::new().unwrap();
+        engine.set_desktop(Some(Arc::new(Mutex::new(desktop)))).await;
+
+        let wf = WorkflowDefinition {
+            id: "wf1".to_string(),
+            name: "desktop".to_string(),
+            description: "".to_string(),
+            version: "1.0.0".to_string(),
+            triggers: vec![WorkflowTrigger::Manual],
+            variables: vec![],
+            steps: vec![WorkflowStep {
+                id: "s1".to_string(),
+                name: "desktop-step".to_string(),
+                step_type: StepType::Desktop {
+                    workflow: crate::rpa::desktop::DesktopWorkflow {
+                        name: "dwf".to_string(),
+                        steps: vec![crate::rpa::desktop::DesktopStep::Wait { seconds: 0 }],
+                        variables: HashMap::new(),
+                    },
+                },
+                condition: None,
+                outputs: vec![],
+                on_error: ErrorAction::Fail,
+            }],
+        };
+
+        let mut ctx = WorkflowContext::default();
+        let result = engine.execute(&wf, &mut ctx).await.unwrap();
+        assert!(result.success);
+    }
+
+    #[tokio::test]
+    async fn test_retry_allows_eventual_file_read_success() {
+        let engine = RpaWorkflowEngine::new().unwrap();
+
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("hello.txt");
+        let path_str = path.to_string_lossy().to_string();
+
+        let wf = WorkflowDefinition {
+            id: "wf2".to_string(),
+            name: "retry-file".to_string(),
+            description: "".to_string(),
+            version: "1.0.0".to_string(),
+            triggers: vec![WorkflowTrigger::Manual],
+            variables: vec![],
+            steps: vec![WorkflowStep {
+                id: "s1".to_string(),
+                name: "read".to_string(),
+                step_type: StepType::File {
+                    operation: FileOperation::Read { path: path_str },
+                },
+                condition: None,
+                outputs: vec!["content".to_string()],
+                on_error: ErrorAction::Retry {
+                    max_retries: 5,
+                    delay: Duration::from_millis(25),
+                },
+            }],
+        };
+
+        let writer = {
+            let path = path.clone();
+            tokio::spawn(async move {
+                tokio::time::sleep(Duration::from_millis(40)).await;
+                tokio::fs::write(path, "ok").await.unwrap();
+            })
+        };
+
+        let mut ctx = WorkflowContext::default();
+        let result = engine.execute(&wf, &mut ctx).await.unwrap();
+        writer.await.unwrap();
+
+        assert!(result.success);
+        assert_eq!(result.variables.get("content").map(String::as_str), Some("ok"));
     }
 }

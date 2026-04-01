@@ -110,7 +110,9 @@ impl MultiArmedBandit {
         // ε-greedy 探索
         if rng.gen::<f32>() < self.epsilon {
             let strategies: Vec<Strategy> = self.strategies.keys().cloned().collect();
-            return strategies[rng.gen_range(0..strategies.len())];
+            // rand 0.10: gen_range is inclusive on both ends (..=)
+            let max_idx = strategies.len().saturating_sub(1);
+            return strategies[rng.gen_range(0..=max_idx)];
         }
         
         // 根据任务复杂度调整选择

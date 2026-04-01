@@ -357,6 +357,8 @@ impl CacheStats {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
+    use std::sync::Arc;
 
     #[tokio::test]
     async fn test_l1_cache_basic() {
@@ -404,5 +406,194 @@ mod tests {
 
         let stats = cache.l1_stats().await;
         assert_eq!(stats.len, 2); // k1 should be evicted
+    }
+
+    #[tokio::test]
+    async fn test_l1_delete() {
+        let cache = LayerCache::new("test", L1Config { capacity: 10, ttl_secs: 60 }, None, "test");
+
+        cache.put("k1".to_string(), "v1".to_string()).await.unwrap();
+        cache.delete(&"k1".to_string()).await.unwrap();
+
+        let result = cache.get(&"k1".to_string()).await.unwrap();
+        assert!(result.is_none());
+        assert_eq!(cache.l1_stats().await.len, 0);
+    }
+
+    #[tokio::test]
+    async fn test_invalidate_l1() {
+        let cache = LayerCache::new("test", L1Config { capacity: 10, ttl_secs: 60 }, None, "test");
+
+        cache.put("k1".to_string(), "v1".to_string()).await.unwrap();
+        cache.put("k2".to_string(), "v2".to_string()).await.unwrap();
+        cache.invalidate_l1().await;
+
+        assert_eq!(cache.l1_stats().await.len, 0);
+    }
+
+    #[tokio::test]
+    async fn test_l3_fallback_with_mock() {
+        let store: Arc<std::sync::RwLock<HashMap<String, String>>> =
+            Arc::new(std::sync::RwLock::new(HashMap::new()));
+
+        // Pre-populate L3 store
+        store.write().unwrap().insert("key1".to_string(), "from-l3".to_string());
+
+        let getter = {
+            let s = store.clone();
+            move |k: &String| -> Result<Option<String>> {
+                Ok(s.read().unwrap().get(k).cloned())
+            }
+        };
+
+        let setter = {
+            let s = store.clone();
+            move |k: &String, v: &String| -> Result<()> {
+                s.write().unwrap().insert(k.clone(), v.clone());
+                Ok(())
+            }
+        };
+
+        let cache = LayerCache::new("test", L1Config { capacity: 10, ttl_secs: 60 }, None, "test")
+            .with_l3(getter, setter);
+
+        // get should fall through to L3
+        let result = cache.get(&"key1".to_string()).await.unwrap();
+        assert!(result.is_some());
+        let (val, level) = result.unwrap();
+        assert_eq!(val, "from-l3");
+        assert_eq!(level, "L3"); // Should report L3 hit
+
+        // Now put should populate L1
+        cache.put("key2".to_string(), "from-put".to_string()).await.unwrap();
+        let result2 = cache.get(&"key2".to_string()).await.unwrap();
+        assert!(result2.is_some());
+        let (val2, level2) = result2.unwrap();
+        assert_eq!(val2, "from-put");
+        assert_eq!(level2, "L1"); // L1 hit now
+
+        // Verify L3 setter was called
+        assert_eq!(store.read().unwrap().get("key2").unwrap(), "from-put");
+    }
+
+    #[tokio::test]
+    async fn test_l3_fallback_miss() {
+        let store: Arc<std::sync::RwLock<HashMap<String, String>>> =
+            Arc::new(std::sync::RwLock::new(HashMap::new()));
+
+        let getter = {
+            let s = store.clone();
+            move |k: &String| -> Result<Option<String>> {
+                Ok(s.read().unwrap().get(k).cloned())
+            }
+        };
+
+        let setter = {
+            let s = store.clone();
+            move |k: &String, v: &String| -> Result<()> {
+                s.write().unwrap().insert(k.clone(), v.clone());
+                Ok(())
+            }
+        };
+
+        let cache = LayerCache::new("test", L1Config { capacity: 10, ttl_secs: 60 }, None, "test")
+            .with_l3(getter, setter);
+
+        let result = cache.get(&"nonexistent".to_string()).await.unwrap();
+        assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_l1_config_default() {
+        let config = L1Config::default();
+        assert_eq!(config.capacity, 1000);
+        assert_eq!(config.ttl_secs, 300);
+    }
+
+    #[tokio::test]
+    async fn test_l1_stats() {
+        let cache = LayerCache::new("test", L1Config { capacity: 50, ttl_secs: 60 }, None, "test");
+        let stats = cache.l1_stats().await;
+        assert_eq!(stats.len, 0);
+        assert_eq!(stats.capacity, 50);
+
+        for i in 0..5 {
+            cache.put(format!("k{}", i), format!("v{}", i)).await.unwrap();
+        }
+        let stats = cache.l1_stats().await;
+        assert_eq!(stats.len, 5);
+    }
+
+    // ── CacheStats unit tests ──
+
+    #[test]
+    fn test_cache_stats_total_hits() {
+        let stats = CacheStats {
+            l1_hits: 10, l2_hits: 5, l3_hits: 2,
+            l1_misses: 1, l2_misses: 0, l3_misses: 0,
+        };
+        assert_eq!(stats.total_hits(), 17);
+    }
+
+    #[test]
+    fn test_cache_stats_total_misses() {
+        let stats = CacheStats {
+            l1_hits: 0, l2_hits: 0, l3_hits: 0,
+            l1_misses: 5, l2_misses: 3, l3_misses: 1,
+        };
+        assert_eq!(stats.total_misses(), 9);
+    }
+
+    #[test]
+    fn test_cache_stats_hit_rate_normal() {
+        let stats = CacheStats {
+            l1_hits: 80, l2_hits: 10, l3_hits: 10,
+            l1_misses: 50, l2_misses: 20, l3_misses: 30,
+        };
+        // total = 100 hits + 100 misses = 200
+        assert!((stats.hit_rate() - 0.5).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_cache_stats_hit_rate_zero_total() {
+        let stats = CacheStats::default();
+        assert_eq!(stats.hit_rate(), 0.0); // Division by zero protection
+    }
+
+    #[test]
+    fn test_cache_stats_hit_rate_perfect() {
+        let stats = CacheStats {
+            l1_hits: 100, l2_hits: 0, l3_hits: 0,
+            l1_misses: 0, l2_misses: 0, l3_misses: 0,
+        };
+        assert_eq!(stats.hit_rate(), 1.0);
+    }
+
+    #[test]
+    fn test_cache_stats_hit_rate_zero_percent() {
+        let stats = CacheStats {
+            l1_hits: 0, l2_hits: 0, l3_hits: 0,
+            l1_misses: 100, l2_misses: 0, l3_misses: 0,
+        };
+        assert_eq!(stats.hit_rate(), 0.0);
+    }
+
+    // ── SessionContextData serialization ──
+
+    #[test]
+    fn test_session_context_data_serde() {
+        let data = SessionContextData {
+            session_id: "sess-1".to_string(),
+            token_count: 500,
+            max_tokens: 128000,
+            compressed: false,
+            last_updated: 1234567890,
+            messages_json: "[]".to_string(),
+        };
+
+        let json = serde_json::to_string(&data).unwrap();
+        let back: SessionContextData = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.session_id, "sess-1");
+        assert_eq!(back.token_count, 500);
     }
 }

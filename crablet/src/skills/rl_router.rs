@@ -319,7 +319,9 @@ impl RLSkillRouter {
         // Epsilon-greedy exploration
         if rng.gen::<f32>() < self.config.exploration_rate {
             // Random exploration: pick a random skill
-            let idx = rng.gen_range(0..self.skill_names.len());
+            // rand 0.10: gen_range is inclusive on both ends (..=)
+            let max_idx = self.skill_names.len().saturating_sub(1);
+            let idx = rng.gen_range(0..=max_idx);
             return RoutingAction::new(idx);
         }
 

@@ -2,12 +2,13 @@
 name = "crablet"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.80"
 
 [features]
-default = ["qdrant-support", "web", "auto-working"]
+default = ["qdrant-support", "web"]
 inference = ["dep:ort"]
 browser = ["dep:chromiumoxide"]
-auto-working = ["dep:cron", "dep:enigo", "dep:lettre", "dep:imap"]
+auto-working = ["dep:cron", "dep:enigo", "dep:lettre", "dep:imap", "dep:arboard", "dep:screenshots", "dep:image", "dep:imageproc", "dep:template-matching"]
 full = ["knowledge", "audio", "vision", "web", "scripting", "telemetry", "sandbox", "telegram", "browser", "auto-working"]
 telegram = ["dep:teloxide"]
 knowledge = ["dep:fastembed", "dep:pdf-extract", "dep:neo4rs", "qdrant-support"]
@@ -25,7 +26,8 @@ fusion-tests-disabled = []
 tokio = { version = "1.40", features = ["full"] }
 axum = { version = "0.7", features = ["ws", "multipart", "macros"], optional = true }
 axum-extra = { version = "0.9", features = ["cookie", "form", "query"], optional = true }
-reqwest = { version = "0.12", features = ["json", "stream", "multipart", "cookies"] }
+# 使用 rustls 避免 OpenSSL / pkg-config 系统依赖，提升 CI/容器/本地一致性
+reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "multipart", "cookies", "rustls-tls-webpki-roots"] }
 serde = { version = "1.0", features = ["derive"] }
 sqlx-core = { version = "0.8.6", default-features = false, features = ["_rt-tokio", "chrono", "migrate"] }
 sqlx-sqlite = { version = "0.8.6", default-features = false, features = ["bundled", "chrono", "migrate"] }
@@ -82,6 +84,10 @@ ort = { version = "2.0.0-rc.9", optional = true } # Modern ONNX Runtime wrapper 
 chromiumoxide = { version = "0.5", features = ["tokio-runtime"], optional = true }
 cron = { version = "0.16", optional = true }
 enigo = { version = "0.2", optional = true }
+arboard = { version = "3", optional = true }
+screenshots = { version = "0.8", optional = true }
+imageproc = { version = "0.24", optional = true }
+template-matching = { version = "0.1", optional = true }
 lettre = { version = "0.11", optional = true }
 imap = { version = "3.0.0-alpha.15", optional = true }
 data-encoding = "2.4"
@@ -105,7 +111,9 @@ governor = { version = "0.6.3", features = ["std", "dashmap", "jitter", "quanta"
 tower = { version = "0.4.13", features = ["util", "limit"] }
 tower_governor = "0.8.0"
 redis = { version = "0.27", features = ["tokio-comp", "connection-manager"] }
-openid = "0.23.0"
+# 显式禁用默认的 native-tls/OpenSSL 路线，使用 rustls 提升可移植性；
+# 同时使用 0.22.x 以匹配项目 Rust 1.80+ 的 MSRV 约束。
+openid = { version = "0.22.0", default-features = false, features = ["rustls", "http2"] }
 connect = "0.2.4"
 url = "2.5.8"
 validator = { version = "0.20", features = ["derive"] }

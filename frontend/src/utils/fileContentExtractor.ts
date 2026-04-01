@@ -161,7 +161,7 @@ async function extractPdfContent(
     }
     
     // 如果文本提取不完整或无效，尝试使用 PDF.js + OCR
-    console.log('PDF文本提取不完整，尝试OCR识别...');
+    if (import.meta.env.DEV) console.debug('PDF文本提取不完整，尝试OCR识别...');
     if (onOcrStart) onOcrStart();
     const ocrText = await extractPdfWithOCR(file, onProgress);
     return { text: ocrText, isOcr: true };

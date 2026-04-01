@@ -255,7 +255,8 @@ impl DynamicToolGraph {
         // Check for cycles
         if self.has_cycle() {
             // Remove the edge we just added
-            self.graph.remove_edge(self.graph.edge_indices().last().unwrap());
+            self.graph.remove_edge(self.graph.edge_indices().last()
+                .expect("edge must exist: just added above"));
             return Err(ToolGraphError::CycleDetected);
         }
 
@@ -336,8 +337,9 @@ impl DynamicToolGraph {
                     });
 
                 if deps_satisfied {
-                    let node = self.graph.node_weight(idx).unwrap();
-                    this_batch.push(node.id.clone());
+                    if let Some(node) = self.graph.node_weight(idx) {
+                        this_batch.push(node.id.clone());
+                    }
                 }
             }
 
@@ -349,8 +351,9 @@ impl DynamicToolGraph {
             let mut groups: HashMap<Option<String>, Vec<String>> = HashMap::new();
             for id in &this_batch {
                 if let Some(&idx) = self.node_indices.get(id) {
-                    let node = self.graph.node_weight(idx).unwrap();
-                    groups.entry(node.parallel_group.clone()).or_default().push(id.clone());
+                    if let Some(node) = self.graph.node_weight(idx) {
+                        groups.entry(node.parallel_group.clone()).or_default().push(id.clone());
+                    }
                 }
             }
 
@@ -570,23 +573,29 @@ impl DynamicToolGraph {
 
         // Add nodes
         for (id, &idx) in &self.node_indices {
-            let node = self.graph.node_weight(idx).unwrap();
+            let Some(node) = self.graph.node_weight(idx) else { continue };
             let label = node.tool_name.replace('"', "");
             mermaid.push_str(&format!("    {}[\"{}\"]\n", id, label));
         }
 
         // Add edges
         for edge in self.graph.edge_indices() {
-            let (from, to) = self.graph.edge_endpoints(edge).unwrap();
-            let from_id = self.graph.node_weight(from).unwrap().id.clone();
-            let to_id = self.graph.node_weight(to).unwrap().id.clone();
+            let Some((from, to)) = self.graph.edge_endpoints(edge) else { continue };
+            let Some(from_node) = self.graph.node_weight(from) else { continue };
+            let Some(to_node) = self.graph.node_weight(to) else { continue };
+            let from_id = from_node.id.clone();
+            let to_id = to_node.id.clone();
 
-            let style = if let Some(condition) = &self.graph.edge_weight(edge).unwrap().condition {
-                match condition {
-                    EdgeCondition::OnSuccess => " -->|success| ",
-                    EdgeCondition::OnFailure => " -.->|failure| ",
-                    EdgeCondition::Always => " --> ",
-                    EdgeCondition::Expression(_) => " -.-> ",
+            let style = if let Some(weight) = self.graph.edge_weight(edge) {
+                if let Some(condition) = &weight.condition {
+                    match condition {
+                        EdgeCondition::OnSuccess => " -->|success| ",
+                        EdgeCondition::OnFailure => " -.->|failure| ",
+                        EdgeCondition::Always => " --> ",
+                        EdgeCondition::Expression(_) => " -.-> ",
+                    }
+                } else {
+                    " --> "
                 }
             } else {
                 " --> "
@@ -605,7 +614,7 @@ impl DynamicToolGraph {
         dot.push_str("    node [shape=box];\n\n");
 
         for (id, &idx) in &self.node_indices {
-            let node = self.graph.node_weight(idx).unwrap();
+            let Some(node) = self.graph.node_weight(idx) else { continue };
 
             let color = if let Some(result) = results.get(id) {
                 if result.skipped {
@@ -629,11 +638,11 @@ impl DynamicToolGraph {
         }
 
         for edge in self.graph.edge_indices() {
-            let (from, to) = self.graph.edge_endpoints(edge).unwrap();
-            let from_id = self.graph.node_weight(from).unwrap().id.clone();
-            let to_id = self.graph.node_weight(to).unwrap().id.clone();
+            let Some((from, to)) = self.graph.edge_endpoints(edge) else { continue };
+            let Some(from_node) = self.graph.node_weight(from) else { continue };
+            let Some(to_node) = self.graph.node_weight(to) else { continue };
 
-            dot.push_str(&format!("    {} -> {}\n", from_id, to_id));
+            dot.push_str(&format!("    {} -> {}\n", from_node.id, to_node.id));
         }
 
         dot.push_str("}\n");
@@ -707,7 +716,8 @@ impl DynamicToolExecutor {
                     let args_clone = shared_state.clone();
 
                     join_set.spawn(async move {
-                        let _permit = sem_clone.acquire().await.unwrap();
+                        let _permit = sem_clone.acquire().await
+                            .expect("semaphore should not be closed during execution");
                         Self::execute_node(&graph_clone, &tool_executor_clone, &node_id, &args_clone).await
                     });
                 }
@@ -742,7 +752,9 @@ impl DynamicToolExecutor {
             let graph_read = graph.read().await;
             let idx = graph_read.node_indices.get(node_id)
                 .ok_or_else(|| ToolGraphError::NodeNotFound(node_id.to_string()))?;
-            let node = graph_read.graph.node_weight(*idx).unwrap().clone();
+            let node = graph_read.graph.node_weight(*idx)
+                .ok_or_else(|| ToolGraphError::NodeNotFound(node_id.to_string()))?
+                .clone();
             let registry = graph_read.tool_registry.clone();
             (node, registry)
         };

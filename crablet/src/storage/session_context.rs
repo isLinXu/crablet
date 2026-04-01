@@ -359,4 +359,101 @@ mod tests {
 
         assert_eq!(usage.usage_percentage, 25.0);
     }
+
+    #[test]
+    fn test_session_context_serde() {
+        let ctx = SessionContext {
+            session_id: "s1".to_string(),
+            token_count: 1000,
+            max_tokens: 128000,
+            compressed: false,
+            last_updated: 1234567890,
+            messages_json: r#"[{"role":"user","content":"hello"}]"#.to_string(),
+        };
+        let json = serde_json::to_string(&ctx).unwrap();
+        let back: SessionContext = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.session_id, "s1");
+        assert_eq!(back.token_count, 1000);
+        assert_eq!(back.compressed, false);
+        assert!(!back.messages_json.is_empty());
+    }
+
+    #[test]
+    fn test_token_usage_serde() {
+        let usage = TokenUsage {
+            session_id: "s1".to_string(),
+            total_tokens: 64000,
+            prompt_tokens: 40000,
+            completion_tokens: 24000,
+            token_limit: 128000,
+            usage_percentage: 50.0,
+            last_updated: 1234567890,
+        };
+        let json = serde_json::to_string(&usage).unwrap();
+        let back: TokenUsage = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.total_tokens, 64000);
+        assert!((back.usage_percentage - 50.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_history_search_result_serde() {
+        let result = HistorySearchResult {
+            session_id: "s1".to_string(),
+            message_id: "m1".to_string(),
+            role: "user".to_string(),
+            content_preview: "Hello world".to_string(),
+            relevance_score: 0.75,
+        };
+        let json = serde_json::to_string(&result).unwrap();
+        let back: HistorySearchResult = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.session_id, "s1");
+        assert!((back.relevance_score - 0.75).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_usage_percentage_calculation() {
+        // Test the logic from get_token_usage: token_count / max_tokens * 100
+        let token_count = 96000u32;
+        let max_tokens = 128000u32;
+        let usage = (token_count as f32 / max_tokens as f32) * 100.0;
+        assert!((usage - 75.0).abs() < 0.01);
+
+        // Edge case: max_tokens = 0
+        let usage_zero = 0u32;
+        let max_zero = 0u32;
+        let result = if max_zero > 0 {
+            (usage_zero as f32 / max_zero as f32) * 100.0
+        } else {
+            0.0
+        };
+        assert_eq!(result, 0.0);
+    }
+
+    #[test]
+    fn test_session_context_default_compressed() {
+        let ctx = SessionContext {
+            session_id: "s1".to_string(),
+            token_count: 0,
+            max_tokens: 128000,
+            compressed: true,
+            last_updated: 1234567890,
+            messages_json: "[]".to_string(),
+        };
+        assert!(ctx.compressed);
+        assert_eq!(ctx.messages_json, "[]");
+    }
+
+    #[test]
+    fn test_history_search_result_fields() {
+        let r = HistorySearchResult {
+            session_id: "s1".to_string(),
+            message_id: "m1".to_string(),
+            role: "assistant".to_string(),
+            content_preview: "This is a long message that should be...".to_string(),
+            relevance_score: 1.0,
+        };
+        assert_eq!(r.role, "assistant");
+        assert!(r.content_preview.ends_with("..."));
+        assert!((r.relevance_score - 1.0).abs() < 0.001);
+    }
 }

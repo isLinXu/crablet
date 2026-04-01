@@ -159,8 +159,9 @@ export function useStreamingChat() {
       
       for (const url of candidatesList) {
         try {
-          // Add logging to debug
-          console.log(`[Chat] Trying stream URL: ${url}`);
+          if (import.meta.env.DEV) {
+            console.debug(`[Chat] Trying stream URL: ${url}`);
+          }
           const res = await fetch(url, {
             method: 'POST',
             headers: buildHeaders(),

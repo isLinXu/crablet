@@ -10,28 +10,28 @@ build-full:
 
 # Run tests
 test:
-    cargo test --manifest-path ./crablet/Cargo.toml --release --no-default-features --features web
+    cargo test --manifest-path ./crablet/Cargo.toml --locked --no-default-features --features web
 
 # Run all tests
 test-all:
-    cargo test --manifest-path ./crablet/Cargo.toml --release --all-features
+    cargo test --manifest-path ./crablet/Cargo.toml --locked --all-features
 
 # Backend web suite used by CI
 test-web:
-    cargo test --manifest-path ./crablet/Cargo.toml --no-default-features --features web
+    cargo test --manifest-path ./crablet/Cargo.toml --locked --no-default-features --features web
 
 # Backend doctests used by CI
 test-doc:
-    cargo test --manifest-path ./crablet/Cargo.toml --doc --no-default-features --features web
+    cargo test --manifest-path ./crablet/Cargo.toml --locked --doc --no-default-features --features web
 
 # Fast all-features compile validation
 check-all-features:
-    cargo check --manifest-path ./crablet/Cargo.toml --all-features
+    cargo check --manifest-path ./crablet/Cargo.toml --locked --all-features
 
 # Lint
 lint:
     cargo fmt --manifest-path ./crablet/Cargo.toml --all -- --check
-    cargo clippy --manifest-path ./crablet/Cargo.toml --all-targets --no-default-features --features web -- -D warnings
+    cargo clippy --manifest-path ./crablet/Cargo.toml --locked --all-targets --no-default-features --features web -- -D warnings
 
 # Audit
 audit:

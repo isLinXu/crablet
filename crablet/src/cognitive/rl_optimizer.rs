@@ -234,7 +234,9 @@ impl ReplayBuffer {
         let len = self.buffer.len().min(batch_size);
         (0..len)
             .map(|_| {
-                let idx = rng.gen_range(0..self.buffer.len());
+                // rand 0.10: gen_range is inclusive on both ends (..=)
+                let max_idx = self.buffer.len().saturating_sub(1);
+                let idx = rng.gen_range(0..=max_idx);
                 self.buffer[idx].clone()
             })
             .collect()

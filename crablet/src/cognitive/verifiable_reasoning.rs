@@ -52,6 +52,7 @@ use std::sync::RwLock;
 use anyhow::{Result, anyhow};
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
+use tracing::error;
 
 /// A logical expression
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -581,7 +582,7 @@ impl VerifiableReasoner {
         
         // Initialize with standard inference rules
         if let Err(e) = reasoner.init_standard_rules() {
-            eprintln!("failed to init standard rules: {e}");
+            error!("failed to init standard rules: {e}");
         }
         
         reasoner
@@ -927,7 +928,7 @@ impl VerifiableReasoner {
     pub fn clear_knowledge_base(&self) {
         match self.knowledge_base.write() {
             Ok(mut kb) => kb.clear(),
-            Err(e) => eprintln!("knowledge base lock poisoned: {e}"),
+            Err(e) => error!("knowledge base lock poisoned: {e}"),
         }
     }
 }

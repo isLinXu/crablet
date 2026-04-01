@@ -8,7 +8,7 @@ repos:
     hooks:
       - id: rust-fmt
         name: Rust fmt
-        entry: cargo fmt -- --check
+        entry: cargo fmt --manifest-path ./crablet/Cargo.toml --all -- --check
         language: system
         files: \.rs$
         pass_filenames: false
@@ -16,7 +16,7 @@ repos:
 
       - id: rust-clippy
         name: Rust clippy
-        entry: cargo clippy -- -D warnings
+        entry: cargo clippy --manifest-path ./crablet/Cargo.toml --all-targets --no-default-features --features web -- -D warnings
         language: system
         files: \.rs$
         pass_filenames: false
@@ -24,7 +24,7 @@ repos:
 
       - id: rust-check
         name: Rust check
-        entry: cargo check --all-features
+        entry: cargo check --manifest-path ./crablet/Cargo.toml --locked --all-features
         language: system
         files: \.rs$
         pass_filenames: false
@@ -42,7 +42,7 @@ repos:
 
       - id: frontend-typecheck
         name: Frontend type check
-        entry: bash -c "cd frontend && npm run typecheck"
+        entry: bash -c "cd frontend && npm run type-check"
         language: system
         files: ^frontend/.*\.(ts|tsx)$
         pass_filenames: false

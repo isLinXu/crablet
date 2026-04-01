@@ -246,3 +246,152 @@ pub fn disabled_skills_store() -> &'static tokio::sync::RwLock<HashSet<String>> 
     static STORE: OnceLock<tokio::sync::RwLock<HashSet<String>>> = OnceLock::new();
     STORE.get_or_init(|| tokio::sync::RwLock::new(HashSet::new()))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::TraceStep;
+
+    // ── infer_cognitive_layer_from_input ──
+
+    #[test]
+    fn test_greeting_patterns_system1() {
+        assert_eq!(infer_cognitive_layer_from_input("hello"), "system1");
+        assert_eq!(infer_cognitive_layer_from_input("你好"), "system1");
+        assert_eq!(infer_cognitive_layer_from_input("Hi there"), "system1");
+        assert_eq!(infer_cognitive_layer_from_input("早上好"), "system1");
+        assert_eq!(infer_cognitive_layer_from_input("在吗"), "system1");
+    }
+
+    #[test]
+    fn test_persona_patterns_system1() {
+        assert_eq!(infer_cognitive_layer_from_input("你是谁"), "system1");
+        assert_eq!(infer_cognitive_layer_from_input("what are you"), "system1");
+        assert_eq!(infer_cognitive_layer_from_input("你叫什么名字"), "system1");
+        assert_eq!(infer_cognitive_layer_from_input("你是人工智能吗"), "system1");
+    }
+
+    #[test]
+    fn test_chat_patterns_system1() {
+        assert_eq!(infer_cognitive_layer_from_input("谢谢"), "system1");
+        assert_eq!(infer_cognitive_layer_from_input("ok"), "system1");
+        assert_eq!(infer_cognitive_layer_from_input("好的"), "system1");
+    }
+
+    #[test]
+    fn test_help_and_status_system1() {
+        assert_eq!(infer_cognitive_layer_from_input("help"), "system1");
+        assert_eq!(infer_cognitive_layer_from_input("状态"), "system1");
+        assert_eq!(infer_cognitive_layer_from_input("how to use"), "system1");
+    }
+
+    #[test]
+    fn test_research_patterns_system3() {
+        assert_eq!(infer_cognitive_layer_from_input("研究这个问题"), "system3");
+        assert_eq!(infer_cognitive_layer_from_input("深度研究"), "system3");
+        assert_eq!(infer_cognitive_layer_from_input("comprehensive analysis"), "system3");
+    }
+
+    #[test]
+    fn test_multistep_patterns_system3() {
+        assert_eq!(infer_cognitive_layer_from_input("首先分析，然后总结，最后给出建议"), "system3");
+        // Single step keyword should not trigger system3
+        assert_ne!(infer_cognitive_layer_from_input("首先我们开始"), "system3");
+    }
+
+    #[test]
+    fn test_code_patterns_system2() {
+        assert_eq!(infer_cognitive_layer_from_input("写一个函数"), "system2");
+        assert_eq!(infer_cognitive_layer_from_input("analyze the data"), "system2");
+        assert_eq!(infer_cognitive_layer_from_input("实现算法"), "system2");
+        assert_eq!(infer_cognitive_layer_from_input("evaluate this approach"), "system2");
+    }
+
+    #[test]
+    fn test_default_system2() {
+        assert_eq!(infer_cognitive_layer_from_input("some random text"), "system2");
+        assert_eq!(infer_cognitive_layer_from_input("tell me about the weather tomorrow"), "system2");
+    }
+
+    // ── infer_cognitive_layer (response + traces) ──
+
+    #[test]
+    fn test_infer_from_response_system1() {
+        let traces = vec![TraceStep {
+            step: 0,
+            thought: "trie hit".to_string(),
+            action: Some("FastRespond".to_string()),
+            action_input: None,
+            observation: None,
+        }];
+        assert_eq!(infer_cognitive_layer("response", &traces), "system1");
+    }
+
+    #[test]
+    fn test_infer_from_response_system3() {
+        let traces = vec![TraceStep {
+            step: 0,
+            thought: "plan and verify".to_string(),
+            action: None,
+            action_input: None,
+            observation: None,
+        }];
+        assert_eq!(infer_cognitive_layer("response", &traces), "system3");
+    }
+
+    #[test]
+    fn test_infer_from_response_system2() {
+        let traces = vec![TraceStep {
+            step: 0,
+            thought: "deliberate reasoning".to_string(),
+            action: None,
+            action_input: None,
+            observation: None,
+        }];
+        assert_eq!(infer_cognitive_layer("response", &traces), "system2");
+    }
+
+    #[test]
+    fn test_infer_from_response_empty_traces_unknown() {
+        assert_eq!(infer_cognitive_layer("random text", &[]), "unknown");
+    }
+
+    #[test]
+    fn test_infer_from_response_nonempty_traces_default_system2() {
+        let traces = vec![TraceStep {
+            step: 0,
+            thought: "some generic thought".to_string(),
+            action: None,
+            action_input: None,
+            observation: None,
+        }];
+        assert_eq!(infer_cognitive_layer("response", &traces), "system2");
+    }
+
+    // ── disabled_skills_store ──
+
+    #[tokio::test]
+    async fn test_disabled_skills_store() {
+        let store = disabled_skills_store();
+        store.write().await.insert("test_skill".to_string());
+        assert!(store.read().await.contains("test_skill"));
+        store.write().await.remove("test_skill");
+        assert!(!store.read().await.contains("test_skill"));
+    }
+
+    // ── GatewayConfig serialization ──
+
+    #[test]
+    fn test_gateway_config_serde() {
+        let config = crate::gateway::types::GatewayConfig {
+            host: "0.0.0.0".to_string(),
+            port: 18790,
+            auth_mode: "off".to_string(),
+        };
+        let json = serde_json::to_string(&config).expect("serialize config");
+        let back: crate::gateway::types::GatewayConfig =
+            serde_json::from_str(&json).expect("deserialize config");
+        assert_eq!(back.port, 18790);
+        assert_eq!(back.auth_mode, "off");
+    }
+}

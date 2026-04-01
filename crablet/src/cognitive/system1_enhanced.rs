@@ -75,9 +75,12 @@ impl ResponseTemplate {
 
     /// Render template with variables
     pub fn render(&self, vars: &HashMap<String, String>) -> String {
-        use rand::seq::SliceRandom;
-        let mut rng = rand::thread_rng();
+        use rand::prelude::IndexedRandom;
+        let mut rng = rand::rng();
         
+        if self.templates.is_empty() {
+            return String::new();
+        }
         let template = self.templates.choose(&mut rng).unwrap_or(&self.templates[0]);
         
         let mut result = template.clone();

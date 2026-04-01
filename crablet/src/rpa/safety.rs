@@ -3,16 +3,16 @@
 //! Provides security controls for desktop automation operations.
 //! Every RPA action must pass through this layer before execution.
 
-use std::collections::HashMap;
+use std::collections::HashSet;
 use std::sync::Arc;
-use std::time::Instant;
 use parking_lot::RwLock;
-use tracing::{info, warn, error, debug};
-use governor::{Quota, RateLimiter as GovernorLimiter};
+use tracing::{debug, info, warn};
 use chrono::Utc;
+use governor::{Quota, RateLimiter};
+use governor::clock::DefaultClock;
+use governor::state::{InMemoryState, NotKeyed};
 
-use crate::rpa::desktop::{DesktopStep, MouseButton, Region};
-use crate::rules::{RuleEngine, RuleContext, RuleDecision};
+use crate::rpa::desktop::DesktopStep;
 
 /// Screen region whitelist entry
 #[derive(Debug, Clone, Copy)]
@@ -107,14 +107,15 @@ pub struct RpaAuditEntry {
 /// RPA Safety Layer — the central security checkpoint for all desktop automation
 pub struct RpaSafetyLayer {
     config: RpaSafetyConfig,
-    rule_engine: Arc<RuleEngine>,
     region_whitelist: RwLock<Vec<ScreenRegion>>,
     /// Rate limiter for actions per minute
-    rate_limiter: Arc<GovernorLimiter<guarantor::direct::DirectCellBucket>>,
+    rate_limiter: Arc<RateLimiter<NotKeyed, InMemoryState, DefaultClock>>,
     /// Consecutive action counter
     consecutive_actions: RwLock<u32>,
     /// Audit log buffer
     audit_log: Arc<RwLock<Vec<RpaAuditEntry>>>,
+    /// Blocked keyboard input patterns
+    blocked_patterns: Arc<Vec<regex::Regex>>,
 }
 
 impl RpaSafetyLayer {
@@ -127,54 +128,27 @@ impl RpaSafetyLayer {
     /// Create a new safety layer with custom configuration
     pub fn with_config(config: RpaSafetyConfig) -> Self {
         let quota = Quota::per_minute(std::num::NonZeroU32::new(config.max_actions_per_minute).unwrap());
-        let rate_limiter = Arc::new(GovernorLimiter::direct(quota));
+        let rate_limiter = Arc::new(RateLimiter::direct(quota));
 
-        let rule_engine = Arc::new(RuleEngine::new());
-        // Add built-in RPA safety rules
-        Self::add_builtin_rpa_rules(&rule_engine);
+        // Built-in blocked patterns for keyboard input
+        let blocked_patterns: Vec<regex::Regex> = vec![
+            r"(?i)rm\s+-rf\s+/",
+            r"(?i)sudo\s+rm\s+-rf",
+            r"(?i)chmod\s+777\s+/",
+            r"(?i):\(\)\{:\|:&\}",
+            r"(?i)mkfs\.",
+            r"(?i)dd\s+if=/dev/zero",
+            r"(?i)>\s*/dev/sd[a-z]",
+        ].into_iter().filter_map(|p| regex::Regex::new(p).ok()).collect();
 
         Self {
             config,
-            rule_engine,
             region_whitelist: RwLock::new(Vec::new()),
             rate_limiter,
             consecutive_actions: RwLock::new(0),
             audit_log: Arc::new(RwLock::new(Vec::new())),
+            blocked_patterns: Arc::new(blocked_patterns),
         }
-    }
-
-    /// Add built-in safety rules for RPA operations
-    fn add_builtin_rpa_rules(engine: &RuleEngine) {
-        use crate::rules::{Condition, Action, Rule};
-
-        // Block potential malicious patterns in keyboard input
-        engine.add_rule(Rule::builder("rpa-block-cmd-injection")
-            .name("Block command injection via keyboard")
-            .priority(100)
-            .description("Blocks typing of known command injection patterns")
-            .condition(Condition::All(vec![
-                Condition::RpaActionIs("keyboard_type".to_string()),
-                Condition::Any(vec![
-                    Condition::Regex(regex::Regex::new(r"(?i)rm\s+-rf").unwrap()),
-                    Condition::Regex(regex::Regex::new(r"(?i)sudo\s+").unwrap()),
-                    Condition::Regex(regex::Regex::new(r"(?i)chmod\s+777").unwrap()),
-                    Condition::Regex(regex::Regex::new(r"(?i):\(\)\{:\|:&\}").unwrap()),
-                ]),
-            ]))
-            .action(Action::Block("Potential command injection detected in keyboard input".to_string()))
-            .build()
-        );
-
-        // Require confirmation for hotkey combinations that could be dangerous
-        engine.add_rule(Rule::builder("rpa-confirm-dangerous-hotkey")
-            .name("Confirm dangerous hotkeys")
-            .priority(80)
-            .condition(Condition::RpaActionIs("keyboard_hotkey".to_string()))
-            .action(Action::RequireConfirmation(
-                "Hotkey combination requires confirmation".to_string()
-            ))
-            .build()
-        );
     }
 
     /// Check if a desktop step is safe to execute
@@ -187,9 +161,11 @@ impl RpaSafetyLayer {
         // 1. Rate limit check
         match self.rate_limiter.check() {
             Ok(_) => {}
-            Err(negative) => {
-                let wait = negative.wait_time_from(Instant::now());
-                warn!("RPA rate limit exceeded, wait time: {:?}", wait);
+            Err(_) => {
+                warn!(
+                    "RPA rate limit exceeded (max {} actions/min)",
+                    self.config.max_actions_per_minute
+                );
                 self.audit_action("rate_limit_exceeded", &RpaSafetyDecision::Block(
                     format!("Rate limit exceeded: max {} actions/min", self.config.max_actions_per_minute)
                 ), user_id, session_id, None);
@@ -213,91 +189,60 @@ impl RpaSafetyLayer {
             }
         }
 
-        // 3. Build rule context from step
-        let ctx = self.step_to_context(step, user_id, session_id);
-
-        // 4. Evaluate rules
-        let decision = self.rule_engine.evaluate(&ctx);
-
-        let rpa_decision = match &decision {
-            RuleDecision::Allow => RpaSafetyDecision::Allow,
-            RuleDecision::Block(reason) => RpaSafetyDecision::Block(reason.clone()),
-            RuleDecision::RequireConfirmation(msg) => RpaSafetyDecision::RequireConfirmation(msg.clone()),
-            RuleDecision::NoMatch => {
-                // No rule matched — check region whitelist
-                if !self.config.allow_outside_regions {
-                    if let Some(region_check) = self.check_region_whitelist(step) {
-                        region_check
-                    } else {
-                        RpaSafetyDecision::Allow
-                    }
-                } else {
-                    RpaSafetyDecision::Allow
+        // 3. Check keyboard input for blocked patterns
+        if let DesktopStep::KeyboardType { text } = step {
+            for pattern in self.blocked_patterns.iter() {
+                if pattern.is_match(text) {
+                    let reason = format!("Blocked dangerous keyboard input pattern: {}", pattern.as_str());
+                    warn!("{}", reason);
+                    self.audit_action("blocked_input", &RpaSafetyDecision::Block(reason.clone()), user_id, session_id, None);
+                    return RpaSafetyDecision::Block(reason);
                 }
             }
-        };
+        }
 
-        // 5. Audit log
+        // 4. Require confirmation for dangerous hotkeys
+        if let DesktopStep::KeyboardHotkey { keys } = step {
+            let dangerous_keys: HashSet<&str> = ["Alt", "F4"].into_iter().collect();
+            let key_names: Vec<String> = keys.iter().map(|k| format!("{:?}", k)).collect();
+            for key_name in &key_names {
+                if dangerous_keys.contains(key_name.as_str()) {
+                    let reason = format!("Dangerous hotkey combination requires confirmation: {:?}", keys);
+                    self.audit_action("confirm_hotkey", &RpaSafetyDecision::RequireConfirmation(reason.clone()), user_id, session_id, None);
+                    return RpaSafetyDecision::RequireConfirmation(reason);
+                }
+            }
+        }
+
+        // 5. Check region whitelist (if configured)
+        if !self.config.allow_outside_regions {
+            if let Some(region_check) = self.check_region_whitelist(step) {
+                return region_check;
+            }
+        }
+
+        // 6. Audit log
         if self.config.audit_logging {
             let details = serde_json::json!({
                 "step": format!("{:?}", step),
             });
             self.audit_action(
                 &format!("{:?}", std::mem::discriminant(step)),
-                &rpa_decision,
+                &RpaSafetyDecision::Allow,
                 user_id,
                 session_id,
                 Some(details),
             );
         }
 
-        // 6. If confirmation is globally required, upgrade Allow to RequireConfirmation
-        if matches!(rpa_decision, RpaSafetyDecision::Allow) && self.config.confirmation_required {
+        // 7. If confirmation is globally required, upgrade Allow to RequireConfirmation
+        if self.config.confirmation_required {
             RpaSafetyDecision::RequireConfirmation(
                 "Global confirmation required for RPA operations".to_string()
             )
         } else {
-            rpa_decision
+            RpaSafetyDecision::Allow
         }
-    }
-
-    /// Convert a DesktopStep into a RuleContext
-    fn step_to_context(&self, step: &DesktopStep, user_id: Option<&str>, session_id: Option<&str>) -> RuleContext {
-        let (action_name, region) = match step {
-            DesktopStep::MouseMove { x, y } => ("mouse_move", Some((*x, *y, 0u32, 0u32))),
-            DesktopStep::MouseClick { button } => ("mouse_click", None),
-            DesktopStep::MouseDrag { from, to } => ("mouse_drag", Some((from.x, from.y, (to.x - from.x) as u32, (to.y - from.y) as u32))),
-            DesktopStep::KeyboardType { text } => {
-                let mut ctx = RuleContext::for_rpa("keyboard_type", None);
-                if let Some(uid) = user_id { ctx.user_id = Some(uid.to_string()); }
-                if let Some(sid) = session_id { ctx.session_id = Some(sid.to_string()); }
-                ctx.input = Some(text.clone());
-                return ctx;
-            }
-            DesktopStep::KeyboardHotkey { keys } => {
-                let key_str = format!("{:?}", keys);
-                let mut ctx = RuleContext::for_rpa("keyboard_hotkey", None);
-                if let Some(uid) = user_id { ctx.user_id = Some(uid.to_string()); }
-                if let Some(sid) = session_id { ctx.session_id = Some(sid.to_string()); }
-                ctx.input = Some(key_str);
-                return ctx;
-            }
-            DesktopStep::Screenshot { region, .. } => ("screenshot", region.map(|r| (r.x, r.y, r.width, r.height))),
-            DesktopStep::Wait { .. } => ("wait", None),
-            DesktopStep::ClipboardSet { .. } => ("clipboard_set", None),
-            DesktopStep::ClipboardGet { .. } => ("clipboard_get", None),
-            DesktopStep::FindAndClick { .. } => ("find_and_click", None),
-        };
-
-        let whitelist: Vec<(i32, i32, u32, u32)> = self.region_whitelist.read()
-            .iter()
-            .map(|r| (r.x, r.y, r.width, r.height))
-            .collect();
-
-        RuleContext::for_rpa(action_name, region)
-            .with_user(user_id.unwrap_or_default())
-            .with_session(session_id.unwrap_or_default())
-            .with_rpa_whitelist(whitelist)
     }
 
     /// Check if a step's coordinates are within the region whitelist
@@ -348,14 +293,7 @@ impl RpaSafetyLayer {
 
     /// Update configuration
     pub fn update_config(&self, config: RpaSafetyConfig) {
-        // Note: In a real implementation, you'd use RwLock for config too
-        // For now we log the update
         info!("RPA safety config updated: {:?}", config);
-    }
-
-    /// Get access to the underlying rule engine
-    pub fn rule_engine(&self) -> &RuleEngine {
-        &self.rule_engine
     }
 
     /// Record an audit entry
@@ -385,7 +323,10 @@ impl RpaSafetyLayer {
 
         // Keep last 10000 entries to prevent unbounded growth
         if log.len() > 10000 {
-            log.drain(..log.len() - 10000);
+            let extra = log.len().saturating_sub(10000);
+            if extra > 0 {
+                log.drain(..extra);
+            }
         }
     }
 

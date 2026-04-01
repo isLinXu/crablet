@@ -41,7 +41,7 @@ pub async fn get_dashboard_stats(
         "knowledge_nodes": knowledge_nodes,
         "skills_loaded": skills_count,
         "system_status": "healthy",
-        "uptime": 12345 // TODO: Real uptime
+        "uptime": gateway.started_at.elapsed().as_secs()
     });
 
     tracing::info!("Dashboard stats: Completed in {:?}", start.elapsed());

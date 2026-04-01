@@ -87,8 +87,6 @@ export const ChatWindow = () => {
     let fileContents = '';
     const MAX_FILE_CONTENT_LENGTH = 5 * 1024 * 1024; // 5MB，约支持 100万+ tokens
     
-    console.log(`[Chat] 处理 ${allAttachments.length} 个附件...`);
-    
     for (const attachment of allAttachments) {
       try {
         // 更新状态为处理中
@@ -96,8 +94,6 @@ export const ChatWindow = () => {
           a.id === attachment.id ? { ...a, status: 'processing' } : a
         ));
 
-        console.log(`[Chat] 提取文件内容: ${attachment.file.name} (${attachment.file.size} bytes)`);
-        
         const result = await extractFileContent(attachment.file, {
           maxLength: MAX_FILE_CONTENT_LENGTH,
           onOcrStart: () => {
@@ -111,8 +107,6 @@ export const ChatWindow = () => {
             ));
           },
         });
-
-        console.log(`[Chat] 文件提取结果: success=${result.success}, length=${result.text.length}, isOcr=${result.isOcr}`);
 
         if (result.success) {
           const fileType = getFileTypeDescription(attachment.file.name);
@@ -155,16 +149,6 @@ export const ChatWindow = () => {
     }
     if (retrievalSummary) {
       finalPrompt += `\n\n[知识检索上下文]\n${retrievalSummary}`;
-    }
-    
-    // 调试：输出最终prompt的长度和结构
-    console.log(`[Chat] 最终Prompt长度: ${finalPrompt.length} 字符`);
-    console.log(`[Chat] 文件内容长度: ${fileContents.length} 字符`);
-    console.log(`[Chat] 检索上下文长度: ${retrievalSummary.length} 字符`);
-    
-    // 显示文件内容预览（前500字符）
-    if (fileContents) {
-      console.log(`[Chat] 文件内容预览:\n${fileContents.slice(0, 500)}...`);
     }
     
     setInput(''); // Clear input immediately for responsiveness

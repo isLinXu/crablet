@@ -256,7 +256,9 @@ impl AdaptiveSkillOrchestrator {
 
         // Exploration: select random skill
         if rng.gen::<f64>() < exploration_rate {
-            let idx = rng.gen_range(0..available_skills.len().max(1));
+            // rand 0.10: gen_range is inclusive on both ends (..=)
+            let max_idx = available_skills.len().max(1).saturating_sub(1);
+            let idx = rng.gen_range(0..=max_idx);
             if let Some(manifest) = available_skills.get(idx) {
                 candidates.push(SkillCandidate {
                     skill_name: manifest.name.clone(),

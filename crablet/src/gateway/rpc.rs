@@ -49,3 +49,84 @@ impl RpcDispatcher {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_register_and_dispatch() {
+        let dispatcher = RpcDispatcher::new();
+        dispatcher.register("echo", |params| async {
+            Ok(params)
+        }).await;
+
+        let req = RpcRequest {
+            jsonrpc: "2.0".to_string(),
+            method: "echo".to_string(),
+            params: Some(serde_json::json!("hello")),
+            id: Some("1".to_string()),
+        };
+        let resp = dispatcher.dispatch(req).await;
+        assert_eq!(resp.id, Some("1".to_string()));
+        assert_eq!(resp.result, Some(serde_json::json!("hello")));
+        assert!(resp.error.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_dispatch_unknown_method() {
+        let dispatcher = RpcDispatcher::new();
+        let req = RpcRequest {
+            jsonrpc: "2.0".to_string(),
+            method: "nonexistent".to_string(),
+            params: None,
+            id: Some("1".to_string()),
+        };
+        let resp = dispatcher.dispatch(req).await;
+        assert!(resp.result.is_none());
+        assert!(resp.error.is_some());
+        assert_eq!(resp.error.unwrap().code, -32601);
+    }
+
+    #[tokio::test]
+    async fn test_dispatch_handler_error() {
+        let dispatcher = RpcDispatcher::new();
+        dispatcher.register("fail", |_params| async {
+            Err(RpcError::new(-32000, "Custom error", None))
+        }).await;
+
+        let req = RpcRequest {
+            jsonrpc: "2.0".to_string(),
+            method: "fail".to_string(),
+            params: None,
+            id: Some("2".to_string()),
+        };
+        let resp = dispatcher.dispatch(req).await;
+        assert!(resp.result.is_none());
+        assert_eq!(resp.error.unwrap().code, -32000);
+    }
+
+    #[tokio::test]
+    async fn test_default() {
+        let dispatcher = RpcDispatcher::default();
+        assert_eq!(dispatcher.handlers.read().await.len(), 0);
+    }
+
+    #[test]
+    fn test_rpc_response_new() {
+        let resp = RpcResponse::new(
+            Some("id-1".to_string()),
+            Some(serde_json::json!({"key": "value"})),
+            None,
+        );
+        assert_eq!(resp.jsonrpc, "2.0");
+        assert_eq!(resp.id, Some("id-1".to_string()));
+    }
+
+    #[test]
+    fn test_rpc_error_new() {
+        let err = RpcError::new(-32600, "Invalid Request", Some(serde_json::json!(null)));
+        assert_eq!(err.code, -32600);
+        assert_eq!(err.message, "Invalid Request");
+    }
+}

@@ -253,6 +253,7 @@ mod tests {
     fn test_make_key() {
         assert_eq!(make_key("session", "123"), "session:123");
         assert_eq!(make_key("canvas", "abc"), "canvas:abc");
+        assert_eq!(make_key("custom", "a-b-c"), "custom:a-b-c");
     }
 
     #[test]
@@ -263,5 +264,41 @@ mod tests {
     #[test]
     fn test_canvas_key() {
         assert_eq!(canvas_key("canvas_001"), "canvas:canvas_001");
+    }
+
+    #[test]
+    fn test_canvas_lock_key() {
+        let result = canvas_lock_key("canvas_1", "user_42");
+        assert_eq!(result, "canvas_lock:canvas_1:user_42");
+    }
+
+    #[test]
+    fn test_collab_key() {
+        assert_eq!(collab_key("canvas_abc"), "collab:canvas_abc");
+    }
+
+    #[test]
+    fn test_template_key() {
+        assert_eq!(template_key("tpl_001"), "template:tpl_001");
+    }
+
+    #[test]
+    fn test_redis_pool_config_default() {
+        let config = RedisPoolConfig::default();
+        assert_eq!(config.max_connections, 16);
+        assert_eq!(config.connection_timeout_secs, 5);
+        assert_eq!(config.read_timeout_secs, Some(3));
+        assert_eq!(config.write_timeout_secs, Some(3));
+        assert_eq!(config.keepalive_secs, Some(60));
+    }
+
+    #[test]
+    fn test_redis_pool_stats() {
+        let stats = RedisPoolStats {
+            max_connections: 32,
+            url: "redis://localhost:6379".to_string(),
+        };
+        assert_eq!(stats.max_connections, 32);
+        assert_eq!(stats.url, "redis://localhost:6379");
     }
 }

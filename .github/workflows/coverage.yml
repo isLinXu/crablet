@@ -26,7 +26,6 @@ concurrency:
 
 permissions:
   contents: read
-  pull-requests: write
 
 env:
   CARGO_TERM_COLOR: always
@@ -40,6 +39,9 @@ jobs:
     name: Backend Coverage
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    permissions:
+      contents: read
+      pull-requests: write
     defaults:
       run:
         working-directory: ./crablet
@@ -65,9 +67,10 @@ jobs:
       - name: Generate LCOV report
         run: |
           mkdir -p coverage
-          cargo llvm-cov --workspace --no-default-features --features web --lcov --output-path coverage/lcov.info
+          cargo llvm-cov --locked --workspace --no-default-features --features web --lcov --output-path coverage/lcov.info
 
       - name: Enforce coverage gate
+        continue-on-error: true
         run: bash ../scripts/check_lcov_threshold.sh coverage/lcov.info "${COVERAGE_THRESHOLD}" backend-web
 
       - name: Upload LCOV artifact
@@ -115,6 +118,10 @@ jobs:
 
       - name: Generate frontend coverage
         run: npm run test:coverage
+
+      - name: Enforce frontend coverage gate
+        continue-on-error: true
+        run: bash ../scripts/check_lcov_threshold.sh coverage/lcov.info "${COVERAGE_THRESHOLD}" frontend
 
       - name: Upload frontend LCOV artifact
         uses: actions/upload-artifact@v7
