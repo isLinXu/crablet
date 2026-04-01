@@ -83,7 +83,7 @@ strsim = "0.11.1" # For Levenshtein distance
 ort = { version = "2.0.0-rc.9", optional = true } # Modern ONNX Runtime wrapper (replaces onnxruntime)
 chromiumoxide = { version = "0.5", features = ["tokio-runtime"], optional = true }
 cron = { version = "0.16", optional = true }
-enigo = { version = "0.2", optional = true }
+enigo = { version = "0.6", optional = true }
 arboard = { version = "3", optional = true }
 screenshots = { version = "0.8", optional = true }
 imageproc = { version = "0.24", optional = true }
