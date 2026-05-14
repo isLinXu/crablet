@@ -1,11 +1,11 @@
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct Message {
     pub role: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(deserialize_with = "deserialize_content")]
-    pub content: Option<Vec<ContentPart>>, 
+    pub content: Option<Vec<ContentPart>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_calls: Option<Vec<ToolCall>>,
     // Add tool_call_id for role="tool" messages
@@ -55,7 +55,7 @@ pub struct ChatChunk {
 pub struct TraceStep {
     pub step: usize,
     pub thought: String,
-    pub action: Option<String>,      // e.g. "search"
+    pub action: Option<String>,       // e.g. "search"
     pub action_input: Option<String>, // e.g. "{\"query\": \"rust\"}"
     pub observation: Option<String>,  // Tool execution result
 }
@@ -64,16 +64,20 @@ impl Message {
     pub fn new(role: impl Into<String>, content: impl Into<String>) -> Self {
         Self {
             role: role.into(),
-            content: Some(vec![ContentPart::Text { text: content.into() }]),
+            content: Some(vec![ContentPart::Text {
+                text: content.into(),
+            }]),
             tool_calls: None,
             tool_call_id: None,
         }
     }
-    
+
     pub fn new_tool_response(tool_call_id: impl Into<String>, content: impl Into<String>) -> Self {
         Self {
             role: "tool".to_string(),
-            content: Some(vec![ContentPart::Text { text: content.into() }]),
+            content: Some(vec![ContentPart::Text {
+                text: content.into(),
+            }]),
             tool_calls: None,
             tool_call_id: Some(tool_call_id.into()),
         }
@@ -82,16 +86,20 @@ impl Message {
     pub fn user(content: impl Into<String>) -> Self {
         Self {
             role: "user".to_string(),
-            content: Some(vec![ContentPart::Text { text: content.into() }]),
+            content: Some(vec![ContentPart::Text {
+                text: content.into(),
+            }]),
             tool_calls: None,
             tool_call_id: None,
         }
     }
-    
+
     pub fn system(content: impl Into<String>) -> Self {
         Self {
             role: "system".to_string(),
-            content: Some(vec![ContentPart::Text { text: content.into() }]),
+            content: Some(vec![ContentPart::Text {
+                text: content.into(),
+            }]),
             tool_calls: None,
             tool_call_id: None,
         }
@@ -100,16 +108,23 @@ impl Message {
     pub fn assistant(content: impl Into<String>) -> Self {
         Self {
             role: "assistant".to_string(),
-            content: Some(vec![ContentPart::Text { text: content.into() }]),
+            content: Some(vec![ContentPart::Text {
+                text: content.into(),
+            }]),
             tool_calls: None,
             tool_call_id: None,
         }
     }
 
-    pub fn assistant_with_tool_calls(content: impl Into<String>, tool_calls: Vec<ToolCall>) -> Self {
+    pub fn assistant_with_tool_calls(
+        content: impl Into<String>,
+        tool_calls: Vec<ToolCall>,
+    ) -> Self {
         Self {
             role: "assistant".to_string(),
-            content: Some(vec![ContentPart::Text { text: content.into() }]),
+            content: Some(vec![ContentPart::Text {
+                text: content.into(),
+            }]),
             tool_calls: Some(tool_calls),
             tool_call_id: None,
         }
@@ -118,7 +133,9 @@ impl Message {
     pub fn tool_result(tool_call_id: impl Into<String>, content: impl Into<String>) -> Self {
         Self {
             role: "tool".to_string(),
-            content: Some(vec![ContentPart::Text { text: content.into() }]),
+            content: Some(vec![ContentPart::Text {
+                text: content.into(),
+            }]),
             tool_calls: None,
             tool_call_id: Some(tool_call_id.into()),
         }
@@ -126,10 +143,14 @@ impl Message {
 
     pub fn text(&self) -> Option<String> {
         self.content.as_ref().map(|parts| {
-            parts.iter().map(|p| match p {
-                ContentPart::Text { text } => text.clone(),
-                _ => "".to_string(),
-            }).collect::<Vec<_>>().join("")
+            parts
+                .iter()
+                .map(|p| match p {
+                    ContentPart::Text { text } => text.clone(),
+                    _ => "".to_string(),
+                })
+                .collect::<Vec<_>>()
+                .join("")
         })
     }
 }
@@ -159,7 +180,7 @@ where
     }
 
     let content = Option::<Content>::deserialize(deserializer)?;
-    
+
     match content {
         Some(Content::String(s)) => Ok(Some(vec![ContentPart::Text { text: s }])),
         Some(Content::Parts(parts)) => Ok(Some(parts)),

@@ -1,15 +1,15 @@
+use crate::cognitive::llm::LlmClient;
+use crate::error::Result;
+use crate::memory::core::CoreMemoryBlock;
+use crate::memory::manager::MemoryManager;
+use crate::skills::SkillRegistry;
+use crate::types::{ContentPart, Message};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
-use tracing::{info, debug, warn, error};
-use crate::memory::manager::MemoryManager;
-use crate::cognitive::llm::LlmClient;
-use crate::skills::SkillRegistry;
-use crate::error::Result;
-use crate::types::{Message, ContentPart};
-use crate::memory::core::CoreMemoryBlock;
+use tracing::{debug, error, info, warn};
 
-use crate::agent::swarm::{SwarmOrchestrator, GraphStatus, TaskNode, TaskStatus, TaskGraph};
+use crate::agent::swarm::{GraphStatus, SwarmOrchestrator, TaskGraph, TaskNode, TaskStatus};
 use uuid::Uuid;
 
 /// HeartbeatEngine handles periodic background tasks like proactive agent activities,
@@ -51,9 +51,11 @@ impl HeartbeatEngine {
     }
 
     pub async fn start(self: Arc<Self>, cancel_token: tokio_util::sync::CancellationToken) {
-        info!("Starting Heartbeat Engine (Interval: {:?}, Idle Threshold: {:?})", 
-            self.check_interval, self.idle_threshold);
-            
+        info!(
+            "Starting Heartbeat Engine (Interval: {:?}, Idle Threshold: {:?})",
+            self.check_interval, self.idle_threshold
+        );
+
         let engine = self.clone();
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(engine.check_interval);
@@ -61,20 +63,20 @@ impl HeartbeatEngine {
                 tokio::select! {
                     _ = interval.tick() => {
                         debug!("Heartbeat tick");
-                        
+
                         // 1. Check for User Idleness and Run Proactive Tasks
                         if engine.memory_mgr.is_idle(engine.idle_threshold).await {
                             debug!("User is idle, running enhanced background maintenance...");
                             if let Err(e) = engine.enhanced_background_think().await {
                                 warn!("Failed to run enhanced background think: {}", e);
                             }
-                            
+
                             // Run Draft Mode proactive refinement
                             if let Err(e) = engine.proactive_draft_refinement().await {
                                 warn!("Draft refinement failed: {}", e);
                             }
                         }
-                        
+
                         // 2. Periodic Memory Consolidation (always check)
                         if let Err(e) = engine.check_consolidation().await {
                             warn!("Failed to check memory consolidation: {}", e);
@@ -99,7 +101,7 @@ impl HeartbeatEngine {
                 error!("Failed to compress Core Memory: {}", e);
             }
         }
-        
+
         // 2. 预测性预加载 (Warmup)
         // 示例：预加载最近 5 个活跃会话
         let active_sessions = self.get_predicted_active_sessions().await;
@@ -108,12 +110,12 @@ impl HeartbeatEngine {
                 warn!("Failed to warmup predicted active sessions: {}", e);
             }
         }
-        
+
         // 3. 记忆优先级重排与主动任务
         if let Err(e) = self.run_proactive_tasks().await {
-             warn!("Proactive tasks failed: {}", e);
+            warn!("Proactive tasks failed: {}", e);
         }
-        
+
         Ok(())
     }
 
@@ -125,7 +127,7 @@ impl HeartbeatEngine {
             Be concise and preserve key facts, user preferences, and persona guidelines:\n\n{}",
             core_prompt
         );
-        
+
         let system_msg = Message {
             role: "system".to_string(),
             content: Some(vec![ContentPart::Text { 
@@ -133,23 +135,21 @@ impl HeartbeatEngine {
             }]),
             ..Default::default()
         };
-        
+
         let user_msg = Message {
             role: "user".to_string(),
             content: Some(vec![ContentPart::Text { text: prompt }]),
             ..Default::default()
         };
-        
+
         let response = self.llm.chat_complete(&[system_msg, user_msg]).await?;
         let compressed = response;
-        
+
         // 更新 Core Memory (这里简单地替换 Memory 块，实际可能需要更精细的处理)
-        self.memory_mgr.core_memory_replace(
-            CoreMemoryBlock::Memory,
-            "",
-            &compressed,
-        ).await?;
-        
+        self.memory_mgr
+            .core_memory_replace(CoreMemoryBlock::Memory, "", &compressed)
+            .await?;
+
         info!("Core Memory compressed successfully.");
         Ok(())
     }
@@ -161,7 +161,7 @@ impl HeartbeatEngine {
         for entry in self.memory_mgr.working_store.iter() {
             sessions.push(entry.key().clone());
         }
-        
+
         // 限制预热数量
         sessions.truncate(5);
         sessions
@@ -173,7 +173,7 @@ impl HeartbeatEngine {
             debug!("Running proactive-agent skill...");
             // Execute the skill logic here
         }
-        
+
         Ok(())
     }
 
@@ -185,14 +185,24 @@ impl HeartbeatEngine {
                 // 只针对草稿模式且已完成的任务进行主动优化
                 if graph.goal.starts_with("Draft:") && graph.status == GraphStatus::Completed {
                     debug!("Checking draft swarm {} for proactive refinement...", id);
-                    
+
                     // 随机触发深层次 polish (比如 10% 概率)
                     if rand::random::<f32>() < 0.1 {
-                        info!("Triggering autonomous deep polish for draft: {}", graph.goal);
-                        
+                        info!(
+                            "Triggering autonomous deep polish for draft: {}",
+                            graph.goal
+                        );
+
                         // 创建新的 polish 任务
-                        let polish_id = format!("proactive_polish_{}", Uuid::new_v4().to_string().chars().take(8).collect::<String>());
-                        
+                        let polish_id = format!(
+                            "proactive_polish_{}",
+                            Uuid::new_v4()
+                                .to_string()
+                                .chars()
+                                .take(8)
+                                .collect::<String>()
+                        );
+
                         let new_task = TaskNode {
                             id: polish_id.clone(),
                             agent_role: "drafter".to_string(),
@@ -205,21 +215,25 @@ impl HeartbeatEngine {
                             timeout_ms: 120000,
                             max_retries: 2,
                             retry_count: 0,
+                            execution_state: None,
                         };
-                        
+
                         // 由于我们目前持有 read lock，无法直接修改 active_graphs
                         // 这里可以发送一个事件或者使用内部消息队列
                         // 为了简单起见，我们直接调用 orch.add_task_to_graph (它会获取自己的 write lock)
                         let id_clone = id.clone();
                         let orch_clone = orch.clone();
                         let goal_clone = graph.goal.clone();
-                        
+
                         tokio::spawn(async move {
-                            if let Err(e) = orch_clone.add_task_to_graph(&id_clone, new_task).await {
+                            if let Err(e) = orch_clone.add_task_to_graph(&id_clone, new_task).await
+                            {
                                 warn!("Failed to add proactive task to graph {}: {}", id_clone, e);
                             } else {
                                 // 重新启动执行
-                                let _ = orch_clone.execute_graph(TaskGraph::new(), &id_clone, &goal_clone).await;
+                                let _ = orch_clone
+                                    .execute_graph(TaskGraph::new(), &id_clone, &goal_clone)
+                                    .await;
                             }
                         });
                     }
@@ -234,7 +248,7 @@ impl HeartbeatEngine {
         if let Some(_consolidator) = &self.memory_mgr.consolidator {
             debug!("Triggering periodic memory consolidation check...");
         }
-        
+
         Ok(())
     }
 }

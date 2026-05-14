@@ -6,11 +6,11 @@
 //! - Multiple repair strategies (context refresh, tool fallback, etc.)
 //! - Repair outcome tracking and learning
 
+use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use async_trait::async_trait;
-use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
 use super::harness::{AgentHarnessContext, HarnessError};
@@ -49,6 +49,7 @@ impl ErrorType {
             HarnessError::MaxRetriesExceeded(_) => ErrorType::ToolExecutionError,
             HarnessError::Cancelled => ErrorType::UnknownError,
             HarnessError::ContextClosed => ErrorType::ContextOverflowError,
+            HarnessError::ResumeStateUnavailable(_) => ErrorType::UnknownError,
         }
     }
 }
@@ -63,10 +64,7 @@ pub enum RepairOutcome {
         recovery_steps: usize,
     },
     /// Repair failed, but can try another strategy
-    Failed {
-        error: String,
-        can_retry: bool,
-    },
+    Failed { error: String, can_retry: bool },
     /// Repair failed and agent should give up
     Unrecoverable {
         error: String,
@@ -150,7 +148,11 @@ impl DiagnosticEngine {
     /// Record repair outcome for learning
     pub async fn record_repair_outcome(&self, error_type: &ErrorType, outcome: &RepairOutcome) {
         let mut history = self.error_history.write().await;
-        if let Some(record) = history.iter_mut().rev().find(|r| &r.error_type == error_type) {
+        if let Some(record) = history
+            .iter_mut()
+            .rev()
+            .find(|r| &r.error_type == error_type)
+        {
             record.repair_outcome = Some(outcome.clone());
         }
     }
@@ -214,27 +216,23 @@ impl DiagnosticEngine {
                 "SimplifyTask".to_string(),
                 "ReduceSteps".to_string(),
             ],
-            ErrorType::CircuitBreakerError => vec![
-                "WaitAndRetry".to_string(),
-                "ReduceLoad".to_string(),
-            ],
+            ErrorType::CircuitBreakerError => {
+                vec!["WaitAndRetry".to_string(), "ReduceLoad".to_string()]
+            }
             ErrorType::ContextOverflowError => vec![
                 "CompressContext".to_string(),
                 "SummarizeHistory".to_string(),
                 "ClearOldMessages".to_string(),
             ],
-            ErrorType::MaxStepsError => vec![
-                "ReduceSteps".to_string(),
-                "AbortAndSummarize".to_string(),
-            ],
-            ErrorType::InvalidToolArgsError => vec![
-                "FixArgsFormat".to_string(),
-                "UseToolDefaults".to_string(),
-            ],
-            ErrorType::UnknownError => vec![
-                "RefreshContext".to_string(),
-                "RetryOriginal".to_string(),
-            ],
+            ErrorType::MaxStepsError => {
+                vec!["ReduceSteps".to_string(), "AbortAndSummarize".to_string()]
+            }
+            ErrorType::InvalidToolArgsError => {
+                vec!["FixArgsFormat".to_string(), "UseToolDefaults".to_string()]
+            }
+            ErrorType::UnknownError => {
+                vec!["RefreshContext".to_string(), "RetryOriginal".to_string()]
+            }
         }
     }
 }
@@ -338,10 +336,7 @@ impl RepairStrategy for SwitchModelStrategy {
 
         RepairOutcome::Success {
             repaired: true,
-            message: format!(
-                "Switched to alternative model. Error was: {}",
-                error
-            ),
+            message: format!("Switched to alternative model. Error was: {}", error),
             recovery_steps: 0,
         }
     }
@@ -498,10 +493,12 @@ impl RepairStrategy for ToolFallbackStrategy {
         // Extract the tool name from the error if possible
         let failed_tool = match error {
             HarnessError::ToolFailure(name, _) => name.clone(),
-            _ => return RepairOutcome::Failed {
-                error: "Cannot determine failed tool".to_string(),
-                can_retry: false,
-            },
+            _ => {
+                return RepairOutcome::Failed {
+                    error: "Cannot determine failed tool".to_string(),
+                    can_retry: false,
+                }
+            }
         };
 
         if let Some(fallback) = self.fallback_tools.get(&failed_tool) {
@@ -538,16 +535,21 @@ impl<A: Agent> SelfHealingAgent<A> {
     /// Create a new self-healing agent (async to avoid blocking tokio runtime)
     pub async fn new(inner: Arc<A>) -> Self {
         let diagnostic_engine = Arc::new(DiagnosticEngine::new(1000));
-        let strategies: Arc<RwLock<Vec<Box<dyn RepairStrategy>>>> = Arc::new(RwLock::new(Vec::new()));
+        let strategies: Arc<RwLock<Vec<Box<dyn RepairStrategy>>>> =
+            Arc::new(RwLock::new(Vec::new()));
 
         // Register default strategies
         let mut strat_list = strategies.write().await;
-        strat_list.push(Box::new(RetryWithBackoffStrategy::new(3, 1000)) as Box<dyn RepairStrategy>);
+        strat_list
+            .push(Box::new(RetryWithBackoffStrategy::new(3, 1000)) as Box<dyn RepairStrategy>);
         strat_list.push(Box::new(SwitchModelStrategy::new(vec![])) as Box<dyn RepairStrategy>);
         strat_list.push(Box::new(ContextRefreshStrategy::new(0.5)) as Box<dyn RepairStrategy>);
         strat_list.push(Box::new(StepReductionStrategy::new(2)) as Box<dyn RepairStrategy>);
-        strat_list.push(Box::new(WaitAndRetryStrategy::new(Duration::from_secs(5))) as Box<dyn RepairStrategy>);
-        strat_list.push(Box::new(ToolFallbackStrategy::new(HashMap::new())) as Box<dyn RepairStrategy>);
+        strat_list
+            .push(Box::new(WaitAndRetryStrategy::new(Duration::from_secs(5)))
+                as Box<dyn RepairStrategy>);
+        strat_list
+            .push(Box::new(ToolFallbackStrategy::new(HashMap::new())) as Box<dyn RepairStrategy>);
         drop(strat_list);
 
         Self {
@@ -563,16 +565,21 @@ impl<A: Agent> SelfHealingAgent<A> {
     /// but for initialization outside async context this is provided)
     pub fn new_sync(inner: Arc<A>) -> Self {
         let diagnostic_engine = Arc::new(DiagnosticEngine::new(1000));
-        let strategies: Arc<RwLock<Vec<Box<dyn RepairStrategy>>>> = Arc::new(RwLock::new(Vec::new()));
+        let strategies: Arc<RwLock<Vec<Box<dyn RepairStrategy>>>> =
+            Arc::new(RwLock::new(Vec::new()));
 
         // Register default strategies using blocking_write
         let mut strat_list = strategies.blocking_write();
-        strat_list.push(Box::new(RetryWithBackoffStrategy::new(3, 1000)) as Box<dyn RepairStrategy>);
+        strat_list
+            .push(Box::new(RetryWithBackoffStrategy::new(3, 1000)) as Box<dyn RepairStrategy>);
         strat_list.push(Box::new(SwitchModelStrategy::new(vec![])) as Box<dyn RepairStrategy>);
         strat_list.push(Box::new(ContextRefreshStrategy::new(0.5)) as Box<dyn RepairStrategy>);
         strat_list.push(Box::new(StepReductionStrategy::new(2)) as Box<dyn RepairStrategy>);
-        strat_list.push(Box::new(WaitAndRetryStrategy::new(Duration::from_secs(5))) as Box<dyn RepairStrategy>);
-        strat_list.push(Box::new(ToolFallbackStrategy::new(HashMap::new())) as Box<dyn RepairStrategy>);
+        strat_list
+            .push(Box::new(WaitAndRetryStrategy::new(Duration::from_secs(5)))
+                as Box<dyn RepairStrategy>);
+        strat_list
+            .push(Box::new(ToolFallbackStrategy::new(HashMap::new())) as Box<dyn RepairStrategy>);
         drop(strat_list);
 
         Self {
@@ -686,7 +693,9 @@ impl<A: Agent> SelfHealingAgent<A> {
 
                 match &outcome {
                     RepairOutcome::Success { repaired: true, .. } => return outcome,
-                    RepairOutcome::Failed { can_retry: true, .. } => continue,
+                    RepairOutcome::Failed {
+                        can_retry: true, ..
+                    } => continue,
                     _ => return outcome,
                 }
             }
