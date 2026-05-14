@@ -4,6 +4,7 @@ import type { Node, Edge, NodeProps } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import dagre from 'dagre';
 import type { TaskGraph, TaskNode } from '@/types/domain';
+import { getTaskStatusKey } from '@/types/domain';
 import { Activity, CheckCircle, XCircle, Clock, Pause } from 'lucide-react';
 
 // Dagre Layout
@@ -49,24 +50,32 @@ const TaskNodeComponent = ({ data }: NodeProps) => {
     let statusIcon = Clock;
     let statusText = 'Pending';
 
-    if (typeof node.status === 'object') {
-        if ('Running' in node.status) {
+    switch (getTaskStatusKey(node.status)) {
+        case 'Running':
             statusColor = 'bg-blue-50 border-blue-400 ring-2 ring-blue-100';
             statusIcon = Activity;
             statusText = 'Running';
-        } else if ('Paused' in node.status) {
+            break;
+        case 'Paused':
             statusColor = 'bg-yellow-50 border-yellow-400';
             statusIcon = Pause;
             statusText = 'Paused';
-        } else if ('Completed' in node.status) {
+            break;
+        case 'Completed':
             statusColor = 'bg-green-50 border-green-400';
             statusIcon = CheckCircle;
             statusText = 'Completed';
-        } else if ('Failed' in node.status) {
+            break;
+        case 'Cancelled':
+            statusColor = 'bg-slate-50 border-slate-400';
+            statusIcon = XCircle;
+            statusText = 'Cancelled';
+            break;
+        case 'Failed':
             statusColor = 'bg-red-50 border-red-400';
             statusIcon = XCircle;
             statusText = 'Failed';
-        }
+            break;
     }
 
     const Icon = statusIcon;

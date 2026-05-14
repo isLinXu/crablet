@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import type { HitlReview, TaskGraph, TaskNode } from '@/types/domain';
+import { createTaskStatus } from '@/types/domain';
 import { Card } from '../ui/Card';
 import { Skeleton } from '../ui/Skeleton';
 import { LayoutTemplate } from 'lucide-react';
@@ -118,14 +119,14 @@ export const SwarmGraph: React.FC = () => {
                             if (g.id === graphId && g.nodes[taskId]) {
                                 return {
                                     ...g,
-                                    nodes: {
-                                        ...g.nodes,
-                                        [taskId]: {
-                                            ...g.nodes[taskId],
-                                            status: status === 'Pending' ? 'Pending' : { [status]: {} } as any // Simplified status parsing
+                                        nodes: {
+                                            ...g.nodes,
+                                            [taskId]: {
+                                                ...g.nodes[taskId],
+                                                status: createTaskStatus(status)
+                                            }
                                         }
-                                    }
-                                };
+                                    };
                             }
                             return g;
                         }));
@@ -145,7 +146,7 @@ export const SwarmGraph: React.FC = () => {
                             setGraphs(prev => prev.map(g => {
                                 if (g.id === graphId && g.nodes[taskId]) {
                                     const node = g.nodes[taskId];
-                                    const currentLogs = (node as any).logs || [];
+                                    const currentLogs = node.logs || [];
                                     
                                     // Avoid duplicate logs if possible or just append
                                     // For simple streaming, just append.
@@ -245,6 +246,22 @@ export const SwarmGraph: React.FC = () => {
           fetchGraphs();
       } catch (e) {
           toast.error(getApiErrorMessage('Failed to retry task', e));
+      }
+  };
+
+  const handleRecoverNode = async (payload: {
+      agent_role?: string;
+      prompt?: string;
+      dependencies?: string[];
+      resume_graph?: boolean;
+  }) => {
+      if (!selectedNode) return;
+      try {
+          await dashboardService.recoverTaskNode(selectedNode.graphId, selectedNode.node.id, payload);
+          toast.success(payload.resume_graph ? 'Task recovered and graph resumed' : 'Task recovered');
+          fetchGraphs();
+      } catch (e) {
+          toast.error(getApiErrorMessage('Failed to recover task', e));
       }
   };
 
@@ -375,11 +392,13 @@ export const SwarmGraph: React.FC = () => {
           <NodeDetailsModal 
               isOpen={!!selectedNode} 
               onClose={() => setSelectedNode(null)} 
+              graphId={selectedNode.graphId}
               node={selectedNode.node}
               graphStatus={selectedNode.graphStatus}
               existingNodes={selectedNode.graphId ? Object.values(graphs.find(g => g.id === selectedNode.graphId)?.nodes || {}) : []}
               onUpdatePrompt={handleUpdatePrompt}
               onRetry={handleRetryNode}
+              onRecover={handleRecoverNode}
           />
       )}
 
