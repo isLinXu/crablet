@@ -3,13 +3,13 @@
 //! 提供对本地运行的大语言模型的支持，实现低延迟(<50ms)的推理能力。
 //! 支持模型下载、加载、推理和缓存管理。
 
-use anyhow::{Result, Context};
+use anyhow::{Context, Result};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use tracing::{info, debug, warn};
+use tracing::{debug, info, warn};
 
 use crate::cognitive::llm::LlmClient;
-use crate::types::{Message, ContentPart};
+use crate::types::{ContentPart, Message};
 
 /// Ollama 配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -117,14 +117,18 @@ impl OllamaClient {
     /// 获取可用模型列表
     pub async fn list_models(&self) -> Result<Vec<String>> {
         let url = format!("{}/api/tags", self.config.host);
-        let response = self.http_client
+        let response = self
+            .http_client
             .get(&url)
             .send()
             .await
             .context("Failed to list models")?;
 
         if !response.status().is_success() {
-            return Err(anyhow::anyhow!("Failed to list models: {}", response.status()));
+            return Err(anyhow::anyhow!(
+                "Failed to list models: {}",
+                response.status()
+            ));
         }
 
         let list_response: ListModelsResponse = response
@@ -132,11 +136,7 @@ impl OllamaClient {
             .await
             .context("Failed to parse models response")?;
 
-        let model_names: Vec<String> = list_response
-            .models
-            .into_iter()
-            .map(|m| m.name)
-            .collect();
+        let model_names: Vec<String> = list_response.models.into_iter().map(|m| m.name).collect();
 
         Ok(model_names)
     }
@@ -144,7 +144,9 @@ impl OllamaClient {
     /// 检查模型是否已下载
     pub async fn has_model(&self, model: &str) -> bool {
         match self.list_models().await {
-            Ok(models) => models.iter().any(|m| m == model || m.starts_with(&format!("{}:", model))),
+            Ok(models) => models
+                .iter()
+                .any(|m| m == model || m.starts_with(&format!("{}:", model))),
             Err(_) => false,
         }
     }
@@ -152,9 +154,10 @@ impl OllamaClient {
     /// 拉取模型
     pub async fn pull_model(&self, model: &str) -> Result<()> {
         info!("Pulling model: {}", model);
-        
+
         let url = format!("{}/api/pull", self.config.host);
-        let response = self.http_client
+        let response = self
+            .http_client
             .post(&url)
             .json(&serde_json::json!({
                 "name": model,
@@ -204,7 +207,8 @@ impl OllamaClient {
         };
 
         let url = format!("{}/api/generate", self.config.host);
-        let response = self.http_client
+        let response = self
+            .http_client
             .post(&url)
             .json(&request)
             .send()
@@ -231,12 +235,13 @@ impl LlmClient for OllamaClient {
         // 将消息列表转换为 prompt
         let mut prompt = String::new();
         let mut system_prompt = None;
-        
+
         for message in messages {
             match message.role.as_str() {
                 "system" => {
                     if let Some(content) = &message.content {
-                        let text: Vec<String> = content.iter()
+                        let text: Vec<String> = content
+                            .iter()
                             .filter_map(|part| {
                                 if let ContentPart::Text { text } = part {
                                     Some(text.clone())
@@ -251,9 +256,14 @@ impl LlmClient for OllamaClient {
                     }
                 }
                 "user" | "assistant" => {
-                    let role_label = if message.role == "user" { "User" } else { "Assistant" };
+                    let role_label = if message.role == "user" {
+                        "User"
+                    } else {
+                        "Assistant"
+                    };
                     if let Some(content) = &message.content {
-                        let text: Vec<String> = content.iter()
+                        let text: Vec<String> = content
+                            .iter()
                             .filter_map(|part| {
                                 if let ContentPart::Text { text } = part {
                                     Some(text.clone())
@@ -270,16 +280,16 @@ impl LlmClient for OllamaClient {
                 _ => {}
             }
         }
-        
+
         // 添加最终提示
         prompt.push_str("Assistant: ");
-        
+
         // 调用生成
         let response = self.generate(&prompt, system_prompt.as_deref()).await?;
-        
+
         // 清理响应
         let cleaned = response.trim().to_string();
-        
+
         Ok(cleaned)
     }
 
@@ -291,7 +301,7 @@ impl LlmClient for OllamaClient {
         // Ollama 对工具支持有限，先返回普通响应
         // 后续可以集成 Ollama 的 function calling 功能
         let content = self.chat_complete(messages).await?;
-        
+
         Ok(Message {
             role: "assistant".to_string(),
             content: Some(vec![ContentPart::Text { text: content }]),
@@ -339,7 +349,8 @@ impl LocalModelManager {
     /// 获取模型信息
     pub async fn get_model_info(&self, model: &str) -> Result<serde_json::Value> {
         let url = format!("{}/api/show", self.config.host);
-        let response = self.http_client
+        let response = self
+            .http_client
             .post(&url)
             .json(&serde_json::json!({ "name": model }))
             .send()
@@ -359,10 +370,7 @@ impl LocalModelManager {
     pub async fn check_system_resources(&self) -> Result<SystemResources> {
         // 使用 ollama 的 system 信息
         let url = format!("{}/api/tags", self.config.host);
-        let response = self.http_client
-            .get(&url)
-            .send()
-            .await;
+        let response = self.http_client.get(&url).send().await;
 
         let mut resources = SystemResources {
             total_memory_gb: 0,
@@ -406,8 +414,8 @@ pub struct SystemResources {
 
 #[cfg(test)]
 mod tests {
+    use super::super::complexity::{Complexity, ComplexityAnalyzer};
     use super::*;
-    use super::super::complexity::{ComplexityAnalyzer, Complexity};
 
     #[test]
     fn test_ollama_config_default() {
@@ -421,23 +429,25 @@ mod tests {
     #[tokio::test]
     async fn test_complexity_analysis() {
         let analyzer = ComplexityAnalyzer::new();
-        
+
         // 简单消息
         let simple_messages = vec![Message::user("Hello!")];
-        
+
         let complexity = analyzer.analyze(&simple_messages).unwrap();
         assert_eq!(complexity, Complexity::Simple);
-        
+
         // 复杂消息
-        let complex_messages = vec![Message::user(r#"
+        let complex_messages = vec![Message::user(
+            r#"
                 请详细分析量子计算对现代密码学的影响，包括：
                 1. 量子算法（如Shor算法）如何威胁RSA和椭圆曲线加密
                 2. 后量子密码学的发展方向，包括格密码、多变量密码等
                 3. 当前NIST后量子密码标准的进展和评估
                 4. 企业和政府应该如何准备迁移到后量子密码系统
                 请提供具体的数学原理说明、实际案例分析和时间线预测。
-                "#)];
-        
+                "#,
+        )];
+
         let complexity = analyzer.analyze(&complex_messages).unwrap();
         assert_ne!(complexity, Complexity::Simple);
     }

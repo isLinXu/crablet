@@ -1,7 +1,7 @@
-use std::sync::Arc;
-use anyhow::{Result, anyhow};
 use crate::cognitive::llm::LlmClient;
 use crate::types::Message;
+use anyhow::{anyhow, Result};
+use std::sync::Arc;
 
 #[derive(Clone, Debug)]
 pub struct MCTSConfig {
@@ -95,7 +95,8 @@ impl MCTSTreeOfThoughts {
             let mut best_child = nodes[current].children[0];
             let mut best_score = f64::MIN;
             for &child_idx in &nodes[current].children {
-                let score = nodes[child_idx].ucb1_score(parent_visits, self.config.exploration_weight);
+                let score =
+                    nodes[child_idx].ucb1_score(parent_visits, self.config.exploration_weight);
                 if score > best_score {
                     best_score = score;
                     best_child = child_idx;
@@ -113,7 +114,9 @@ impl MCTSTreeOfThoughts {
             return Ok(node_idx);
         }
         if nodes[node_idx].pending_expansions.is_empty() {
-            let candidates = self.generate_candidates(&nodes[node_idx].state.content).await?;
+            let candidates = self
+                .generate_candidates(&nodes[node_idx].state.content)
+                .await?;
             nodes[node_idx].pending_expansions = candidates;
         }
         if let Some(next_content) = nodes[node_idx].pending_expansions.pop() {

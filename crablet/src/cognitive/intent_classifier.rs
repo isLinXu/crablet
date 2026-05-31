@@ -1,5 +1,5 @@
 //! Advanced Intent Classifier
-//! 
+//!
 //! Provides multi-level intent classification with confidence scores,
 //! supporting both rule-based and semantic-based approaches.
 
@@ -50,83 +50,291 @@ impl IntentClassifier {
     /// Create a new classifier with default patterns
     pub fn new() -> Self {
         let mut patterns: HashMap<Intent, Vec<String>> = HashMap::new();
-        
+
         // Greeting patterns
-        patterns.insert(Intent::Greeting, vec![
-            "hi", "hello", "hey", "greetings", "good morning", "good afternoon", "good evening",
-            "你好", "嗨", "您好", "早上好", "下午好", "晚上好", "在吗", "在么"
-        ].into_iter().map(String::from).collect());
+        patterns.insert(
+            Intent::Greeting,
+            vec![
+                "hi",
+                "hello",
+                "hey",
+                "greetings",
+                "good morning",
+                "good afternoon",
+                "good evening",
+                "你好",
+                "嗨",
+                "您好",
+                "早上好",
+                "下午好",
+                "晚上好",
+                "在吗",
+                "在么",
+            ]
+            .into_iter()
+            .map(String::from)
+            .collect(),
+        );
 
         // Help patterns
-        patterns.insert(Intent::Help, vec![
-            "help", "assist", "support", "how to", "how do i", "what can you do",
-            "帮助", "怎么用", "如何使用", "你能做什么", "有什么功能"
-        ].into_iter().map(String::from).collect());
+        patterns.insert(
+            Intent::Help,
+            vec![
+                "help",
+                "assist",
+                "support",
+                "how to",
+                "how do i",
+                "what can you do",
+                "帮助",
+                "怎么用",
+                "如何使用",
+                "你能做什么",
+                "有什么功能",
+            ]
+            .into_iter()
+            .map(String::from)
+            .collect(),
+        );
 
         // Status patterns
-        patterns.insert(Intent::Status, vec![
-            "status", "system info", "health", "check", "diagnostics",
-            "状态", "系统信息", "健康检查", "诊断"
-        ].into_iter().map(String::from).collect());
+        patterns.insert(
+            Intent::Status,
+            vec![
+                "status",
+                "system info",
+                "health",
+                "check",
+                "diagnostics",
+                "状态",
+                "系统信息",
+                "健康检查",
+                "诊断",
+            ]
+            .into_iter()
+            .map(String::from)
+            .collect(),
+        );
 
         // Persona patterns - 人设/身份查询
-        patterns.insert(Intent::Persona, vec![
-            "who are you", "what are you", "your name", "introduce yourself", "tell me about yourself",
-            "你是谁", "你是什么", "你叫什么", "介绍一下", "你是干嘛的", "你是做什么的",
-            "你的身份", "你的角色", "你是ai吗", "你是人工智能吗", "你是机器人吗",
-            "who created you", "who made you", "your creator", "your developer",
-            "谁创造了你", "谁开发了", "你的创造者", "你的开发者"
-        ].into_iter().map(String::from).collect());
+        patterns.insert(
+            Intent::Persona,
+            vec![
+                "who are you",
+                "what are you",
+                "your name",
+                "introduce yourself",
+                "tell me about yourself",
+                "你是谁",
+                "你是什么",
+                "你叫什么",
+                "介绍一下",
+                "你是干嘛的",
+                "你是做什么的",
+                "你的身份",
+                "你的角色",
+                "你是ai吗",
+                "你是人工智能吗",
+                "你是机器人吗",
+                "who created you",
+                "who made you",
+                "your creator",
+                "your developer",
+                "谁创造了你",
+                "谁开发了",
+                "你的创造者",
+                "你的开发者",
+            ]
+            .into_iter()
+            .map(String::from)
+            .collect(),
+        );
 
         // Chat patterns - 闲聊/社交对话
-        patterns.insert(Intent::Chat, vec![
-            "how are you", "what's up", "how's it going", "nice to meet you", "thank you", "thanks",
-            "你好吗", "最近怎么样", "很高兴认识你", "谢谢", "多谢", "哈哈", "呵呵", "嘿嘿",
-            "how old are you", "where are you from", "what do you like", "your favorite",
-            "你多大了", "你几岁了", "你喜欢什么", "你的爱好", "你喜欢",
-            "good job", "well done", "great", "awesome", "cool", "nice",
-            "做得好", "真棒", "厉害", "不错", "很好"
-        ].into_iter().map(String::from).collect());
+        patterns.insert(
+            Intent::Chat,
+            vec![
+                "how are you",
+                "what's up",
+                "how's it going",
+                "nice to meet you",
+                "thank you",
+                "thanks",
+                "你好吗",
+                "最近怎么样",
+                "很高兴认识你",
+                "谢谢",
+                "多谢",
+                "哈哈",
+                "呵呵",
+                "嘿嘿",
+                "how old are you",
+                "where are you from",
+                "what do you like",
+                "your favorite",
+                "你多大了",
+                "你几岁了",
+                "你喜欢什么",
+                "你的爱好",
+                "你喜欢",
+                "good job",
+                "well done",
+                "great",
+                "awesome",
+                "cool",
+                "nice",
+                "做得好",
+                "真棒",
+                "厉害",
+                "不错",
+                "很好",
+            ]
+            .into_iter()
+            .map(String::from)
+            .collect(),
+        );
 
         // Deep research patterns
-        patterns.insert(Intent::DeepResearch, vec![
-            "research", "deep research", "investigate", "explore in depth", "comprehensive analysis",
-            "研究", "深度研究", "深入分析", "全面调查", "详细探讨"
-        ].into_iter().map(String::from).collect());
+        patterns.insert(
+            Intent::DeepResearch,
+            vec![
+                "research",
+                "deep research",
+                "investigate",
+                "explore in depth",
+                "comprehensive analysis",
+                "研究",
+                "深度研究",
+                "深入分析",
+                "全面调查",
+                "详细探讨",
+            ]
+            .into_iter()
+            .map(String::from)
+            .collect(),
+        );
 
         // Coding patterns
-        patterns.insert(Intent::Coding, vec![
-            "code", "function", "implement", "program", "debug", "refactor", "algorithm",
-            "write", "develop", "script", "class", "module", "api",
-            "代码", "编写", "实现", "函数", "调试", "程序", "算法", "开发"
-        ].into_iter().map(String::from).collect());
+        patterns.insert(
+            Intent::Coding,
+            vec![
+                "code",
+                "function",
+                "implement",
+                "program",
+                "debug",
+                "refactor",
+                "algorithm",
+                "write",
+                "develop",
+                "script",
+                "class",
+                "module",
+                "api",
+                "代码",
+                "编写",
+                "实现",
+                "函数",
+                "调试",
+                "程序",
+                "算法",
+                "开发",
+            ]
+            .into_iter()
+            .map(String::from)
+            .collect(),
+        );
 
         // Analysis patterns
-        patterns.insert(Intent::Analysis, vec![
-            "analyze", "compare", "evaluate", "assess", "review", "examine",
-            "analysis", "comparison", "pros and cons", "advantages",
-            "分析", "比较", "评估", "评价", "优缺点", "优势劣势"
-        ].into_iter().map(String::from).collect());
+        patterns.insert(
+            Intent::Analysis,
+            vec![
+                "analyze",
+                "compare",
+                "evaluate",
+                "assess",
+                "review",
+                "examine",
+                "analysis",
+                "comparison",
+                "pros and cons",
+                "advantages",
+                "分析",
+                "比较",
+                "评估",
+                "评价",
+                "优缺点",
+                "优势劣势",
+            ]
+            .into_iter()
+            .map(String::from)
+            .collect(),
+        );
 
         // Creative patterns
-        patterns.insert(Intent::Creative, vec![
-            "write", "create", "generate", "compose", "draft", "story", "poem", "article",
-            "creative", "imagine", "design",
-            "写", "创作", "生成", "故事", "诗歌", "文章", "创意"
-        ].into_iter().map(String::from).collect());
+        patterns.insert(
+            Intent::Creative,
+            vec![
+                "write", "create", "generate", "compose", "draft", "story", "poem", "article",
+                "creative", "imagine", "design", "写", "创作", "生成", "故事", "诗歌", "文章",
+                "创意",
+            ]
+            .into_iter()
+            .map(String::from)
+            .collect(),
+        );
 
         // Math patterns
-        patterns.insert(Intent::Math, vec![
-            "calculate", "compute", "solve", "equation", "formula", "math", "mathematics",
-            "sum", "add", "subtract", "multiply", "divide", "percentage", "statistics",
-            "计算", "求解", "方程", "数学", "公式", "统计"
-        ].into_iter().map(String::from).collect());
+        patterns.insert(
+            Intent::Math,
+            vec![
+                "calculate",
+                "compute",
+                "solve",
+                "equation",
+                "formula",
+                "math",
+                "mathematics",
+                "sum",
+                "add",
+                "subtract",
+                "multiply",
+                "divide",
+                "percentage",
+                "statistics",
+                "计算",
+                "求解",
+                "方程",
+                "数学",
+                "公式",
+                "统计",
+            ]
+            .into_iter()
+            .map(String::from)
+            .collect(),
+        );
 
         // Multi-step patterns
-        patterns.insert(Intent::MultiStep, vec![
-            "first", "then", "next", "after", "finally", "step by step",
-            "首先", "然后", "接着", "最后", "一步步", "步骤"
-        ].into_iter().map(String::from).collect());
+        patterns.insert(
+            Intent::MultiStep,
+            vec![
+                "first",
+                "then",
+                "next",
+                "after",
+                "finally",
+                "step by step",
+                "首先",
+                "然后",
+                "接着",
+                "最后",
+                "一步步",
+                "步骤",
+            ]
+            .into_iter()
+            .map(String::from)
+            .collect(),
+        );
 
         Self {
             patterns,
@@ -157,12 +365,15 @@ impl IntentClassifier {
         // 2. Heuristic scoring
         let heuristic_scores = self.heuristic_classification(&input_lower);
         for (intent, score) in heuristic_scores {
-            scores.entry(intent).and_modify(|s| *s += score).or_insert(score);
+            scores
+                .entry(intent)
+                .and_modify(|s| *s += score)
+                .or_insert(score);
         }
 
         // 3. Find best match
         let mut sorted_scores: Vec<(Intent, f32)> = scores.into_iter().collect();
-        sorted_scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+        sorted_scores.sort_by(|a, b| b.1.total_cmp(&a.1));
 
         // Determine primary intent and confidence
         let (primary_intent, confidence) = sorted_scores
@@ -171,16 +382,12 @@ impl IntentClassifier {
             .unwrap_or((Intent::General, 0.0));
 
         // Get alternative intents (top 3 excluding primary)
-        let alternatives: Vec<(Intent, f32)> = sorted_scores
-            .iter()
-            .skip(1)
-            .take(3)
-            .cloned()
-            .collect();
+        let alternatives: Vec<(Intent, f32)> =
+            sorted_scores.iter().skip(1).take(3).cloned().collect();
 
         // Determine if clarification is needed
-        let requires_clarification = confidence < self.threshold || 
-            (alternatives.first().map(|(_, s)| *s).unwrap_or(0.0) > confidence * 0.8);
+        let requires_clarification = confidence < self.threshold
+            || (alternatives.first().map(|(_, s)| *s).unwrap_or(0.0) > confidence * 0.8);
 
         // Extract suggested skills based on context
         let suggested_skills = self.suggest_skills(&primary_intent, &input_lower);
@@ -200,24 +407,25 @@ impl IntentClassifier {
 
         for pattern in patterns {
             let pattern_lower = pattern.to_lowercase();
-            
+
             // Exact match
             if input == pattern_lower {
                 return 1.0;
             }
-            
+
             // Starts with pattern
             if input.starts_with(&pattern_lower) {
                 max_score = max_score.max(0.9);
             }
-            
+
             // Contains pattern as word
-            if input.contains(&format!(" {} ", pattern_lower)) ||
-               input.starts_with(&format!("{} ", pattern_lower)) ||
-               input.ends_with(&format!(" {}", pattern_lower)) {
+            if input.contains(&format!(" {} ", pattern_lower))
+                || input.starts_with(&format!("{} ", pattern_lower))
+                || input.ends_with(&format!(" {}", pattern_lower))
+            {
                 max_score = max_score.max(0.8);
             }
-            
+
             // Contains pattern
             if input.contains(&pattern_lower) {
                 max_score = max_score.max(0.6);
@@ -244,29 +452,36 @@ impl IntentClassifier {
         }
 
         // Code detection
-        if input.contains("```") || 
-           input.contains("fn ") || 
-           input.contains("def ") ||
-           input.contains("class ") ||
-           input.contains("import ") ||
-           input.contains("function") {
+        if input.contains("```")
+            || input.contains("fn ")
+            || input.contains("def ")
+            || input.contains("class ")
+            || input.contains("import ")
+            || input.contains("function")
+        {
             scores.push((Intent::Coding, 0.4));
         }
 
         // Question detection
         if input.contains("?") || input.contains("？") {
             // Check if it's a how/what/why question
-            if input.starts_with("how ") || input.starts_with("what ") || 
-               input.starts_with("why ") || input.starts_with("when ") ||
-               input.starts_with("怎么") || input.starts_with("什么") ||
-               input.starts_with("为什么") || input.starts_with("何时") {
+            if input.starts_with("how ")
+                || input.starts_with("what ")
+                || input.starts_with("why ")
+                || input.starts_with("when ")
+                || input.starts_with("怎么")
+                || input.starts_with("什么")
+                || input.starts_with("为什么")
+                || input.starts_with("何时")
+            {
                 scores.push((Intent::Analysis, 0.2));
             }
         }
 
         // Multi-step detection
         let step_indicators = ["step", "stage", "phase", "part", "步骤", "阶段"];
-        let step_count = step_indicators.iter()
+        let step_count = step_indicators
+            .iter()
             .filter(|&indicator| input.contains(indicator))
             .count();
         if step_count >= 2 || (input.contains("first") && input.contains("then")) {
@@ -298,7 +513,10 @@ impl IntentClassifier {
                 if input_lower.contains("file") || input_lower.contains("directory") {
                     suggestions.push("file_analyzer".to_string());
                 }
-                if input_lower.contains("data") || input_lower.contains("csv") || input_lower.contains("json") {
+                if input_lower.contains("data")
+                    || input_lower.contains("csv")
+                    || input_lower.contains("json")
+                {
                     suggestions.push("data_analyzer".to_string());
                 }
             }
@@ -323,12 +541,14 @@ impl IntentClassifier {
     /// Check if input is likely a skill invocation
     pub fn is_skill_invocation(&self, input: &str) -> Option<String> {
         let input_lower = input.to_lowercase().trim().to_string();
-        
+
         // Check for explicit skill calls: "use skill_name" or "run skill_name"
-        let prefixes = ["use ", "run ", "call ", "execute ", "skill ", "使用", "运行", "调用"];
+        let prefixes = [
+            "use ", "run ", "call ", "execute ", "skill ", "使用", "运行", "调用",
+        ];
         for prefix in &prefixes {
             if let Some(rest) = input_lower.strip_prefix(prefix) {
-                let skill_name = rest.trim().split_whitespace().next()?;
+                let skill_name = rest.split_whitespace().next()?;
                 return Some(skill_name.to_string());
             }
         }
@@ -349,7 +569,10 @@ impl IntentClassifier {
         let target_rate = 0.85;
         let adjustment = (success_rate - target_rate) * 0.05;
         self.threshold = (self.threshold - adjustment).clamp(0.5, 0.9);
-        info!("Adapted intent classifier threshold to {:.2}", self.threshold);
+        info!(
+            "Adapted intent classifier threshold to {:.2}",
+            self.threshold
+        );
     }
 }
 
@@ -370,24 +593,37 @@ impl Classifier {
     pub fn assess_complexity(input: &str) -> f32 {
         let mut score: f32 = 0.0;
         let input_lower = input.to_lowercase();
-        
+
         // Length heuristic
-        if input.len() > 100 { score += 0.3; } 
-        if input.len() > 500 { score += 0.4; }
-        
+        if input.len() > 100 {
+            score += 0.3;
+        }
+        if input.len() > 500 {
+            score += 0.4;
+        }
+
         // Keyword heuristic
-        let complex_keywords = ["analyze", "compare", "reason", "explain", "design", "search", "calculate", "weather"];
+        let complex_keywords = [
+            "analyze",
+            "compare",
+            "reason",
+            "explain",
+            "design",
+            "search",
+            "calculate",
+            "weather",
+        ];
         for keyword in complex_keywords {
             if input_lower.contains(keyword) {
                 score += 0.2;
             }
         }
-        
+
         // Code specific
         if input_lower.contains("function") || input.contains("```") {
             score += 0.4;
         }
-        
+
         // Tool usage heuristic
         if input.starts_with("run ") || input.starts_with("read ") || input.starts_with("search ") {
             score += 0.6;
@@ -404,7 +640,7 @@ mod tests {
     #[test]
     fn test_classify_greeting() {
         let classifier = IntentClassifier::new();
-        
+
         let result = classifier.classify("Hello!");
         assert_eq!(result.intent, Intent::Greeting);
         assert!(result.confidence > 0.8);
@@ -416,7 +652,7 @@ mod tests {
     #[test]
     fn test_classify_coding() {
         let classifier = IntentClassifier::new();
-        
+
         let result = classifier.classify("Write a function to sort an array");
         assert_eq!(result.intent, Intent::Coding);
         assert!(!result.suggested_skills.is_empty());
@@ -425,29 +661,29 @@ mod tests {
     #[test]
     fn test_skill_invocation_detection() {
         let classifier = IntentClassifier::new();
-        
+
         assert_eq!(
             classifier.is_skill_invocation("use weather"),
             Some("weather".to_string())
         );
-        
+
         assert_eq!(
             classifier.is_skill_invocation("run code_search"),
             Some("code_search".to_string())
         );
-        
+
         assert_eq!(
             classifier.is_skill_invocation("weather()"),
             Some("weather".to_string())
         );
-        
+
         assert!(classifier.is_skill_invocation("Hello world").is_none());
     }
 
     #[test]
     fn test_clarification_needed() {
         let classifier = IntentClassifier::new();
-        
+
         // Ambiguous input should require clarification
         let result = classifier.classify("do something");
         assert!(result.requires_clarification || result.confidence < 0.7);

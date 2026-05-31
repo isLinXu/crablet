@@ -1,10 +1,10 @@
-use tokio::sync::mpsc;
+use crate::cognitive::router::CognitiveRouter;
+use crate::error::{CrabletError, Result};
 use dashmap::DashMap;
 use std::sync::Arc;
-use tracing::{info, warn};
-use crate::cognitive::router::CognitiveRouter;
+use tokio::sync::mpsc;
 use tokio::sync::oneshot;
-use crate::error::{Result, CrabletError};
+use tracing::{info, warn};
 
 pub struct LaneTask {
     pub input: String,
@@ -30,7 +30,11 @@ impl LaneRouter {
         }
     }
 
-    pub async fn dispatch(&self, session_id: &str, input: String) -> Result<(String, Vec<crate::types::TraceStep>)> {
+    pub async fn dispatch(
+        &self,
+        session_id: &str,
+        input: String,
+    ) -> Result<(String, Vec<crate::types::TraceStep>)> {
         // We need to clone lane.tx because entry API holds a lock on the shard.
         // We cannot await inside the closure easily if we wanted to spawn inside?
         // Wait, the original code did spawn inside the closure.
@@ -53,7 +57,7 @@ impl LaneRouter {
             let (tx, mut rx) = mpsc::channel::<LaneTask>(100);
             let router = self.cognitive_router.clone();
             let sid = session_id.to_string();
-            
+
             let handle = tokio::spawn(async move {
                 info!("Starting Lane Queue for session: {}", sid);
                 while let Some(task) = rx.recv().await {
@@ -64,7 +68,7 @@ impl LaneRouter {
                 }
                 info!("Lane Queue stopped for session: {}", sid);
             });
-            
+
             SessionLane {
                 tx,
                 _handle: handle,
@@ -78,9 +82,14 @@ impl LaneRouter {
             response_tx: resp_tx,
         };
 
-        lane.tx.send(task).await.map_err(|_| CrabletError::Internal("Failed to send task to lane queue".to_string()))?;
-        
+        lane.tx
+            .send(task)
+            .await
+            .map_err(|_| CrabletError::Internal("Failed to send task to lane queue".to_string()))?;
+
         // Wait for result from the lane consumer
-        resp_rx.await.map_err(|e| CrabletError::Internal(format!("Lane response channel closed: {}", e)))?
+        resp_rx
+            .await
+            .map_err(|e| CrabletError::Internal(format!("Lane response channel closed: {}", e)))?
     }
 }

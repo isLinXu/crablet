@@ -28,27 +28,27 @@
 //! └─────────────┘
 //! ```
 
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
-use serde::{Deserialize, Serialize};
-use tracing::{info, warn, debug, error};
+use tracing::{debug, error, info, warn};
 
-use crate::error::{Result, CrabletError};
 use crate::cognitive::llm::LlmClient;
+use crate::error::{CrabletError, Result};
 use crate::types::Message;
 
 // 导入子模块
-pub mod monitor;
-pub mod reflector;
 pub mod learner;
+pub mod monitor;
 pub mod optimizer;
+pub mod reflector;
 
 // 重新导出核心类型
-pub use monitor::{Monitor, ExecutionMetrics, QualityMetrics, ResourceMetrics};
-pub use reflector::{Reflector, ProblemDiagnosis, ImprovementAction};
-pub use learner::{Learner, Pattern, PatternType, LearnedKnowledge};
-pub use optimizer::{Optimizer, OptimizationResult};
+pub use learner::{LearnedKnowledge, Learner, Pattern, PatternType};
+pub use monitor::{ExecutionMetrics, Monitor, QualityMetrics, ResourceMetrics};
+pub use optimizer::{OptimizationResult, Optimizer};
+pub use reflector::{ImprovementAction, ProblemDiagnosis, Reflector};
 
 /// 元认知控制器
 #[derive(Clone)]
@@ -148,7 +148,11 @@ impl MetaCognitiveController {
     }
 
     /// 执行任务（带元认知监控）
-    pub async fn execute_with_meta(&self, request: ExecutionRequest, mut executor: impl FnMut(&ExecutionRequest) -> ExecutionResult) -> ExecutionResult {
+    pub async fn execute_with_meta(
+        &self,
+        request: ExecutionRequest,
+        mut executor: impl FnMut(&ExecutionRequest) -> ExecutionResult,
+    ) -> ExecutionResult {
         let start_time = Instant::now();
 
         // 开始监控
@@ -180,13 +184,19 @@ impl MetaCognitiveController {
     }
 
     /// 触发反思循环
-    async fn trigger_reflection(&self, request: &ExecutionRequest, _result: &ExecutionResult) -> Result<()> {
+    async fn trigger_reflection(
+        &self,
+        request: &ExecutionRequest,
+        _result: &ExecutionResult,
+    ) -> Result<()> {
         debug!("Triggering reflection for task {}", request.task);
 
         // 获取执行指标
         let metrics = {
             let monitor = self.monitor.read().await;
-            monitor.get_metrics(&request.task_id).await
+            monitor
+                .get_metrics(&request.task_id)
+                .await
                 .ok_or_else(|| CrabletError::Cognitive("Metrics not found".into()))?
         };
 
@@ -201,7 +211,9 @@ impl MetaCognitiveController {
         // 学习模式
         let learned = {
             let learner = self.learner.read().await;
-            learner.learn_from_experience(&request.task, &metrics, &diagnosis).await?
+            learner
+                .learn_from_experience(&request.task, &metrics, &diagnosis)
+                .await?
         };
 
         info!("Learned {} new patterns", learned.len());
@@ -234,7 +246,7 @@ impl MetaCognitiveController {
             avg_duration_ms: metrics.avg_duration_ms,
             patterns_extracted: patterns.len(),
             improvements_applied: optimizer.get_applied_improvements().await.len(),
-            last_optimization: None, // TODO: Implement async version
+            last_optimization: optimizer.last_optimization_async().await,
         }
     }
 
@@ -243,13 +255,16 @@ impl MetaCognitiveController {
         let learner = self.learner.read().await;
         let patterns = learner.get_all_patterns().await;
         // 将 Pattern 转换为 LearnedKnowledge
-        Ok(patterns.into_iter().map(|p| LearnedKnowledge {
-            knowledge_id: p.id,
-            knowledge_type: format!("{:?}", p.pattern_type),
-            content: p.description,
-            related_patterns: p.trigger_conditions,
-            confidence: p.success_rate,
-        }).collect())
+        Ok(patterns
+            .into_iter()
+            .map(|p| LearnedKnowledge {
+                knowledge_id: p.id,
+                knowledge_type: format!("{:?}", p.pattern_type),
+                content: p.description,
+                related_patterns: p.trigger_conditions,
+                confidence: p.success_rate,
+            })
+            .collect())
     }
 
     /// 集成反馈
@@ -292,13 +307,16 @@ impl MetaCognitiveController {
             let learner = self.learner.read().await;
             let raw_patterns = learner.get_all_patterns().await;
             // 将 Pattern 转换为 LearnedKnowledge
-            raw_patterns.into_iter().map(|p| LearnedKnowledge {
-                knowledge_id: p.id,
-                knowledge_type: format!("{:?}", p.pattern_type),
-                content: p.description,
-                related_patterns: p.trigger_conditions,
-                confidence: p.success_rate,
-            }).collect()
+            raw_patterns
+                .into_iter()
+                .map(|p| LearnedKnowledge {
+                    knowledge_id: p.id,
+                    knowledge_type: format!("{:?}", p.pattern_type),
+                    content: p.description,
+                    related_patterns: p.trigger_conditions,
+                    confidence: p.success_rate,
+                })
+                .collect()
         };
 
         if patterns.is_empty() {
@@ -343,14 +361,16 @@ mod tests {
             start_time: Instant::now(),
         };
 
-        let result = controller.execute_with_meta(request, |req| ExecutionResult {
-            task_id: req.task_id.clone(),
-            success: true,
-            output: "Test output".into(),
-            confidence: 0.8,
-            duration: Duration::from_millis(100),
-            metrics: ExecutionMetrics::default(),
-        }).await;
+        let result = controller
+            .execute_with_meta(request, |req| ExecutionResult {
+                task_id: req.task_id.clone(),
+                success: true,
+                output: "Test output".into(),
+                confidence: 0.8,
+                duration: Duration::from_millis(100),
+                metrics: ExecutionMetrics::default(),
+            })
+            .await;
 
         assert!(result.success);
     }

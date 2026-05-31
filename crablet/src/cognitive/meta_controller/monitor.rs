@@ -4,8 +4,8 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::time::Instant;
 // use std::time::Duration; // Removed to avoid unused import in lib build
-use tokio::sync::RwLock;
 use serde::{Deserialize, Serialize};
+use tokio::sync::RwLock;
 use tracing::debug;
 
 use crate::cognitive::meta_controller::ExecutionResult;
@@ -53,7 +53,7 @@ impl Default for ExecutionMetrics {
 }
 
 /// 资源指标
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ResourceMetrics {
     /// 执行时间（毫秒）
     pub duration_ms: u64,
@@ -63,17 +63,6 @@ pub struct ResourceMetrics {
     pub cpu_ms: u64,
     /// 令牌消耗
     pub tokens_used: u64,
-}
-
-impl Default for ResourceMetrics {
-    fn default() -> Self {
-        Self {
-            duration_ms: 0,
-            memory_bytes: 0,
-            cpu_ms: 0,
-            tokens_used: 0,
-        }
-    }
 }
 
 /// 质量指标
@@ -158,11 +147,11 @@ impl Monitor {
     pub async fn finish_execution(&self, task_id: &str, result: &ExecutionResult) {
         let mut executions = self.executions.write().await;
         let mut global = self.global_metrics.write().await;
-        
+
         if let Some(state) = executions.get_mut(task_id) {
             state.end_time = Some(Instant::now());
             state.metrics = result.metrics.clone();
-            
+
             // 更新全局指标
             global.total_executions += 1;
             if result.success {
@@ -170,32 +159,30 @@ impl Monitor {
             } else {
                 global.failed_executions += 1;
             }
-            
+
             // 更新平均置信度
             let n = global.total_executions as f32;
-            global.avg_confidence =
-                (global.avg_confidence * (n - 1.0) + result.confidence) / n;
+            global.avg_confidence = (global.avg_confidence * (n - 1.0) + result.confidence) / n;
 
             // 更新平均持续时间
             let n_f64 = global.total_executions as f64;
             let duration_ms = result.duration.as_millis() as f64;
-            global.avg_duration_ms =
-                (global.avg_duration_ms * (n_f64 - 1.0) + duration_ms) / n_f64;
+            global.avg_duration_ms = (global.avg_duration_ms * (n_f64 - 1.0) + duration_ms) / n_f64;
         }
-        
+
         debug!("Finished execution: {}", task_id);
     }
 
     /// 记录反馈
     pub async fn record_feedback(&self, task_id: &str, feedback: f32) {
         let mut global = self.global_metrics.write().await;
-        
+
         // 添加反馈历史
         if global.feedback_history.len() >= self.max_history {
             global.feedback_history.pop_front();
         }
         global.feedback_history.push_back(feedback.clamp(0.0, 1.0));
-        
+
         debug!("Recorded feedback for {}: {:.2}", task_id, feedback);
     }
 
@@ -270,7 +257,7 @@ mod tests {
     async fn test_start_and_finish_execution() {
         let monitor = Monitor::new(100);
         monitor.start_execution("test-1").await;
-        
+
         let result = ExecutionResult {
             task_id: "test-1".into(),
             success: true,
@@ -283,11 +270,11 @@ mod tests {
                 ..Default::default()
             },
         };
-        
+
         monitor.finish_execution("test-1", &result).await;
-        
+
         tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-        
+
         let metrics = monitor.get_metrics("test-1").await;
         assert!(metrics.is_some());
     }
@@ -295,9 +282,9 @@ mod tests {
     #[tokio::test]
     async fn test_global_metrics() {
         let monitor = Monitor::new(100);
-        
+
         monitor.start_execution("test-1").await;
-        
+
         let result = ExecutionResult {
             task_id: "test-1".into(),
             success: true,
@@ -310,11 +297,11 @@ mod tests {
                 ..Default::default()
             },
         };
-        
+
         monitor.finish_execution("test-1", &result).await;
-        
+
         tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-        
+
         let global = monitor.get_global_metrics().await;
         assert_eq!(global.total_executions, 1);
         assert_eq!(global.successful_executions, 1);

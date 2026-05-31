@@ -2,16 +2,18 @@
 //!
 //! 基于性能分析和技能发现，自动优化系统配置和架构
 
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
-use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 use tokio::time::interval;
 use tracing::{info, warn};
 
-use crate::cognitive::system4::performance_analyzer::{PerformanceAnalyzer, PerformanceReport, CognitiveSystemType};
+use crate::cognitive::system4::performance_analyzer::{
+    CognitiveSystemType, PerformanceAnalyzer, PerformanceReport,
+};
 use crate::cognitive::system4::skill_discoverer::SkillDiscoverer;
 
 /// 进化配置
@@ -67,10 +69,10 @@ pub enum ProposalType {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ChangeSeverity {
-    Minor,      // 自动应用
-    Moderate,   // 建议但需确认
-    Major,      // 必须确认
-    Critical,   // 需要人工审核
+    Minor,    // 自动应用
+    Moderate, // 建议但需确认
+    Major,    // 必须确认
+    Critical, // 需要人工审核
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -166,6 +168,8 @@ pub struct EvolutionEngine {
     proposals: Arc<RwLock<Vec<ImprovementProposal>>>,
     evolution_history: Arc<RwLock<Vec<EvolutionRecord>>>,
     current_config: Arc<RwLock<SystemConfiguration>>,
+    /// Safety guard: rolling snapshots for rollback (keeps last N configs)
+    config_snapshots: Arc<RwLock<std::collections::VecDeque<SystemConfiguration>>>,
 }
 
 impl EvolutionEngine {
@@ -185,6 +189,7 @@ impl EvolutionEngine {
                 routing_thresholds: RoutingThresholds::default(),
                 system_parameters: HashMap::new(),
             })),
+            config_snapshots: Arc::new(RwLock::new(std::collections::VecDeque::new())),
         }
     }
 
@@ -205,7 +210,68 @@ impl EvolutionEngine {
                 routing_thresholds: RoutingThresholds::default(),
                 system_parameters: HashMap::new(),
             })),
+            config_snapshots: Arc::new(RwLock::new(std::collections::VecDeque::new())),
         }
+    }
+
+    // -------------------------------------------------------------------------
+    // Safety Guard Helpers
+    // -------------------------------------------------------------------------
+
+    /// Maximum allowed relative change for any threshold parameter (15%).
+    const MAX_DELTA_RATIO: f32 = 0.15;
+    /// Maximum number of snapshots to retain for rollback.
+    const MAX_SNAPSHOTS: usize = 10;
+
+    /// Validate that the proposed numeric delta does not exceed MAX_DELTA_RATIO
+    /// of the current value. Returns an error if the change is too large.
+    fn validate_delta(current: f32, proposed: f32) -> anyhow::Result<()> {
+        if current == 0.0 {
+            return Ok(()); // avoid division by zero
+        }
+        let ratio = (proposed - current).abs() / current.abs();
+        if ratio > Self::MAX_DELTA_RATIO {
+            anyhow::bail!(
+                "Proposed change exceeds safety limit: current={:.3}, proposed={:.3}, \
+                 delta_ratio={:.1}% > {:.1}% max",
+                current,
+                proposed,
+                ratio * 100.0,
+                Self::MAX_DELTA_RATIO * 100.0
+            );
+        }
+        Ok(())
+    }
+
+    /// Save the current config as a snapshot (capped at MAX_SNAPSHOTS).
+    async fn push_snapshot(&self) {
+        let snapshot = self.current_config.read().await.clone();
+        let mut snaps = self.config_snapshots.write().await;
+        snaps.push_back(snapshot);
+        while snaps.len() > Self::MAX_SNAPSHOTS {
+            snaps.pop_front();
+        }
+    }
+
+    /// Rollback to the most recent snapshot. Returns an error if there are none.
+    pub async fn rollback(&self) -> anyhow::Result<()> {
+        let mut snaps = self.config_snapshots.write().await;
+        if let Some(snapshot) = snaps.pop_back() {
+            let mut current = self.current_config.write().await;
+            info!(
+                "Rolling back evolution config from version '{}' to '{}'",
+                current.version, snapshot.version
+            );
+            *current = snapshot;
+            Ok(())
+        } else {
+            anyhow::bail!("No snapshots available for rollback")
+        }
+    }
+
+    /// Returns the number of snapshots currently available.
+    pub async fn snapshot_count(&self) -> usize {
+        self.config_snapshots.read().await.len()
     }
 
     /// 启动进化循环
@@ -218,13 +284,16 @@ impl EvolutionEngine {
         let interval_seconds = config.analysis_interval_seconds;
         drop(config);
 
-        info!("Starting evolution loop with {}s interval", interval_seconds);
+        info!(
+            "Starting evolution loop with {}s interval",
+            interval_seconds
+        );
 
         let mut ticker = interval(Duration::from_secs(interval_seconds));
 
         loop {
             ticker.tick().await;
-            
+
             if let Err(e) = self.run_evolution_cycle().await {
                 warn!("Evolution cycle failed: {}", e);
             }
@@ -237,15 +306,18 @@ impl EvolutionEngine {
 
         // 1. 生成性能报告
         let report = self.performance_analyzer.generate_report(24).await;
-        
+
         // 2. 基于性能报告生成改进提案
         let new_proposals = self.generate_proposals_from_report(&report).await;
-        
+
         // 3. 存储提案
         {
             let mut proposals = self.proposals.write().await;
             for proposal in new_proposals {
-                info!("Generated proposal: {} ({:?})", proposal.title, proposal.proposal_type);
+                info!(
+                    "Generated proposal: {} ({:?})",
+                    proposal.title, proposal.proposal_type
+                );
                 proposals.push(proposal);
             }
         }
@@ -258,7 +330,10 @@ impl EvolutionEngine {
     }
 
     /// 从性能报告生成改进提案
-    async fn generate_proposals_from_report(&self, report: &PerformanceReport) -> Vec<ImprovementProposal> {
+    async fn generate_proposals_from_report(
+        &self,
+        report: &PerformanceReport,
+    ) -> Vec<ImprovementProposal> {
         let mut proposals = Vec::new();
 
         // 分析每个系统的性能
@@ -281,7 +356,10 @@ impl EvolutionEngine {
 
         // 分析趋势
         for trend in &report.trends {
-            if matches!(trend.direction, super::performance_analyzer::TrendDirection::Degrading) {
+            if matches!(
+                trend.direction,
+                super::performance_analyzer::TrendDirection::Degrading
+            ) {
                 proposals.push(self.create_trend_response_proposal(trend));
             }
         }
@@ -289,7 +367,11 @@ impl EvolutionEngine {
         proposals
     }
 
-    fn create_threshold_adjustment_proposal(&self, system_type: CognitiveSystemType, stats: &super::performance_analyzer::PerformanceStats) -> ImprovementProposal {
+    fn create_threshold_adjustment_proposal(
+        &self,
+        system_type: CognitiveSystemType,
+        stats: &super::performance_analyzer::PerformanceStats,
+    ) -> ImprovementProposal {
         let current_config = self
             .current_config
             .try_read()
@@ -311,9 +393,10 @@ impl EvolutionEngine {
         };
 
         let new_threshold = (current_threshold + adjustment).min(0.95);
+        let proposal_id = uuid::Uuid::new_v4().to_string();
 
         ImprovementProposal {
-            id: format!("prop_{}", uuid::Uuid::new_v4().to_string()[..8].to_string()),
+            id: format!("prop_{}", &proposal_id[..8]),
             title: format!("Adjust {:?} confidence threshold", system_type),
             description: format!(
                 "Error rate for {:?} is {:.1}%. Increasing threshold from {:.2} to {:.2} to improve quality.",
@@ -340,16 +423,21 @@ impl EvolutionEngine {
         }
     }
 
-    fn create_routing_optimization_proposal(&self, system_type: CognitiveSystemType, stats: &super::performance_analyzer::PerformanceStats) -> ImprovementProposal {
+    fn create_routing_optimization_proposal(
+        &self,
+        system_type: CognitiveSystemType,
+        stats: &super::performance_analyzer::PerformanceStats,
+    ) -> ImprovementProposal {
         // 建议路由到更快的系统
         let target_system = match system_type {
             CognitiveSystemType::System3 => CognitiveSystemType::System2,
             CognitiveSystemType::System2 => CognitiveSystemType::System1,
             CognitiveSystemType::System1 => CognitiveSystemType::System1, // System1 已经是最快的
         };
+        let proposal_id = uuid::Uuid::new_v4().to_string();
 
         ImprovementProposal {
-            id: format!("prop_{}", uuid::Uuid::new_v4().to_string()[..8].to_string()),
+            id: format!("prop_{}", &proposal_id[..8]),
             title: format!("Optimize routing from {:?} to {:?}", system_type, target_system),
             description: format!(
                 "{:?} P95 latency is {:.0}ms. Consider routing more queries to {:?} for better performance.",
@@ -376,9 +464,14 @@ impl EvolutionEngine {
         }
     }
 
-    fn create_fallback_proposal(&self, system_type: CognitiveSystemType, stats: &super::performance_analyzer::PerformanceStats) -> ImprovementProposal {
+    fn create_fallback_proposal(
+        &self,
+        system_type: CognitiveSystemType,
+        stats: &super::performance_analyzer::PerformanceStats,
+    ) -> ImprovementProposal {
+        let proposal_id = uuid::Uuid::new_v4().to_string();
         ImprovementProposal {
-            id: format!("prop_{}", uuid::Uuid::new_v4().to_string()[..8].to_string()),
+            id: format!("prop_{}", &proposal_id[..8]),
             title: format!("Add fallback mechanism for {:?}", system_type),
             description: format!(
                 "{:?} success rate is {:.1}%. Adding fallback to alternative system could improve reliability.",
@@ -406,13 +499,20 @@ impl EvolutionEngine {
         }
     }
 
-    fn create_trend_response_proposal(&self, trend: &super::performance_analyzer::PerformanceTrend) -> ImprovementProposal {
+    fn create_trend_response_proposal(
+        &self,
+        trend: &super::performance_analyzer::PerformanceTrend,
+    ) -> ImprovementProposal {
+        let proposal_id = uuid::Uuid::new_v4().to_string();
         ImprovementProposal {
-            id: format!("prop_{}", uuid::Uuid::new_v4().to_string()[..8].to_string()),
+            id: format!("prop_{}", &proposal_id[..8]),
             title: format!("Address degrading trend in {:?}", trend.system_type),
             description: format!(
                 "{:?} {} has degraded by {:.1}% over the past {} hours.",
-                trend.system_type, trend.metric, trend.change_percent.abs(), trend.window_hours
+                trend.system_type,
+                trend.metric,
+                trend.change_percent.abs(),
+                trend.window_hours
             ),
             proposal_type: ProposalType::ParameterTuning,
             target_system: trend.system_type,
@@ -447,7 +547,10 @@ impl EvolutionEngine {
 
         {
             let proposals = self.proposals.read().await;
-            for proposal in proposals.iter().filter(|p| p.status == ProposalStatus::Pending) {
+            for proposal in proposals
+                .iter()
+                .filter(|p| p.status == ProposalStatus::Pending)
+            {
                 let should_apply = match proposal.severity {
                     ChangeSeverity::Minor => auto_apply_minor,
                     ChangeSeverity::Moderate => auto_apply_minor && proposal.confidence > 0.8,
@@ -474,13 +577,60 @@ impl EvolutionEngine {
     pub async fn apply_proposal(&self, proposal: &ImprovementProposal) -> anyhow::Result<()> {
         info!("Applying proposal: {}", proposal.title);
 
+        // Safety guard 1: validate delta magnitudes before touching config
+        {
+            let current = self.current_config.read().await;
+            for change in &proposal.proposed_changes {
+                if let (Some(cur_val), Some(new_val)) = (
+                    change.current_value.as_f64(),
+                    change.proposed_value.as_f64(),
+                ) {
+                    Self::validate_delta(cur_val as f32, new_val as f32).map_err(|e| {
+                        anyhow::anyhow!(
+                            "Proposal '{}' rejected by safety guard for field '{}': {}",
+                            proposal.title,
+                            change.target,
+                            e
+                        )
+                    })?;
+                }
+                // Also validate routing threshold changes explicitly
+                let cur_threshold = match change.target.as_str() {
+                    "system1_confidence_threshold" => {
+                        Some(current.routing_thresholds.system1_confidence)
+                    }
+                    "system2_confidence_threshold" => {
+                        Some(current.routing_thresholds.system2_confidence)
+                    }
+                    "system3_confidence_threshold" => {
+                        Some(current.routing_thresholds.system3_confidence)
+                    }
+                    _ => None,
+                };
+                if let (Some(cur), Some(new_val)) = (cur_threshold, change.proposed_value.as_f64())
+                {
+                    Self::validate_delta(cur, new_val as f32).map_err(|e| {
+                        anyhow::anyhow!(
+                            "Proposal '{}' rejected by safety guard for threshold '{}': {}",
+                            proposal.title,
+                            change.target,
+                            e
+                        )
+                    })?;
+                }
+            }
+        }
+
+        // Safety guard 2: snapshot the current config before modifying
+        self.push_snapshot().await;
+
         // 保存当前配置
         let before_config = self.current_config.read().await.clone();
 
         // 应用变更
         {
             let mut config = self.current_config.write().await;
-            
+
             for change in &proposal.proposed_changes {
                 self.apply_change(&mut config, change).await?;
             }
@@ -518,11 +668,19 @@ impl EvolutionEngine {
             }
         }
 
-        info!("Successfully applied proposal: {}", proposal.title);
+        info!(
+            "Successfully applied proposal: {} (snapshots available for rollback: {})",
+            proposal.title,
+            self.snapshot_count().await
+        );
         Ok(())
     }
 
-    async fn apply_change(&self, config: &mut SystemConfiguration, change: &ProposedChange) -> anyhow::Result<()> {
+    async fn apply_change(
+        &self,
+        config: &mut SystemConfiguration,
+        change: &ProposedChange,
+    ) -> anyhow::Result<()> {
         match change.target.as_str() {
             "system1_confidence_threshold" => {
                 if let Some(val) = change.proposed_value.as_f64() {
@@ -541,7 +699,9 @@ impl EvolutionEngine {
             }
             _ => {
                 // 通用参数更新
-                config.system_parameters.insert(change.target.clone(), change.proposed_value.clone());
+                config
+                    .system_parameters
+                    .insert(change.target.clone(), change.proposed_value.clone());
             }
         }
         Ok(())
@@ -590,7 +750,7 @@ impl EvolutionEngine {
                 return Err(anyhow::anyhow!("Proposal not found: {}", proposal_id));
             }
         };
-        
+
         // 立即应用
         self.apply_proposal(&proposal).await?;
         Ok(())
@@ -599,7 +759,7 @@ impl EvolutionEngine {
     /// 拒绝提案
     pub async fn reject_proposal(&self, proposal_id: &str) -> anyhow::Result<()> {
         let mut proposals = self.proposals.write().await;
-        
+
         if let Some(proposal) = proposals.iter_mut().find(|p| p.id == proposal_id) {
             proposal.status = ProposalStatus::Rejected;
             Ok(())
@@ -612,31 +772,33 @@ impl EvolutionEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cognitive::system4::performance_analyzer::{PerformanceAnalyzer, ExecutionMetrics};
-    use crate::cognitive::system4::skill_discoverer::SkillDiscoverer;
     use crate::cognitive::system4::performance_analyzer::CognitiveSystemType as PerfCognitiveSystemType;
+    use crate::cognitive::system4::performance_analyzer::{ExecutionMetrics, PerformanceAnalyzer};
+    use crate::cognitive::system4::skill_discoverer::SkillDiscoverer;
 
     #[tokio::test]
     async fn test_proposal_generation() {
         let perf_analyzer = Arc::new(PerformanceAnalyzer::new());
         let skill_discoverer = Arc::new(SkillDiscoverer::new());
-        
+
         let engine = EvolutionEngine::new(perf_analyzer.clone(), skill_discoverer);
 
         // 记录一些性能数据（高错误率）
         for i in 0..20 {
-            perf_analyzer.record_metrics(ExecutionMetrics {
-                system_type: PerfCognitiveSystemType::System2,
-                query: format!("test {}", i),
-                latency_ms: 2000,
-                success: i < 12, // 40% 失败率
-                token_count: 100,
-                tool_calls: 2,
-                agent_count: 1,
-                timestamp: Utc::now(),
-                context_length: 500,
-                retry_count: 0,
-            }).await;
+            perf_analyzer
+                .record_metrics(ExecutionMetrics {
+                    system_type: PerfCognitiveSystemType::System2,
+                    query: format!("test {}", i),
+                    latency_ms: 2000,
+                    success: i < 12, // 40% 失败率
+                    token_count: 100,
+                    tool_calls: 2,
+                    agent_count: 1,
+                    timestamp: Utc::now(),
+                    context_length: 500,
+                    retry_count: 0,
+                })
+                .await;
         }
 
         // 运行进化周期
@@ -645,9 +807,10 @@ mod tests {
         // 检查是否生成了提案
         let proposals = engine.get_pending_proposals().await;
         assert!(!proposals.is_empty());
-        
+
         // 应该有一个关于错误率的提案
-        let error_proposal = proposals.iter()
+        let error_proposal = proposals
+            .iter()
             .find(|p| matches!(p.proposal_type, ProposalType::ThresholdAdjustment));
         assert!(error_proposal.is_some());
     }

@@ -2,23 +2,23 @@
 //!
 //! Enhanced ReAct engine with full observability integration.
 
-use crate::types::{Message, TraceStep, ContentPart, ToolCall, FunctionCall};
-use crate::events::{AgentEvent, EventBus};
-use crate::skills::SkillRegistry;
 use crate::cognitive::llm::LlmClient;
+use crate::events::{AgentEvent, EventBus};
 use crate::observability::{
-    AgentTracer, BreakpointManager, ExecutionMetrics, StepMetrics,
-    ExecutionContext, BreakpointAction, LoopType, LoopResolution,
+    AgentTracer, BreakpointAction, BreakpointManager, ExecutionContext, ExecutionMetrics,
+    LoopResolution, LoopType, StepMetrics,
 };
-use anyhow::{Result, anyhow};
+use crate::skills::SkillRegistry;
+use crate::types::{ContentPart, FunctionCall, Message, ToolCall, TraceStep};
+use anyhow::{anyhow, Result};
+use lazy_static::lazy_static;
+use regex::Regex;
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
-use std::collections::{HashSet, HashMap, VecDeque};
 use std::time::Duration;
 use tokio::sync::RwLock;
 use tokio::time::timeout;
-use tracing::{info, warn, error};
-use regex::Regex;
-use lazy_static::lazy_static;
+use tracing::{error, info, warn};
 
 /// Observable ReAct Engine with full tracing and debugging support
 pub struct ObservableReActEngine {
@@ -96,7 +96,7 @@ impl ObservableReActEngine {
 
             // 1. Dynamic context construction
             let mut prompt_context = current_context.clone();
-            
+
             // Add instructions to prevent tool hallucination for simple queries
             if step == 0 {
                 prompt_context.push(Message::new("system", 
@@ -109,21 +109,25 @@ impl ObservableReActEngine {
 
             // 2. Get LLM response
             let start_time = std::time::Instant::now();
-            let response_msg = match self.llm.chat_complete_with_tools(&prompt_context, &tool_definitions).await {
+            let response_msg = match self
+                .llm
+                .chat_complete_with_tools(&prompt_context, &tool_definitions)
+                .await
+            {
                 Ok(msg) => msg,
                 Err(e) => {
                     warn!("LLM Error at step {}: {}", step_num, e);
                     self.event_bus.publish(AgentEvent::Error(e.to_string()));
-                    
+
                     // Trace error
                     let tracer = self.tracer.write().await;
-                    tracer.trace_error(
-                        execution_id,
-                        &format!("LLM Error: {}", e),
-                        false
-                    ).await;
-                    
-                    if step == 0 { return Err(anyhow!("LLM Initial Failure: {}", e)); }
+                    tracer
+                        .trace_error(execution_id, &format!("LLM Error: {}", e), false)
+                        .await;
+
+                    if step == 0 {
+                        return Err(anyhow!("LLM Initial Failure: {}", e));
+                    }
                     return Ok(("Thinking failed due to an LLM error.".to_string(), traces));
                 }
             };
@@ -133,20 +137,23 @@ impl ObservableReActEngine {
             // 3. Extract thought and trace it
             let thought = self.extract_thought(&response_msg);
             if !thought.is_empty() {
-                self.event_bus.publish(AgentEvent::ThoughtGenerated(thought.clone()));
-                
+                self.event_bus
+                    .publish(AgentEvent::ThoughtGenerated(thought.clone()));
+
                 // Trace thought
                 let tracer = self.tracer.write().await;
-                tracer.trace_thought(
-                    execution_id,
-                    &thought,
-                    Some(crate::observability::ThoughtMetadata {
-                        step_number: step_num,
-                        iteration: step,
-                        confidence: None,
-                        tags: vec!["react".to_string()],
-                    })
-                ).await;
+                tracer
+                    .trace_thought(
+                        execution_id,
+                        &thought,
+                        Some(crate::observability::ThoughtMetadata {
+                            step_number: step_num,
+                            iteration: step,
+                            confidence: None,
+                            tags: vec!["react".to_string()],
+                        }),
+                    )
+                    .await;
             }
 
             // 4. Action recognition
@@ -156,7 +163,10 @@ impl ObservableReActEngine {
                     tool_calls.push(ToolCall {
                         id: format!("call_{}", uuid::Uuid::new_v4()),
                         r#type: "function".to_string(),
-                        function: FunctionCall { name, arguments: args },
+                        function: FunctionCall {
+                            name,
+                            arguments: args,
+                        },
                     });
                 }
             }
@@ -170,25 +180,37 @@ impl ObservableReActEngine {
                         Ok(reflection) => {
                             // Trace reflection
                             let tracer = self.tracer.write().await;
-                            tracer.trace_reflection(
-                                execution_id,
-                                &reflection.critique,
-                                reflection.confidence,
-                                Some(reflection.revised_response.clone())
-                            ).await;
+                            tracer
+                                .trace_reflection(
+                                    execution_id,
+                                    &reflection.critique,
+                                    reflection.confidence,
+                                    Some(reflection.revised_response.clone()),
+                                )
+                                .await;
 
                             if reflection.confidence < 0.8 {
-                                info!("Reflection confidence low ({}), revising...", reflection.confidence);
-                                let revised = format!("{} (Revised after reflection)", reflection.revised_response);
-                                self.event_bus.publish(AgentEvent::ResponseGenerated(revised.clone()));
+                                info!(
+                                    "Reflection confidence low ({}), revising...",
+                                    reflection.confidence
+                                );
+                                let revised = format!(
+                                    "{} (Revised after reflection)",
+                                    reflection.revised_response
+                                );
+                                self.event_bus
+                                    .publish(AgentEvent::ResponseGenerated(revised.clone()));
                                 traces.push(TraceStep {
                                     step: step_num,
-                                    thought: format!("Reflection: {}\nCritique: {}", thought, reflection.critique),
+                                    thought: format!(
+                                        "Reflection: {}\nCritique: {}",
+                                        thought, reflection.critique
+                                    ),
                                     action: None,
                                     action_input: None,
                                     observation: None,
                                 });
-                                
+
                                 // Record metrics
                                 metrics.record_step(StepMetrics {
                                     step_number: step_num,
@@ -196,16 +218,17 @@ impl ObservableReActEngine {
                                     duration_ms: llm_duration,
                                     ..Default::default()
                                 });
-                                
+
                                 metrics.finish();
                                 return Ok((revised, traces));
                             }
-                        },
+                        }
                         Err(e) => warn!("Reflection failed: {}", e),
                     }
                 }
 
-                self.event_bus.publish(AgentEvent::ResponseGenerated(thought.clone()));
+                self.event_bus
+                    .publish(AgentEvent::ResponseGenerated(thought.clone()));
                 traces.push(TraceStep {
                     step: step_num,
                     thought: thought.clone(),
@@ -222,11 +245,13 @@ impl ObservableReActEngine {
                     ..Default::default()
                 });
                 metrics.finish();
-                
+
                 // End trace session
                 let tracer = self.tracer.write().await;
-                tracer.end_session(execution_id, true, Some(thought.clone())).await;
-                
+                tracer
+                    .end_session(execution_id, true, Some(thought.clone()))
+                    .await;
+
                 return Ok((thought, traces));
             }
 
@@ -240,12 +265,14 @@ impl ObservableReActEngine {
             // Trace actions
             let tracer = self.tracer.write().await;
             for tool_call in &tool_calls {
-                tracer.trace_action(
-                    execution_id,
-                    &tool_call.function.name,
-                    serde_json::from_str(&tool_call.function.arguments).unwrap_or_default(),
-                    Some(thought.clone()),
-                ).await;
+                tracer
+                    .trace_action(
+                        execution_id,
+                        &tool_call.function.name,
+                        serde_json::from_str(&tool_call.function.arguments).unwrap_or_default(),
+                        Some(thought.clone()),
+                    )
+                    .await;
             }
 
             // Parallel execution with semaphore
@@ -259,22 +286,27 @@ impl ObservableReActEngine {
 
                 // Loop detection (Pre-check)
                 if loop_detector.is_looping(&func_name, &args_str) {
-                    let loop_msg = format!("Loop detected: repeated or redundant use of '{}'.", func_name);
+                    let loop_msg = format!(
+                        "Loop detected: repeated or redundant use of '{}'.",
+                        func_name
+                    );
                     warn!("{}", loop_msg);
-                    
+
                     // Trace loop detection
                     let tracer = self.tracer.write().await;
-                    tracer.trace_loop_detected(
-                        execution_id,
-                        LoopType::ExactRepetition,
-                        loop_msg.clone(),
-                        LoopResolution::Continue,
-                    ).await;
-                    
+                    tracer
+                        .trace_loop_detected(
+                            execution_id,
+                            LoopType::ExactRepetition,
+                            loop_msg.clone(),
+                            LoopResolution::Continue,
+                        )
+                        .await;
+
                     let obs = format!("System Warning: {}", loop_msg);
-                    tasks.push(tokio::spawn(async move {
-                        (tool_id, func_name, args_str, obs)
-                    }));
+                    tasks.push(tokio::spawn(
+                        async move { (tool_id, func_name, args_str, obs) },
+                    ));
                     continue;
                 }
 
@@ -288,7 +320,15 @@ impl ObservableReActEngine {
                         Ok(p) => p,
                         Err(e) => {
                             error!("Semaphore acquire failed: {}", e);
-                            return (tool_id, func_name, args_str, format!("System Error: Failed to acquire concurrency permit: {}", e));
+                            return (
+                                tool_id,
+                                func_name,
+                                args_str,
+                                format!(
+                                    "System Error: Failed to acquire concurrency permit: {}",
+                                    e
+                                ),
+                            );
                         }
                     };
 
@@ -300,7 +340,9 @@ impl ObservableReActEngine {
                     let execution_future = async {
                         let registry = skills_clone.read().await;
                         match serde_json::from_str(&args_str) {
-                            Ok(parsed_json) => registry.execute(&func_name, parsed_json).await
+                            Ok(parsed_json) => registry
+                                .execute(&func_name, parsed_json)
+                                .await
                                 .unwrap_or_else(|e| format!("Skill execution failed: {}", e)),
                             Err(e) => format!("Parameter Error: {}. Please use valid JSON.", e),
                         }
@@ -309,7 +351,11 @@ impl ObservableReActEngine {
                     let output = match timeout(timeout_duration, execution_future).await {
                         Ok(res) => res,
                         Err(_) => {
-                            let err = format!("Execution of '{}' timed out after {}s.", func_name, timeout_duration.as_secs());
+                            let err = format!(
+                                "Execution of '{}' timed out after {}s.",
+                                func_name,
+                                timeout_duration.as_secs()
+                            );
                             warn!("{}", err);
                             err
                         }
@@ -346,12 +392,14 @@ impl ObservableReActEngine {
 
                 // Trace observation
                 let tracer = self.tracer.write().await;
-                tracer.trace_observation(
-                    execution_id,
-                    serde_json::json!({"result": observation}),
-                    0, // Duration tracked separately
-                    !observation.contains("Error"),
-                ).await;
+                tracer
+                    .trace_observation(
+                        execution_id,
+                        serde_json::json!({"result": observation}),
+                        0, // Duration tracked separately
+                        !observation.contains("Error"),
+                    )
+                    .await;
 
                 current_context.push(Message::new_tool_response(&tool_id, &observation));
             }
@@ -362,7 +410,10 @@ impl ObservableReActEngine {
                 step_type: "react_step".to_string(),
                 duration_ms: llm_duration,
                 token_usage: crate::observability::TokenUsage::default(),
-                tool_calls: traces.last().map(|t| if t.action.is_some() { 1 } else { 0 }).unwrap_or(0),
+                tool_calls: traces
+                    .last()
+                    .map(|t| if t.action.is_some() { 1 } else { 0 })
+                    .unwrap_or(0),
                 llm_calls: 1,
                 success: true,
                 error: None,
@@ -372,19 +423,23 @@ impl ObservableReActEngine {
         // 6. Max steps reached
         warn!("ReAct engine reached max_steps ({})", max_steps);
         let final_msg = self.format_limit_reached_msg(&traces);
-        
+
         // Trace limit reached
         let tracer = self.tracer.write().await;
-        tracer.trace_error(
-            execution_id,
-            &format!("Max steps ({}) reached", max_steps),
-            true
-        ).await;
-        
+        tracer
+            .trace_error(
+                execution_id,
+                &format!("Max steps ({}) reached", max_steps),
+                true,
+            )
+            .await;
+
         metrics.finish();
         let tracer = self.tracer.write().await;
-        tracer.end_session(execution_id, false, Some(final_msg.clone())).await;
-        
+        tracer
+            .end_session(execution_id, false, Some(final_msg.clone()))
+            .await;
+
         Ok((final_msg, traces))
     }
 
@@ -424,12 +479,19 @@ impl ObservableReActEngine {
     }
 
     fn extract_thought(&self, msg: &Message) -> String {
-        msg.content.as_ref().map(|parts| {
-            parts.iter().filter_map(|p| match p {
-                ContentPart::Text { text } => Some(text.as_str()),
-                _ => None,
-            }).collect::<Vec<_>>().join("")
-        }).unwrap_or_default()
+        msg.content
+            .as_ref()
+            .map(|parts| {
+                parts
+                    .iter()
+                    .filter_map(|p| match p {
+                        ContentPart::Text { text } => Some(text.as_str()),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>()
+                    .join("")
+            })
+            .unwrap_or_default()
     }
 
     fn format_limit_reached_msg(&self, traces: &[TraceStep]) -> String {
@@ -475,14 +537,18 @@ impl LoopDetector {
     }
 
     fn is_looping(&mut self, tool: &str, args: &str) -> bool {
-        if self.exact_history.contains(&(tool.to_string(), args.to_string())) {
+        if self
+            .exact_history
+            .contains(&(tool.to_string(), args.to_string()))
+        {
             self.consecutive_repeats += 1;
             if self.consecutive_repeats >= 2 {
                 return true;
             }
         } else {
             self.consecutive_repeats = 0;
-            self.exact_history.insert((tool.to_string(), args.to_string()));
+            self.exact_history
+                .insert((tool.to_string(), args.to_string()));
         }
 
         if tool == "see" {
@@ -504,7 +570,10 @@ impl LoopDetector {
 
         for prev in &self.window {
             if self.similarity(prev, &action_str) > self.similarity_threshold {
-                warn!("Semantic loop detected: '{}' is similar to '{}'", action_str, prev);
+                warn!(
+                    "Semantic loop detected: '{}' is similar to '{}'",
+                    action_str, prev
+                );
                 if self.consecutive_repeats >= 1 {
                     return true;
                 }
@@ -528,7 +597,9 @@ impl LoopDetector {
         let intersection = set1.intersection(&set2).count();
         let union = set1.union(&set2).count();
 
-        if union == 0 { return 0.0; }
+        if union == 0 {
+            return 0.0;
+        }
         intersection as f32 / union as f32
     }
 }
@@ -540,8 +611,11 @@ struct ActionParser;
 impl ActionParser {
     fn parse_fallback(text: &str) -> Option<(String, String)> {
         lazy_static! {
-            static ref RE: Regex = Regex::new(r"(?is)Action:\s*(?:use\s+)?(?P<name>[\w\-]+)\s*(?P<args>\{[\s\S]*?\})").expect("Invalid regex pattern");
+            static ref RE: Regex =
+                Regex::new(r"(?is)Action:\s*(?:use\s+)?(?P<name>[\w\-]+)\s*(?P<args>\{[\s\S]*?\})")
+                    .expect("Invalid regex pattern");
         }
-        RE.captures(text).map(|cap| (cap["name"].to_string(), cap["args"].trim().to_string()))
+        RE.captures(text)
+            .map(|cap| (cap["name"].to_string(), cap["args"].trim().to_string()))
     }
 }

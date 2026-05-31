@@ -91,7 +91,12 @@ impl ContextualBandit {
         self.exploration = exploration.clamp(0.05, 2.0);
     }
 
-    pub fn select(&mut self, features: &InputFeatures, prior_means: [f32; 3], prior_strengths: [f32; 3]) -> SystemChoice {
+    pub fn select(
+        &mut self,
+        features: &InputFeatures,
+        prior_means: [f32; 3],
+        prior_strengths: [f32; 3],
+    ) -> SystemChoice {
         let key = bucket_key(features);
         let stats = self.contexts.entry(key).or_insert_with(|| {
             [
@@ -109,7 +114,9 @@ impl ContextualBandit {
                 },
             ]
         });
-        let total_n = stats.iter().map(|s| s.count).sum::<u64>() as f32 + 1.0 + prior_strengths.iter().sum::<f32>();
+        let total_n = stats.iter().map(|s| s.count).sum::<u64>() as f32
+            + 1.0
+            + prior_strengths.iter().sum::<f32>();
         let mut best_arm = 1usize;
         let mut best_score = f32::MIN;
         for i in 0..3 {
@@ -202,11 +209,21 @@ impl MetaCognitiveRouter {
         self.bandit.set_exploration(exploration);
     }
 
-    pub fn route(&mut self, input: &str, context: &[Message], complexity_score: f32, intent: Intent) -> (SystemChoice, InputFeatures) {
+    pub fn route(
+        &mut self,
+        input: &str,
+        context: &[Message],
+        complexity_score: f32,
+        intent: Intent,
+    ) -> (SystemChoice, InputFeatures) {
         let features = self.extract_features(input, context, complexity_score);
         let choice = if matches!(intent, Intent::DeepResearch) || features.has_research_keyword {
             SystemChoice::System3
-        } else if matches!(intent, Intent::Greeting | Intent::Help | Intent::Status | Intent::Persona | Intent::Chat) && !features.has_code {
+        } else if matches!(
+            intent,
+            Intent::Greeting | Intent::Help | Intent::Status | Intent::Persona | Intent::Chat
+        ) && !features.has_code
+        {
             SystemChoice::System1
         } else {
             let (prior_means, prior_strengths) = cold_start_priors(&intent, &features);
@@ -215,24 +232,31 @@ impl MetaCognitiveRouter {
         (choice, features)
     }
 
-    pub fn begin_route(&mut self, session_id: &str, input: &str, choice: SystemChoice, features: InputFeatures) {
+    pub fn begin_route(
+        &mut self,
+        session_id: &str,
+        input: &str,
+        choice: SystemChoice,
+        features: InputFeatures,
+    ) {
         let key = route_key(session_id, input);
-        self.pending.insert(
-            key,
-            PendingRoute {
-                features,
-                choice,
-            },
-        );
+        self.pending.insert(key, PendingRoute { features, choice });
     }
 
-    pub fn record_feedback(&mut self, session_id: &str, input: &str, latency: Duration, quality_score: f32) {
+    pub fn record_feedback(
+        &mut self,
+        session_id: &str,
+        input: &str,
+        latency: Duration,
+        quality_score: f32,
+    ) {
         let key = route_key(session_id, input);
         let Some(pending) = self.pending.remove(&key) else {
             return;
         };
         let reward = quality_score.clamp(0.0, 1.0) * (1.0 - latency.as_secs_f32() / 30.0).max(0.0);
-        self.bandit.update(&pending.features, &pending.choice, reward);
+        self.bandit
+            .update(&pending.features, &pending.choice, reward);
         if self.feedback_buffer.len() >= self.max_feedback {
             self.feedback_buffer.pop_front();
         }
@@ -265,9 +289,21 @@ impl MetaCognitiveRouter {
             entry.1 += f.reward;
             entry.2 += f.latency_ms as f32;
         }
-        let avg_reward = if total_feedback == 0 { 0.0 } else { reward_sum / total_feedback as f32 };
-        let avg_latency_ms = if total_feedback == 0 { 0.0 } else { latency_sum / total_feedback as f32 };
-        let avg_quality_score = if total_feedback == 0 { 0.0 } else { quality_sum / total_feedback as f32 };
+        let avg_reward = if total_feedback == 0 {
+            0.0
+        } else {
+            reward_sum / total_feedback as f32
+        };
+        let avg_latency_ms = if total_feedback == 0 {
+            0.0
+        } else {
+            latency_sum / total_feedback as f32
+        };
+        let avg_quality_score = if total_feedback == 0 {
+            0.0
+        } else {
+            quality_sum / total_feedback as f32
+        };
         let mut by_choice = vec![];
         for key in ["system1", "system2", "system3"] {
             let (count, rsum, lsum) = choice_stats.get(key).copied().unwrap_or((0, 0.0, 0.0));
@@ -288,7 +324,12 @@ impl MetaCognitiveRouter {
         }
     }
 
-    fn extract_features(&self, input: &str, context: &[Message], complexity_score: f32) -> InputFeatures {
+    fn extract_features(
+        &self,
+        input: &str,
+        context: &[Message],
+        complexity_score: f32,
+    ) -> InputFeatures {
         let lower = input.to_lowercase();
         let token_count = input.split_whitespace().count().max(1);
         let has_code = input.contains("```")
@@ -297,9 +338,17 @@ impl MetaCognitiveRouter {
             || lower.contains("import ")
             || lower.contains("SELECT ");
         let has_question = input.contains('?') || input.contains('？');
-        let has_research_keyword = ["research", "调研", "深入", "比较", "分析", "方案", "benchmark"]
-            .iter()
-            .any(|k| lower.contains(k));
+        let has_research_keyword = [
+            "research",
+            "调研",
+            "深入",
+            "比较",
+            "分析",
+            "方案",
+            "benchmark",
+        ]
+        .iter()
+        .any(|k| lower.contains(k));
         let complexity_bucket = (complexity_score.clamp(0.0, 1.0) * 10.0).round() as u8;
         let intent_embedding = embed_intent(&lower);
         InputFeatures {

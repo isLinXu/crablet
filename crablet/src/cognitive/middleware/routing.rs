@@ -1,16 +1,16 @@
-use async_trait::async_trait;
-use anyhow::Result;
-use crate::types::{Message, TraceStep};
-use super::{CognitiveMiddleware, MiddlewareState, MiddlewarePipeline};
-#[cfg(feature = "knowledge")]
-use tracing::info;
+use super::{CognitiveMiddleware, MiddlewarePipeline, MiddlewareState};
 use crate::cognitive::classifier::{Classifier, Intent};
+use crate::cognitive::llm::LlmClient;
+#[cfg(feature = "knowledge")]
+use crate::knowledge::vector_store::VectorStore;
+use crate::types::{Message, TraceStep};
+use anyhow::Result;
+use async_trait::async_trait;
+use std::sync::Arc;
 #[cfg(feature = "knowledge")]
 use tokio::sync::OnceCell;
 #[cfg(feature = "knowledge")]
-use crate::knowledge::vector_store::VectorStore;
-use std::sync::Arc;
-use crate::cognitive::llm::LlmClient;
+use tracing::info;
 
 pub struct RoutingMiddleware {
     // classifier: IntentClassifier, // Removed old LLM classifier for now, rely on heuristic or future implementation
@@ -29,28 +29,43 @@ impl RoutingMiddleware {
 
     #[cfg(feature = "knowledge")]
     async fn get_prototypes(&self, vs: &VectorStore) -> Option<&Vec<(Intent, Vec<f32>)>> {
-        self.prototypes.get_or_try_init(|| async {
-            let mut protos = Vec::new();
-            // Define prototypes
-            let seeds = vec![
-                (Intent::Greeting, "hello hi greetings good morning how are you who are you"),
-                (Intent::DeepResearch, "research find information search web deep dive look up news"),
-                (Intent::Coding, "write code python rust function script programming implement fix bug"),
-                // (Intent::Reasoning, "plan analyze think step by step reason logic solve problem strategy"), // Replaced by General/Analysis
-                (Intent::Analysis, "plan analyze think step by step reason logic solve problem strategy"),
-            ];
+        self.prototypes
+            .get_or_try_init(|| async {
+                let mut protos = Vec::new();
+                // Define prototypes
+                let seeds = vec![
+                    (
+                        Intent::Greeting,
+                        "hello hi greetings good morning how are you who are you",
+                    ),
+                    (
+                        Intent::DeepResearch,
+                        "research find information search web deep dive look up news",
+                    ),
+                    (
+                        Intent::Coding,
+                        "write code python rust function script programming implement fix bug",
+                    ),
+                    // (Intent::Reasoning, "plan analyze think step by step reason logic solve problem strategy"), // Replaced by General/Analysis
+                    (
+                        Intent::Analysis,
+                        "plan analyze think step by step reason logic solve problem strategy",
+                    ),
+                ];
 
-            for (intent, text) in seeds {
-                if let Ok(emb) = vs.embed_query(text).await {
-                    protos.push((intent, emb));
+                for (intent, text) in seeds {
+                    if let Ok(emb) = vs.embed_query(text).await {
+                        protos.push((intent, emb));
+                    }
                 }
-            }
-            if protos.is_empty() {
-                Err(anyhow::anyhow!("Failed to embed prototypes"))
-            } else {
-                Ok(protos)
-            }
-        }).await.ok()
+                if protos.is_empty() {
+                    Err(anyhow::anyhow!("Failed to embed prototypes"))
+                } else {
+                    Ok(protos)
+                }
+            })
+            .await
+            .ok()
     }
 }
 
@@ -60,9 +75,14 @@ impl CognitiveMiddleware for RoutingMiddleware {
         "Intent Routing"
     }
 
-    async fn execute(&self, input: &str, context: &mut Vec<Message>, _state: &MiddlewareState) -> Result<Option<(String, Vec<TraceStep>)>> {
+    async fn execute(
+        &self,
+        input: &str,
+        context: &mut Vec<Message>,
+        _state: &MiddlewareState,
+    ) -> Result<Option<(String, Vec<TraceStep>)>> {
         let mut intent = Intent::General; // Default
-        
+
         // 1. Try Semantic Classification (Zero-Shot) if VectorStore is available
         #[cfg(feature = "knowledge")]
         if let Some(vs) = &_state.vector_store {
@@ -70,7 +90,7 @@ impl CognitiveMiddleware for RoutingMiddleware {
                 if let Ok(query_emb) = vs.embed_query(input).await {
                     let mut max_score = -1.0;
                     let mut best_intent = Intent::General;
-                    
+
                     for (proto_intent, proto_emb) in protos {
                         let score = cosine_similarity(&query_emb, proto_emb);
                         if score > max_score {
@@ -78,9 +98,13 @@ impl CognitiveMiddleware for RoutingMiddleware {
                             best_intent = proto_intent.clone();
                         }
                     }
-                    
-                    if max_score > 0.82 { // High confidence threshold
-                        info!("Semantic Router: Matched {:?} with score {:.2}", best_intent, max_score);
+
+                    if max_score > 0.82 {
+                        // High confidence threshold
+                        info!(
+                            "Semantic Router: Matched {:?} with score {:.2}",
+                            best_intent, max_score
+                        );
                         intent = best_intent;
                     }
                 }
@@ -89,36 +113,40 @@ impl CognitiveMiddleware for RoutingMiddleware {
 
         // 2. Fallback to Heuristic Classifier if Semantic failed or not available
         if matches!(intent, Intent::General) {
-             intent = Classifier::classify_intent(input);
+            intent = Classifier::classify_intent(input);
         }
 
         match intent {
             Intent::Greeting => {
                 // Inject system prompt for concise, friendly response
                 MiddlewarePipeline::ensure_system_prompt(context, "You are Crablet, a helpful AI assistant. The user is engaging in small talk. Be friendly, concise, and helpful. Do not use tools unless explicitly asked.");
-            },
+            }
             Intent::DeepResearch => {
                 MiddlewarePipeline::ensure_system_prompt(context, "You are Crablet. The user wants deep research. Use available search tools extensively to provide a comprehensive answer.");
-            },
+            }
             Intent::Coding => {
                 MiddlewarePipeline::ensure_system_prompt(context, "You are Crablet. The user is asking for code. Provide clean, well-commented code blocks. Use the file tool if you need to read existing files.");
-            },
+            }
             Intent::Creative => {
                 MiddlewarePipeline::ensure_system_prompt(context, "You are Crablet. The user wants creative content. Be imaginative and engaging.");
-            },
+            }
             Intent::Math => {
                 MiddlewarePipeline::ensure_system_prompt(context, "You are Crablet. The user has a mathematical query. Be precise and show your work step-by-step.");
-            },
-            Intent::Analysis | Intent::MultiStep | Intent::General | Intent::Status | Intent::Help => {
+            }
+            Intent::Analysis
+            | Intent::MultiStep
+            | Intent::General
+            | Intent::Status
+            | Intent::Help => {
                 // Default behavior or specific prompts if needed
                 MiddlewarePipeline::ensure_system_prompt(context, "You are Crablet. Use your reasoning capabilities to solve the user's problem step-by-step.");
-            },
+            }
             Intent::Persona | Intent::Chat => {
                 // Persona and Chat are conversational intents - use friendly, concise responses
                 MiddlewarePipeline::ensure_system_prompt(context, "You are Crablet, a helpful AI assistant. The user is engaging in casual conversation. Be friendly, warm, and concise.");
-            },
+            }
         }
-        
+
         Ok(None)
     }
 }
@@ -127,6 +155,8 @@ fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
     let dot_product: f32 = a.iter().zip(b).map(|(x, y)| x * y).sum();
     let norm_a: f32 = a.iter().map(|x| x * x).sum::<f32>().sqrt();
     let norm_b: f32 = b.iter().map(|x| x * x).sum::<f32>().sqrt();
-    if norm_a == 0.0 || norm_b == 0.0 { return 0.0; }
+    if norm_a == 0.0 || norm_b == 0.0 {
+        return 0.0;
+    }
     dot_product / (norm_a * norm_b)
 }

@@ -1,12 +1,16 @@
-use async_trait::async_trait;
-use anyhow::Result;
-use crate::types::{Message, TraceStep};
-use super::{CognitiveMiddleware, MiddlewareState, MiddlewarePipeline, RagTraceItem, RagTracePayload};
-use tracing::info;
 #[cfg(feature = "knowledge")]
-use std::sync::Arc;
+use super::semantic_cache::is_semantic_cache_metadata;
+use super::{
+    CognitiveMiddleware, MiddlewarePipeline, MiddlewareState, RagTraceItem, RagTracePayload,
+};
 #[cfg(feature = "knowledge")]
 use crate::knowledge::graph_rag::GraphRAG;
+use crate::types::{Message, TraceStep};
+use anyhow::Result;
+use async_trait::async_trait;
+#[cfg(feature = "knowledge")]
+use std::sync::Arc;
+use tracing::info;
 
 pub struct RagMiddleware;
 
@@ -16,39 +20,49 @@ impl CognitiveMiddleware for RagMiddleware {
         "RAG Retrieval"
     }
 
-    async fn execute(&self, input: &str, context: &mut Vec<Message>, state: &MiddlewareState) -> Result<Option<(String, Vec<TraceStep>)>> {
+    async fn execute(
+        &self,
+        input: &str,
+        context: &mut Vec<Message>,
+        state: &MiddlewareState,
+    ) -> Result<Option<(String, Vec<TraceStep>)>> {
         let mut rag_context = String::new();
         #[allow(unused_mut)]
         let mut retrieval = "none".to_string();
         #[allow(unused_mut)]
         let mut refs: Vec<RagTraceItem> = Vec::new();
         let mut graph_entities: Vec<String> = Vec::new();
-        
+
         // Graph Retrieval
         if let Some(kg) = &state.kg {
             // Extract keywords (top 10 unique words > 3 chars)
-            let keywords: Vec<String> = input.split_whitespace()
+            let keywords: Vec<String> = input
+                .split_whitespace()
                 .map(|w| w.trim_matches(|c: char| !c.is_alphanumeric()).to_string())
                 .filter(|w| w.len() > 3)
                 .collect::<std::collections::HashSet<_>>()
                 .into_iter()
                 .take(10)
                 .collect();
-                
+
             if !keywords.is_empty() {
                 // Batch query
                 if let Ok(entities) = kg.find_entities_batch(&keywords).await {
                     for (name, _type) in entities {
-                        let relations_result: Result<Vec<(String, String, String)>> = kg.find_related(&name).await;
+                        let relations_result: Result<Vec<(String, String, String)>> =
+                            kg.find_related(&name).await;
                         if let Ok(relations) = relations_result {
                             if !relations.is_empty() {
                                 graph_entities.push(name.clone());
-                                rag_context.push_str(&format!("\n[Knowledge Graph about '{}']:\n", name));
+                                rag_context
+                                    .push_str(&format!("\n[Knowledge Graph about '{}']:\n", name));
                                 for (dir, rel, target) in relations.iter().take(5) {
                                     if dir == "->" {
-                                        rag_context.push_str(&format!("- {} {} {}\n", name, rel, target));
+                                        rag_context
+                                            .push_str(&format!("- {} {} {}\n", name, rel, target));
                                     } else {
-                                        rag_context.push_str(&format!("- {} {} {}\n", target, rel, name));
+                                        rag_context
+                                            .push_str(&format!("- {} {} {}\n", target, rel, name));
                                     }
                                 }
                             }
@@ -57,7 +71,7 @@ impl CognitiveMiddleware for RagMiddleware {
                 }
             }
         }
-        
+
         #[cfg(feature = "knowledge")]
         if let Some(vs) = &state.vector_store {
             let mut contexts_added = false;
@@ -77,7 +91,13 @@ impl CognitiveMiddleware for RagMiddleware {
                                 score: item.score,
                                 content: item.content.chars().take(280).collect(),
                             });
-                            rag_context.push_str(&format!("- [Ref {}] [{} {:.2}] {}\n", i + 1, item.source, item.score, item.content));
+                            rag_context.push_str(&format!(
+                                "- [Ref {}] [{} {:.2}] {}\n",
+                                i + 1,
+                                item.source,
+                                item.score,
+                                item.content
+                            ));
                         }
                         contexts_added = true;
                     }
@@ -88,20 +108,32 @@ impl CognitiveMiddleware for RagMiddleware {
                     if !results.is_empty() {
                         retrieval = "semantic_search".to_string();
                         rag_context.push_str("\n[Semantic Search Results]:\n");
-                        for (i, (content, score, _metadata)) in results.iter().enumerate() {
-                            let source = _metadata.get("source").and_then(|v| v.as_str()).unwrap_or("vector_store");
+                        for (i, (content, score, _metadata)) in results
+                            .iter()
+                            .filter(|(_, _, metadata)| !is_semantic_cache_metadata(metadata))
+                            .enumerate()
+                        {
+                            let source = _metadata
+                                .get("source")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("vector_store");
                             refs.push(RagTraceItem {
                                 source: source.to_string(),
                                 score: *score,
                                 content: content.chars().take(280).collect(),
                             });
-                            rag_context.push_str(&format!("- [Ref {}] (score: {:.2}) {}\n", i + 1, score, content));
+                            rag_context.push_str(&format!(
+                                "- [Ref {}] (score: {:.2}) {}\n",
+                                i + 1,
+                                score,
+                                content
+                            ));
                         }
                     }
                 }
             }
         }
-        
+
         if !rag_context.is_empty() {
             info!("Injecting RAG context");
             let msg = format!("\n[KNOWLEDGE]\nUse the following retrieved knowledge to answer the user's question if relevant.\nImportant: When using information from the context, cite the source using [Ref X] notation or mention the Knowledge Graph.\n{}\n", rag_context);
@@ -113,7 +145,7 @@ impl CognitiveMiddleware for RagMiddleware {
             refs,
             graph_entities,
         });
-        
+
         Ok(None)
     }
 }

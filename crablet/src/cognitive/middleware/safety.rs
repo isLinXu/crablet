@@ -1,9 +1,9 @@
-use async_trait::async_trait;
-use anyhow::Result;
-use crate::types::{Message, TraceStep};
 use super::{CognitiveMiddleware, MiddlewareState};
-use tracing::warn;
 use crate::constants::limits;
+use crate::types::{Message, TraceStep};
+use anyhow::Result;
+use async_trait::async_trait;
+use tracing::warn;
 
 pub struct SafetyMiddleware;
 
@@ -13,20 +13,33 @@ impl CognitiveMiddleware for SafetyMiddleware {
         "Safety Check"
     }
 
-    async fn execute(&self, input: &str, _context: &mut Vec<Message>, _state: &MiddlewareState) -> Result<Option<(String, Vec<TraceStep>)>> {
+    async fn execute(
+        &self,
+        input: &str,
+        _context: &mut Vec<Message>,
+        _state: &MiddlewareState,
+    ) -> Result<Option<(String, Vec<TraceStep>)>> {
         // Basic Input Safety Checks
         if input.len() > limits::MAX_INPUT_SIZE {
             warn!("Input blocked: too long ({} chars)", input.len());
-            return Ok(Some(("I cannot process this request because it is too long.".to_string(), vec![])));
+            return Ok(Some((
+                "I cannot process this request because it is too long.".to_string(),
+                vec![],
+            )));
         }
-        
+
         // Check for obvious jailbreak patterns (very naive MVP)
         let lower = input.to_lowercase();
-        if lower.contains("ignore all previous instructions") || lower.contains("ignore above instructions") {
-             warn!("Input blocked: potential jailbreak detected");
-             return Ok(Some(("I cannot comply with that request.".to_string(), vec![])));
+        if lower.contains("ignore all previous instructions")
+            || lower.contains("ignore above instructions")
+        {
+            warn!("Input blocked: potential jailbreak detected");
+            return Ok(Some((
+                "I cannot comply with that request.".to_string(),
+                vec![],
+            )));
         }
-        
+
         Ok(None)
     }
 }
