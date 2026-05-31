@@ -5,8 +5,14 @@
 pub mod metrics;
 pub mod performance;
 
-use tracing::{info, debug};
+#[cfg(feature = "telemetry")]
+use std::sync::OnceLock;
 use std::time::Instant;
+use tracing::{debug, info};
+
+#[cfg(feature = "telemetry")]
+static TELEMETRY_TRACER_PROVIDER: OnceLock<opentelemetry_sdk::trace::SdkTracerProvider> =
+    OnceLock::new();
 
 /// 计时器守卫 - 自动记录执行时间
 pub struct TimerGuard {
@@ -64,14 +70,22 @@ impl PerformanceCounter {
     }
 
     pub fn record(&self, duration_ms: u64) {
-        self.count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        self.total_time_ms.fetch_add(duration_ms, std::sync::atomic::Ordering::Relaxed);
+        self.count
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.total_time_ms
+            .fetch_add(duration_ms, std::sync::atomic::Ordering::Relaxed);
     }
 
     pub fn get_stats(&self) -> (u64, f64) {
         let count = self.count.load(std::sync::atomic::Ordering::Relaxed);
-        let total = self.total_time_ms.load(std::sync::atomic::Ordering::Relaxed);
-        let avg = if count > 0 { total as f64 / count as f64 } else { 0.0 };
+        let total = self
+            .total_time_ms
+            .load(std::sync::atomic::Ordering::Relaxed);
+        let avg = if count > 0 {
+            total as f64 / count as f64
+        } else {
+            0.0
+        };
         (count, avg)
     }
 
@@ -90,12 +104,12 @@ pub fn init_telemetry(log_level: &str) -> anyhow::Result<()> {
     #[cfg(feature = "telemetry")]
     {
         use opentelemetry::global;
-        use opentelemetry_sdk::propagation::TraceContextPropagator;
-        use opentelemetry_sdk::trace::{self, Sampler};
-        use opentelemetry_sdk::Resource;
-        use opentelemetry_sdk::runtime;
+        use opentelemetry::trace::TracerProvider as _;
         use opentelemetry::KeyValue;
         use opentelemetry_otlp::WithExportConfig;
+        use opentelemetry_sdk::propagation::TraceContextPropagator;
+        use opentelemetry_sdk::trace::{Sampler, SdkTracerProvider};
+        use opentelemetry_sdk::Resource;
         use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, Registry};
 
         // Set global propagator
@@ -103,31 +117,35 @@ pub fn init_telemetry(log_level: &str) -> anyhow::Result<()> {
 
         // Check if OTEL_EXPORTER_OTLP_ENDPOINT is set, if not, skip OTEL setup or use stdout
         let otlp_endpoint = std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT").ok();
-        
+
         // Env filter for logs
         let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
             .unwrap_or_else(|_| log_level.into());
 
         if let Some(endpoint) = otlp_endpoint {
             println!("Initializing OpenTelemetry with endpoint: {}", endpoint);
-            
-            // Initialize OTLP pipeline
-            let tracer = opentelemetry_otlp::new_pipeline()
-                .tracing()
-                .with_exporter(
-                    opentelemetry_otlp::new_exporter()
-                        .tonic()
-                        .with_endpoint(endpoint),
-                )
-                .with_trace_config(
-                    trace::config()
-                        .with_sampler(Sampler::AlwaysOn)
-                        .with_resource(Resource::new(vec![
+
+            let exporter = opentelemetry_otlp::SpanExporter::builder()
+                .with_tonic()
+                .with_endpoint(endpoint)
+                .build()?;
+
+            let tracer_provider = SdkTracerProvider::builder()
+                .with_batch_exporter(exporter)
+                .with_sampler(Sampler::AlwaysOn)
+                .with_resource(
+                    Resource::builder_empty()
+                        .with_attributes([
                             KeyValue::new("service.name", "crablet"),
                             KeyValue::new("service.version", "0.1.0"),
-                        ])),
+                        ])
+                        .build(),
                 )
-                .install_batch(runtime::Tokio)?;
+                .build();
+
+            let tracer = tracer_provider.tracer("crablet");
+            let _ = TELEMETRY_TRACER_PROVIDER.set(tracer_provider.clone());
+            let _ = global::set_tracer_provider(tracer_provider);
 
             // Create tracing layer
             let telemetry = tracing_opentelemetry::layer().with_tracer(tracer);
@@ -141,7 +159,6 @@ pub fn init_telemetry(log_level: &str) -> anyhow::Result<()> {
                 .with(fmt_layer)
                 .with(telemetry)
                 .init();
-                
         } else {
             // Fallback to just stdout logging
             Registry::default()
@@ -167,7 +184,9 @@ pub fn init_telemetry(log_level: &str) -> anyhow::Result<()> {
 
 pub fn shutdown_telemetry() {
     #[cfg(feature = "telemetry")]
-    opentelemetry::global::shutdown_tracer_provider();
+    if let Some(provider) = TELEMETRY_TRACER_PROVIDER.get() {
+        let _ = provider.shutdown();
+    }
 }
 
 /// 健康检查状态
@@ -218,16 +237,12 @@ impl HealthChecker {
     }
 
     pub fn check_all(&self) -> Vec<(&str, HealthStatus)> {
-        self.checks
-            .iter()
-            .enumerate()
-            .map(|(_i, check)| ("check", check()))
-            .collect()
+        self.checks.iter().map(|check| ("check", check())).collect()
     }
 
     pub fn overall_status(&self) -> HealthStatus {
         let results: Vec<_> = self.checks.iter().map(|c| c()).collect();
-        
+
         if results.iter().any(|r| r.is_unhealthy()) {
             HealthStatus::Unhealthy("One or more checks failed".to_string())
         } else if results.iter().any(|r| r.is_degraded()) {
@@ -261,7 +276,7 @@ mod tests {
         let counter = PerformanceCounter::new("test");
         counter.record(100);
         counter.record(200);
-        
+
         let (count, avg) = counter.get_stats();
         assert_eq!(count, 2);
         assert_eq!(avg, 150.0);

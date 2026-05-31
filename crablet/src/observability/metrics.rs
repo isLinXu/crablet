@@ -2,7 +2,7 @@
 //!
 //! Performance tracking and cost analysis for Agent executions.
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// Execution metrics collector
@@ -51,15 +51,23 @@ impl ExecutionMetrics {
         self.token_usage.input += input;
         self.token_usage.output += output;
         self.token_usage.total += input + output;
-        
-        *self.token_usage.by_model.entry(model.to_string()).or_insert(0) += input + output;
-        
+
+        *self
+            .token_usage
+            .by_model
+            .entry(model.to_string())
+            .or_insert(0) += input + output;
+
         // Update cost
         let input_cost = self.calculate_input_cost(input, model);
         let output_cost = self.calculate_output_cost(output, model);
         self.cost.total += input_cost + output_cost;
-        self.cost.breakdown.insert(format!("{}_input", model), input_cost);
-        self.cost.breakdown.insert(format!("{}_output", model), output_cost);
+        self.cost
+            .breakdown
+            .insert(format!("{}_input", model), input_cost);
+        self.cost
+            .breakdown
+            .insert(format!("{}_output", model), output_cost);
     }
 
     pub fn finish(&mut self) {
@@ -96,15 +104,14 @@ impl ExecutionMetrics {
             return;
         }
 
-        let durations: Vec<u64> = self.step_metrics.iter()
-            .map(|s| s.duration_ms)
-            .collect();
+        let durations: Vec<u64> = self.step_metrics.iter().map(|s| s.duration_ms).collect();
 
-        self.performance.avg_step_duration_ms = durations.iter().sum::<u64>() / durations.len() as u64;
+        self.performance.avg_step_duration_ms =
+            durations.iter().sum::<u64>() / durations.len() as u64;
         self.performance.max_step_duration_ms = *durations.iter().max().unwrap_or(&0);
         self.performance.min_step_duration_ms = *durations.iter().min().unwrap_or(&0);
         self.performance.total_steps = self.step_metrics.len();
-        
+
         // Calculate total duration
         if let Some(end) = self.end_time {
             self.performance.total_duration_ms = end - self.start_time;
@@ -177,7 +184,7 @@ impl CostTracker {
             if self.current_cost >= budget {
                 return CostStatus::BudgetExceeded;
             }
-            
+
             if self.current_cost >= budget * self.alert_threshold {
                 return CostStatus::NearBudget;
             }
@@ -205,6 +212,6 @@ pub enum CostStatus {
 fn current_timestamp() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_millis() as u64
+        .map(|duration| duration.as_millis() as u64)
+        .unwrap_or(0)
 }

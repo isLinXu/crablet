@@ -2,11 +2,11 @@
 //!
 //! 提供全面的指标收集、监控和告警功能
 
+use parking_lot::RwLock;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use parking_lot::RwLock;
-use serde::{Deserialize, Serialize};
 // tracing imported when needed
 use tokio::time::interval;
 
@@ -92,7 +92,7 @@ impl MetricsAggregator {
         let mut counters = self.counters.write();
         counters
             .entry(name.to_string())
-            .or_insert_with(HashMap::new)
+            .or_default()
             .entry(labels)
             .and_modify(|v| *v += value)
             .or_insert(value);
@@ -103,7 +103,7 @@ impl MetricsAggregator {
         let mut gauges = self.gauges.write();
         gauges
             .entry(name.to_string())
-            .or_insert_with(HashMap::new)
+            .or_default()
             .insert(labels, value);
     }
 
@@ -112,9 +112,9 @@ impl MetricsAggregator {
         let mut histograms = self.histograms.write();
         histograms
             .entry(name.to_string())
-            .or_insert_with(HashMap::new)
+            .or_default()
             .entry(labels)
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(value);
     }
 
@@ -123,9 +123,9 @@ impl MetricsAggregator {
         let mut timers = self.timers.write();
         timers
             .entry(name.to_string())
-            .or_insert_with(HashMap::new)
+            .or_default()
             .entry(labels)
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(duration);
     }
 
@@ -149,13 +149,13 @@ impl MetricsAggregator {
     pub fn get_histogram_stats(&self, name: &str, labels: &MetricLabels) -> Option<HistogramStats> {
         let histograms = self.histograms.read();
         let values = histograms.get(name)?.get(labels)?;
-        
+
         if values.is_empty() {
             return None;
         }
 
         let mut sorted = values.clone();
-        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        sorted.sort_by(|a, b| a.total_cmp(b));
 
         let sum: f64 = sorted.iter().sum();
         let count = sorted.len() as f64;
@@ -183,7 +183,7 @@ impl MetricsAggregator {
     pub fn get_timer_stats(&self, name: &str, labels: &MetricLabels) -> Option<TimerStats> {
         let timers = self.timers.read();
         let durations = timers.get(name)?.get(labels)?;
-        
+
         if durations.is_empty() {
             return None;
         }
@@ -243,13 +243,13 @@ impl MetricsAggregator {
         if labels.labels.is_empty() {
             return String::new();
         }
-        
+
         let pairs: Vec<String> = labels
             .labels
             .iter()
             .map(|(k, v)| format!("{}=\"{}\"", k, v))
             .collect();
-        
+
         format!("{{{}}}", pairs.join(","))
     }
 }
@@ -295,7 +295,7 @@ impl SystemMetricsCollector {
     /// 启动收集循环
     pub async fn start_collection(&self) {
         let mut interval = interval(self.collection_interval);
-        
+
         loop {
             interval.tick().await;
             self.collect_system_metrics().await;
@@ -314,11 +314,8 @@ impl SystemMetricsCollector {
 
         // CPU 使用
         if let Some(cpu) = Self::get_cpu_usage() {
-            self.aggregator.record_gauge(
-                "system_cpu_usage_percent",
-                MetricLabels::new(),
-                cpu,
-            );
+            self.aggregator
+                .record_gauge("system_cpu_usage_percent", MetricLabels::new(), cpu);
         }
 
         // 任务数
@@ -361,36 +358,45 @@ impl BusinessMetricsCollector {
             .with("endpoint", endpoint)
             .with("status", status);
 
-        self.aggregator.record_counter("http_requests_total", labels.clone(), 1);
-        self.aggregator.record_timer("http_request_duration_seconds", labels, latency);
+        self.aggregator
+            .record_counter("http_requests_total", labels.clone(), 1);
+        self.aggregator
+            .record_timer("http_request_duration_seconds", labels, latency);
     }
 
     /// 记录路由决策
     pub fn record_routing_decision(&self, target: &str, confidence: f32) {
         let labels = MetricLabels::new().with("target", target);
-        
-        self.aggregator.record_counter("routing_decisions_total", labels.clone(), 1);
-        self.aggregator.record_histogram("routing_confidence", labels, confidence as f64);
+
+        self.aggregator
+            .record_counter("routing_decisions_total", labels.clone(), 1);
+        self.aggregator
+            .record_histogram("routing_confidence", labels, confidence as f64);
     }
 
     /// 记录 LLM 调用
     pub fn record_llm_call(&self, model: &str, tokens_in: u64, tokens_out: u64, latency: Duration) {
         let labels = MetricLabels::new().with("model", model);
-        
-        self.aggregator.record_counter("llm_tokens_input", labels.clone(), tokens_in);
-        self.aggregator.record_counter("llm_tokens_output", labels.clone(), tokens_out);
-        self.aggregator.record_timer("llm_request_duration", labels, latency);
+
+        self.aggregator
+            .record_counter("llm_tokens_input", labels.clone(), tokens_in);
+        self.aggregator
+            .record_counter("llm_tokens_output", labels.clone(), tokens_out);
+        self.aggregator
+            .record_timer("llm_request_duration", labels, latency);
     }
 
     /// 记录缓存命中
     pub fn record_cache_hit(&self, level: &str) {
         let labels = MetricLabels::new().with("level", level);
-        self.aggregator.record_counter("cache_hits_total", labels, 1);
+        self.aggregator
+            .record_counter("cache_hits_total", labels, 1);
     }
 
     /// 记录缓存未命中
     pub fn record_cache_miss(&self) {
-        self.aggregator.record_counter("cache_misses_total", MetricLabels::new(), 1);
+        self.aggregator
+            .record_counter("cache_misses_total", MetricLabels::new(), 1);
     }
 
     /// 记录技能执行
@@ -399,9 +405,11 @@ impl BusinessMetricsCollector {
         let labels = MetricLabels::new()
             .with("skill", skill_name)
             .with("status", status);
-        
-        self.aggregator.record_counter("skill_executions_total", labels.clone(), 1);
-        self.aggregator.record_timer("skill_execution_duration", labels, latency);
+
+        self.aggregator
+            .record_counter("skill_executions_total", labels.clone(), 1);
+        self.aggregator
+            .record_timer("skill_execution_duration", labels, latency);
     }
 
     /// 记录用户反馈
@@ -480,8 +488,7 @@ impl AlertManager {
 
     fn get_metric_value(&self, metric_name: &str) -> Option<f64> {
         // 简化实现，实际应该根据指标类型获取
-        self.aggregator
-            .get_gauge(metric_name, &MetricLabels::new())
+        self.aggregator.get_gauge(metric_name, &MetricLabels::new())
     }
 }
 
@@ -505,7 +512,7 @@ pub struct MetricsRegistry {
 impl MetricsRegistry {
     pub fn new() -> Self {
         let aggregator = Arc::new(MetricsAggregator::new());
-        
+
         Self {
             aggregator: aggregator.clone(),
             business_collector: BusinessMetricsCollector::new(aggregator.clone()),
@@ -533,7 +540,7 @@ impl MetricsRegistry {
     /// 获取健康报告
     pub fn health_report(&self) -> HealthReport {
         let alerts = self.alert_manager.check_alerts();
-        
+
         HealthReport {
             healthy: alerts.is_empty(),
             alerts,
@@ -563,7 +570,9 @@ macro_rules! timed {
         let start = std::time::Instant::now();
         let result = $block;
         let duration = start.elapsed();
-        $registry.aggregator().record_timer($name, $labels, duration);
+        $registry
+            .aggregator()
+            .record_timer($name, $labels, duration);
         result
     }};
 }
@@ -575,10 +584,10 @@ mod tests {
     #[test]
     fn test_metrics_aggregator() {
         let aggregator = MetricsAggregator::new();
-        
+
         let labels = MetricLabels::new().with("endpoint", "/api/test");
         aggregator.record_counter("requests", labels.clone(), 1);
-        
+
         assert_eq!(aggregator.get_counter("requests", &labels), Some(1));
     }
 
@@ -586,11 +595,11 @@ mod tests {
     fn test_histogram_stats() {
         let aggregator = MetricsAggregator::new();
         let labels = MetricLabels::new();
-        
+
         for i in 1..=100 {
             aggregator.record_histogram("latency", labels.clone(), i as f64);
         }
-        
+
         let stats = aggregator.get_histogram_stats("latency", &labels).unwrap();
         assert_eq!(stats.count, 100);
         assert!(stats.p50 >= 49.0 && stats.p50 <= 51.0);
@@ -600,9 +609,9 @@ mod tests {
     fn test_prometheus_export() {
         let aggregator = MetricsAggregator::new();
         let labels = MetricLabels::new().with("status", "200");
-        
+
         aggregator.record_counter("requests", labels, 42);
-        
+
         let output = aggregator.export_prometheus();
         assert!(output.contains("requests"));
         assert!(output.contains("42"));

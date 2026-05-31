@@ -10,13 +10,13 @@
 //! - **Read-Through**: Check L1 → L2 → L3, populate upper layers on miss
 //! - **Write-Back**: Write to L1+L2, async flush to L3
 
-use std::sync::Arc;
+use anyhow::Result;
+use lru::LruCache;
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::num::NonZeroUsize;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
-use serde::{Serialize, Deserialize, de::DeserializeOwned};
-use lru::LruCache;
-use anyhow::Result;
 
 use super::redis_client::RedisClient;
 
@@ -32,8 +32,8 @@ pub struct L1Config {
 impl Default for L1Config {
     fn default() -> Self {
         Self {
-            capacity: 1000,     // 1000 entries max
-            ttl_secs: 300,      // 5 minutes TTL
+            capacity: 1000, // 1000 entries max
+            ttl_secs: 300,  // 5 minutes TTL
         }
     }
 }
@@ -44,7 +44,7 @@ struct CacheEntry<V> {
     value: V,
     created_at: Instant,
     ttl: Duration,
-    dirty: bool,  // Marked dirty for write-back
+    dirty: bool, // Marked dirty for write-back
 }
 
 impl<V> CacheEntry<V> {
@@ -83,7 +83,7 @@ where
         let capacity = NonZeroUsize::new(l1_config.capacity.max(1))
             .expect("layer cache capacity must be non-zero");
         let cache = LruCache::new(capacity);
-        
+
         Self {
             name: name.to_string(),
             l1: Arc::new(RwLock::new(cache)),
@@ -248,7 +248,9 @@ where
                 if let Some(redis) = &self.redis {
                     let l2_key = self.make_l2_key(key);
                     let json = serde_json::to_string(&entry.value).unwrap_or_default();
-                    let _ = redis.set(&l2_key, &json, Some(self.l1_config.ttl_secs * 10)).await;
+                    let _ = redis
+                        .set(&l2_key, &json, Some(self.l1_config.ttl_secs * 10))
+                        .await;
                 }
                 // Write to L3
                 if let Some(l3_setter) = &self.l3_setter {
@@ -278,22 +280,17 @@ pub struct SessionContextCache {
 
 impl SessionContextCache {
     /// Create session context cache
-    pub fn new(
-        redis: Option<Arc<RedisClient>>,
-        l1_config: L1Config,
-    ) -> Self {
-        let cache = LayerCache::new(
-            "session_context",
-            l1_config,
-            redis,
-            "session_ctx",
-        );
+    pub fn new(redis: Option<Arc<RedisClient>>, l1_config: L1Config) -> Self {
+        let cache = LayerCache::new("session_context", l1_config, redis, "session_ctx");
 
         Self { cache }
     }
 
     /// Get session context
-    pub async fn get(&self, session_id: &str) -> Result<Option<(SessionContextData, &'static str)>> {
+    pub async fn get(
+        &self,
+        session_id: &str,
+    ) -> Result<Option<(SessionContextData, &'static str)>> {
         self.cache.get(&session_id.to_string()).await
     }
 
@@ -368,14 +365,15 @@ mod tests {
         };
 
         let cache = LayerCache::new(
-            "test",
-            l1_config,
-            None,  // No Redis for test
+            "test", l1_config, None, // No Redis for test
             "test",
         );
 
         // Put and get
-        cache.put("key1".to_string(), "value1".to_string()).await.unwrap();
+        cache
+            .put("key1".to_string(), "value1".to_string())
+            .await
+            .unwrap();
         let result = cache.get(&"key1".to_string()).await.unwrap();
         assert!(result.is_some());
         assert_eq!(result.unwrap().0, "value1");
@@ -392,12 +390,7 @@ mod tests {
             ttl_secs: 60,
         };
 
-        let cache = LayerCache::new(
-            "test",
-            l1_config,
-            None,
-            "test",
-        );
+        let cache = LayerCache::new("test", l1_config, None, "test");
 
         // Fill beyond capacity
         cache.put("k1".to_string(), "v1".to_string()).await.unwrap();
@@ -410,7 +403,15 @@ mod tests {
 
     #[tokio::test]
     async fn test_l1_delete() {
-        let cache = LayerCache::new("test", L1Config { capacity: 10, ttl_secs: 60 }, None, "test");
+        let cache = LayerCache::new(
+            "test",
+            L1Config {
+                capacity: 10,
+                ttl_secs: 60,
+            },
+            None,
+            "test",
+        );
 
         cache.put("k1".to_string(), "v1".to_string()).await.unwrap();
         cache.delete(&"k1".to_string()).await.unwrap();
@@ -422,7 +423,15 @@ mod tests {
 
     #[tokio::test]
     async fn test_invalidate_l1() {
-        let cache = LayerCache::new("test", L1Config { capacity: 10, ttl_secs: 60 }, None, "test");
+        let cache = LayerCache::new(
+            "test",
+            L1Config {
+                capacity: 10,
+                ttl_secs: 60,
+            },
+            None,
+            "test",
+        );
 
         cache.put("k1".to_string(), "v1".to_string()).await.unwrap();
         cache.put("k2".to_string(), "v2".to_string()).await.unwrap();
@@ -437,13 +446,14 @@ mod tests {
             Arc::new(std::sync::RwLock::new(HashMap::new()));
 
         // Pre-populate L3 store
-        store.write().unwrap().insert("key1".to_string(), "from-l3".to_string());
+        store
+            .write()
+            .unwrap()
+            .insert("key1".to_string(), "from-l3".to_string());
 
         let getter = {
             let s = store.clone();
-            move |k: &String| -> Result<Option<String>> {
-                Ok(s.read().unwrap().get(k).cloned())
-            }
+            move |k: &String| -> Result<Option<String>> { Ok(s.read().unwrap().get(k).cloned()) }
         };
 
         let setter = {
@@ -454,8 +464,16 @@ mod tests {
             }
         };
 
-        let cache = LayerCache::new("test", L1Config { capacity: 10, ttl_secs: 60 }, None, "test")
-            .with_l3(getter, setter);
+        let cache = LayerCache::new(
+            "test",
+            L1Config {
+                capacity: 10,
+                ttl_secs: 60,
+            },
+            None,
+            "test",
+        )
+        .with_l3(getter, setter);
 
         // get should fall through to L3
         let result = cache.get(&"key1".to_string()).await.unwrap();
@@ -465,7 +483,10 @@ mod tests {
         assert_eq!(level, "L3"); // Should report L3 hit
 
         // Now put should populate L1
-        cache.put("key2".to_string(), "from-put".to_string()).await.unwrap();
+        cache
+            .put("key2".to_string(), "from-put".to_string())
+            .await
+            .unwrap();
         let result2 = cache.get(&"key2".to_string()).await.unwrap();
         assert!(result2.is_some());
         let (val2, level2) = result2.unwrap();
@@ -483,9 +504,7 @@ mod tests {
 
         let getter = {
             let s = store.clone();
-            move |k: &String| -> Result<Option<String>> {
-                Ok(s.read().unwrap().get(k).cloned())
-            }
+            move |k: &String| -> Result<Option<String>> { Ok(s.read().unwrap().get(k).cloned()) }
         };
 
         let setter = {
@@ -496,8 +515,16 @@ mod tests {
             }
         };
 
-        let cache = LayerCache::new("test", L1Config { capacity: 10, ttl_secs: 60 }, None, "test")
-            .with_l3(getter, setter);
+        let cache = LayerCache::new(
+            "test",
+            L1Config {
+                capacity: 10,
+                ttl_secs: 60,
+            },
+            None,
+            "test",
+        )
+        .with_l3(getter, setter);
 
         let result = cache.get(&"nonexistent".to_string()).await.unwrap();
         assert!(result.is_none());
@@ -512,13 +539,24 @@ mod tests {
 
     #[tokio::test]
     async fn test_l1_stats() {
-        let cache = LayerCache::new("test", L1Config { capacity: 50, ttl_secs: 60 }, None, "test");
+        let cache = LayerCache::new(
+            "test",
+            L1Config {
+                capacity: 50,
+                ttl_secs: 60,
+            },
+            None,
+            "test",
+        );
         let stats = cache.l1_stats().await;
         assert_eq!(stats.len, 0);
         assert_eq!(stats.capacity, 50);
 
         for i in 0..5 {
-            cache.put(format!("k{}", i), format!("v{}", i)).await.unwrap();
+            cache
+                .put(format!("k{}", i), format!("v{}", i))
+                .await
+                .unwrap();
         }
         let stats = cache.l1_stats().await;
         assert_eq!(stats.len, 5);
@@ -529,8 +567,12 @@ mod tests {
     #[test]
     fn test_cache_stats_total_hits() {
         let stats = CacheStats {
-            l1_hits: 10, l2_hits: 5, l3_hits: 2,
-            l1_misses: 1, l2_misses: 0, l3_misses: 0,
+            l1_hits: 10,
+            l2_hits: 5,
+            l3_hits: 2,
+            l1_misses: 1,
+            l2_misses: 0,
+            l3_misses: 0,
         };
         assert_eq!(stats.total_hits(), 17);
     }
@@ -538,8 +580,12 @@ mod tests {
     #[test]
     fn test_cache_stats_total_misses() {
         let stats = CacheStats {
-            l1_hits: 0, l2_hits: 0, l3_hits: 0,
-            l1_misses: 5, l2_misses: 3, l3_misses: 1,
+            l1_hits: 0,
+            l2_hits: 0,
+            l3_hits: 0,
+            l1_misses: 5,
+            l2_misses: 3,
+            l3_misses: 1,
         };
         assert_eq!(stats.total_misses(), 9);
     }
@@ -547,8 +593,12 @@ mod tests {
     #[test]
     fn test_cache_stats_hit_rate_normal() {
         let stats = CacheStats {
-            l1_hits: 80, l2_hits: 10, l3_hits: 10,
-            l1_misses: 50, l2_misses: 20, l3_misses: 30,
+            l1_hits: 80,
+            l2_hits: 10,
+            l3_hits: 10,
+            l1_misses: 50,
+            l2_misses: 20,
+            l3_misses: 30,
         };
         // total = 100 hits + 100 misses = 200
         assert!((stats.hit_rate() - 0.5).abs() < 0.001);
@@ -563,8 +613,12 @@ mod tests {
     #[test]
     fn test_cache_stats_hit_rate_perfect() {
         let stats = CacheStats {
-            l1_hits: 100, l2_hits: 0, l3_hits: 0,
-            l1_misses: 0, l2_misses: 0, l3_misses: 0,
+            l1_hits: 100,
+            l2_hits: 0,
+            l3_hits: 0,
+            l1_misses: 0,
+            l2_misses: 0,
+            l3_misses: 0,
         };
         assert_eq!(stats.hit_rate(), 1.0);
     }
@@ -572,8 +626,12 @@ mod tests {
     #[test]
     fn test_cache_stats_hit_rate_zero_percent() {
         let stats = CacheStats {
-            l1_hits: 0, l2_hits: 0, l3_hits: 0,
-            l1_misses: 100, l2_misses: 0, l3_misses: 0,
+            l1_hits: 0,
+            l2_hits: 0,
+            l3_hits: 0,
+            l1_misses: 100,
+            l2_misses: 0,
+            l3_misses: 0,
         };
         assert_eq!(stats.hit_rate(), 0.0);
     }

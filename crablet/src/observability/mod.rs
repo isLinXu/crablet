@@ -8,20 +8,24 @@
 //! - Execution replay and forking
 //! - Performance metrics and visualization
 
-pub mod tracer;
 pub mod breakpoints;
-pub mod replay;
-pub mod metrics;
 pub mod events;
+pub mod metrics;
+pub mod replay;
 pub mod storage;
+pub mod tracer;
 
-pub use tracer::{AgentTracer, AgentSpan, TraceSession, TraceFilter, ThoughtMetadata, LoopType, LoopResolution};
-pub use breakpoints::{BreakpointManager, Breakpoint, BreakpointCondition, BreakpointAction, PauseReason};
-pub use replay::{ExecutionReplay, ExecutionRecording, ReplayPoint, RecordingMetadata};
-pub use metrics::{ExecutionMetrics, PerformanceStats, CostTracker, StepMetrics, TokenUsage};
-pub use events::{ObservabilityEvent, TraceEvent, EventPublisher};
-pub use storage::{TraceStorage, InMemoryStorage, PersistentStorage};
+pub use breakpoints::{
+    Breakpoint, BreakpointAction, BreakpointCondition, BreakpointManager, PauseReason,
+};
+pub use events::{EventPublisher, ObservabilityEvent, TraceEvent};
+pub use metrics::{CostTracker, ExecutionMetrics, PerformanceStats, StepMetrics, TokenUsage};
+pub use replay::{ExecutionRecording, ExecutionReplay, RecordingMetadata, ReplayPoint};
+pub use storage::{InMemoryStorage, PersistentStorage, TraceStorage};
 pub use tracer::SessionStatus;
+pub use tracer::{
+    AgentSpan, AgentTracer, LoopResolution, LoopType, ThoughtMetadata, TraceFilter, TraceSession,
+};
 
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -37,7 +41,7 @@ pub struct ObservabilityManager {
 impl ObservabilityManager {
     pub fn new(storage: Arc<dyn TraceStorage>) -> Self {
         let event_publisher = Arc::new(EventPublisher::new());
-        
+
         Self {
             tracer: Arc::new(RwLock::new(AgentTracer::new(event_publisher.clone()))),
             breakpoint_manager: Arc::new(RwLock::new(BreakpointManager::new())),
@@ -49,21 +53,22 @@ impl ObservabilityManager {
     /// Start a new trace session
     pub async fn start_session(&self, execution_id: String, workflow_id: String) -> TraceSession {
         let session = TraceSession::new(execution_id.clone(), workflow_id.clone());
-        
+
         // Store session
         self.storage.store_session(&session).await.ok();
-        
+
         // Initialize tracer
         let mut tracer = self.tracer.write().await;
         tracer.start_session(session.clone());
-        
+
         // Publish event
-        self.event_publisher.publish(ObservabilityEvent::SessionStarted {
-            execution_id,
-            workflow_id,
-            timestamp: current_timestamp(),
-        });
-        
+        self.event_publisher
+            .publish(ObservabilityEvent::SessionStarted {
+                execution_id,
+                workflow_id,
+                timestamp: current_timestamp(),
+            });
+
         session
     }
 
@@ -86,8 +91,8 @@ impl ObservabilityManager {
 fn current_timestamp() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_millis() as u64
+        .map(|duration| duration.as_millis() as u64)
+        .unwrap_or(0)
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

@@ -1,5 +1,7 @@
 use super::executor::NodeExecutorRegistry;
-use super::types::{ExecutionEvent, ExecuteWorkflowRequest, NodeExecution, WorkflowExecution, next_id, now_rfc3339};
+use super::types::{
+    next_id, now_rfc3339, ExecuteWorkflowRequest, ExecutionEvent, NodeExecution, WorkflowExecution,
+};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -19,7 +21,11 @@ impl WorkflowEngine {
         }
     }
 
-    pub async fn execute(&self, workflow_id: &str, req: ExecuteWorkflowRequest) -> WorkflowExecution {
+    pub async fn execute(
+        &self,
+        workflow_id: &str,
+        req: ExecuteWorkflowRequest,
+    ) -> WorkflowExecution {
         let id = next_id("exec");
         let started = now_rfc3339();
         let mut outputs: HashMap<String, Value> = HashMap::new();
@@ -74,7 +80,11 @@ impl WorkflowEngine {
         false
     }
 
-    pub async fn stream_events(&self, workflow_id: &str, req: ExecuteWorkflowRequest) -> Vec<ExecutionEvent> {
+    pub async fn stream_events(
+        &self,
+        workflow_id: &str,
+        req: ExecuteWorkflowRequest,
+    ) -> Vec<ExecutionEvent> {
         let execution = self.execute(workflow_id, req).await;
         vec![
             ExecutionEvent {

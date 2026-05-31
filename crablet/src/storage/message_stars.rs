@@ -4,10 +4,10 @@
 //! - Hot: Recently starred messages in Redis (fast access)
 //! - Cold: All starred messages in SQLite (persistent)
 
-use std::sync::Arc;
-use sqlx::{SqlitePool, Row};
-use serde::{Deserialize, Serialize};
 use chrono::Utc;
+use serde::{Deserialize, Serialize};
+use sqlx::{Row, SqlitePool};
+use std::sync::Arc;
 
 use super::redis_client::RedisClient;
 
@@ -43,7 +43,11 @@ impl MessageStarsStore {
     }
 
     /// Star a message
-    pub async fn star_message(&self, session_id: &str, message_id: &str) -> anyhow::Result<Option<MessageStar>> {
+    pub async fn star_message(
+        &self,
+        session_id: &str,
+        message_id: &str,
+    ) -> anyhow::Result<Option<MessageStar>> {
         let id = uuid::Uuid::new_v4().to_string();
         let now = Utc::now().timestamp();
 
@@ -56,7 +60,7 @@ impl MessageStarsStore {
         // Save to SQLite
         sqlx::query(
             "INSERT INTO message_stars (id, session_id, message_id, created_at)
-             VALUES (?, ?, ?, ?)"
+             VALUES (?, ?, ?, ?)",
         )
         .bind(&id)
         .bind(session_id)
@@ -88,13 +92,12 @@ impl MessageStarsStore {
     /// Unstar a message
     pub async fn unstar_message(&self, session_id: &str, message_id: &str) -> anyhow::Result<bool> {
         // Delete from SQLite
-        let result = sqlx::query(
-            "DELETE FROM message_stars WHERE session_id = ? AND message_id = ?"
-        )
-        .bind(session_id)
-        .bind(message_id)
-        .execute(&self.sqlite_pool)
-        .await?;
+        let result =
+            sqlx::query("DELETE FROM message_stars WHERE session_id = ? AND message_id = ?")
+                .bind(session_id)
+                .bind(message_id)
+                .execute(&self.sqlite_pool)
+                .await?;
 
         // Delete from Redis cache
         if let Some(redis) = &self.redis {
@@ -106,7 +109,11 @@ impl MessageStarsStore {
     }
 
     /// Get a specific star
-    pub async fn get_star(&self, session_id: &str, message_id: &str) -> anyhow::Result<Option<MessageStar>> {
+    pub async fn get_star(
+        &self,
+        session_id: &str,
+        message_id: &str,
+    ) -> anyhow::Result<Option<MessageStar>> {
         // Try Redis first
         if let Some(redis) = &self.redis {
             let key = format!("stars:{}:{}", session_id, message_id);
@@ -147,12 +154,15 @@ impl MessageStarsStore {
         .fetch_all(&self.sqlite_pool)
         .await?;
 
-        Ok(rows.iter().map(|row| MessageStar {
-            id: row.get("id"),
-            session_id: row.get("session_id"),
-            message_id: row.get("message_id"),
-            created_at: row.get("created_at"),
-        }).collect())
+        Ok(rows
+            .iter()
+            .map(|row| MessageStar {
+                id: row.get("id"),
+                session_id: row.get("session_id"),
+                message_id: row.get("message_id"),
+                created_at: row.get("created_at"),
+            })
+            .collect())
     }
 
     /// Check if a message is starred
@@ -163,12 +173,10 @@ impl MessageStarsStore {
 
     /// Get star count for a session
     pub async fn get_star_count(&self, session_id: &str) -> anyhow::Result<u32> {
-        let row = sqlx::query(
-            "SELECT COUNT(*) as count FROM message_stars WHERE session_id = ?"
-        )
-        .bind(session_id)
-        .fetch_one(&self.sqlite_pool)
-        .await?;
+        let row = sqlx::query("SELECT COUNT(*) as count FROM message_stars WHERE session_id = ?")
+            .bind(session_id)
+            .fetch_one(&self.sqlite_pool)
+            .await?;
 
         Ok(row.get::<i64, _>("count") as u32)
     }
@@ -183,14 +191,14 @@ pub async fn init_message_stars_table(pool: &SqlitePool) -> anyhow::Result<()> {
             message_id TEXT NOT NULL,
             created_at INTEGER NOT NULL,
             UNIQUE(session_id, message_id)
-        )"
+        )",
     )
     .execute(pool)
     .await?;
 
     // Create index for faster lookups
     sqlx::query(
-        "CREATE INDEX IF NOT EXISTS idx_message_stars_session ON message_stars(session_id)"
+        "CREATE INDEX IF NOT EXISTS idx_message_stars_session ON message_stars(session_id)",
     )
     .execute(pool)
     .await?;

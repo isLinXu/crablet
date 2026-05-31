@@ -3,17 +3,17 @@
 //! Provides cross-platform desktop automation for mouse, keyboard, clipboard, and screen operations.
 //! Every operation passes through the RpaSafetyLayer for security validation.
 
+use async_trait::async_trait;
+use serde::de::{self, Visitor};
+use serde::{Deserialize, Serialize};
+use serde::{Deserializer, Serializer};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::Duration;
-use async_trait::async_trait;
-use serde::{Deserialize, Serialize};
-use serde::de::{self, Visitor};
-use serde::{Deserializer, Serializer};
 use tracing::{debug, info, warn};
 
-use crate::rpa::{RpaError, RpaResult};
 use crate::rpa::safety::RpaSafetyLayer;
+use crate::rpa::{RpaError, RpaResult};
 
 /// Desktop automation engine
 pub struct DesktopAutomation {
@@ -32,8 +32,9 @@ impl DesktopAutomation {
     pub fn with_safety(safety: RpaSafetyLayer) -> RpaResult<Self> {
         #[cfg(feature = "auto-working")]
         {
-            let enigo = enigo::Enigo::new(&enigo::Settings::default())
-                .map_err(|e| RpaError::DesktopError(format!("Failed to initialize enigo: {}", e)))?;
+            let enigo = enigo::Enigo::new(&enigo::Settings::default()).map_err(|e| {
+                RpaError::DesktopError(format!("Failed to initialize enigo: {}", e))
+            })?;
 
             Ok(Self { enigo, safety })
         }
@@ -50,7 +51,10 @@ impl DesktopAutomation {
     }
 
     /// Execute a desktop workflow with safety checks
-    pub async fn execute_workflow(&mut self, workflow: &DesktopWorkflow) -> RpaResult<WorkflowExecutionResult> {
+    pub async fn execute_workflow(
+        &mut self,
+        workflow: &DesktopWorkflow,
+    ) -> RpaResult<WorkflowExecutionResult> {
         info!("Starting desktop workflow: {}", workflow.name);
 
         let start = std::time::Instant::now();
@@ -61,13 +65,18 @@ impl DesktopAutomation {
             debug!("Executing step {}: {:?}", i + 1, step);
 
             // Safety check before every step
-            let decision = self.safety.check_step(step, None, Some(&workflow.name)).await;
+            let decision = self
+                .safety
+                .check_step(step, None, Some(&workflow.name))
+                .await;
             match decision {
                 crate::rpa::safety::RpaSafetyDecision::Allow => {}
                 crate::rpa::safety::RpaSafetyDecision::Block(reason) => {
                     warn!("Step {} blocked by safety layer: {}", i + 1, reason);
                     return Err(RpaError::DesktopError(format!(
-                        "Step {} blocked: {}", i + 1, reason
+                        "Step {} blocked: {}",
+                        i + 1,
+                        reason
                     )));
                 }
                 crate::rpa::safety::RpaSafetyDecision::RequireConfirmation(reason) => {
@@ -87,7 +96,8 @@ impl DesktopAutomation {
                     #[cfg(feature = "auto-working")]
                     {
                         use enigo::Mouse;
-                        self.enigo.move_mouse(*x, *y, enigo::Coordinate::Abs)
+                        self.enigo
+                            .move_mouse(*x, *y, enigo::Coordinate::Abs)
                             .map_err(|e| RpaError::DesktopError(e.to_string()))?;
                     }
                 }
@@ -96,36 +106,44 @@ impl DesktopAutomation {
 
                     #[cfg(feature = "auto-working")]
                     {
-                        use enigo::{Mouse, Button};
+                        use enigo::{Button, Mouse};
                         let btn = match button {
                             MouseButton::Left => Button::Left,
                             MouseButton::Right => Button::Right,
                             MouseButton::Middle => Button::Middle,
                         };
 
-                        self.enigo.button(btn, enigo::Direction::Click)
+                        self.enigo
+                            .button(btn, enigo::Direction::Click)
                             .map_err(|e| RpaError::DesktopError(e.to_string()))?;
                     }
                 }
                 DesktopStep::MouseDrag { from, to } => {
-                    debug!("Dragging from ({}, {}) to ({}, {})", from.x, from.y, to.x, to.y);
+                    debug!(
+                        "Dragging from ({}, {}) to ({}, {})",
+                        from.x, from.y, to.x, to.y
+                    );
 
                     #[cfg(feature = "auto-working")]
                     {
                         use enigo::Mouse;
 
-                        self.enigo.move_mouse(from.x, from.y, enigo::Coordinate::Abs)
+                        self.enigo
+                            .move_mouse(from.x, from.y, enigo::Coordinate::Abs)
                             .map_err(|e| RpaError::DesktopError(e.to_string()))?;
 
-                        self.enigo.button(enigo::Button::Left, enigo::Direction::Press)
+                        self.enigo
+                            .button(enigo::Button::Left, enigo::Direction::Press)
                             .map_err(|e| RpaError::DesktopError(e.to_string()))?;
 
                         tokio::time::sleep(Duration::from_millis(50)).await;
 
-                        self.enigo.move_mouse(to.x, to.y, enigo::Coordinate::Abs)
+                        self.enigo
+                            .move_mouse(to.x, to.y, enigo::Coordinate::Abs)
                             .map_err(|e| RpaError::DesktopError(e.to_string()))?;
 
-                        self.enigo.button(enigo::Button::Left, enigo::Direction::Release)
+                        self.enigo
+                            .button(enigo::Button::Left, enigo::Direction::Release)
                             .map_err(|e| RpaError::DesktopError(e.to_string()))?;
                     }
                 }
@@ -136,7 +154,8 @@ impl DesktopAutomation {
                     #[cfg(feature = "auto-working")]
                     {
                         use enigo::Keyboard;
-                        self.enigo.text(&resolved_text)
+                        self.enigo
+                            .text(&resolved_text)
                             .map_err(|e| RpaError::DesktopError(e.to_string()))?;
                     }
                 }
@@ -149,7 +168,8 @@ impl DesktopAutomation {
 
                         for key in keys {
                             let enigo_key = Self::convert_key(key);
-                            self.enigo.key(enigo_key, enigo::Direction::Press)
+                            self.enigo
+                                .key(enigo_key, enigo::Direction::Press)
                                 .map_err(|e| RpaError::DesktopError(e.to_string()))?;
                         }
 
@@ -157,14 +177,18 @@ impl DesktopAutomation {
 
                         for key in keys.iter().rev() {
                             let enigo_key = Self::convert_key(key);
-                            self.enigo.key(enigo_key, enigo::Direction::Release)
+                            self.enigo
+                                .key(enigo_key, enigo::Direction::Release)
                                 .map_err(|e| RpaError::DesktopError(e.to_string()))?;
                         }
                     }
                 }
                 DesktopStep::Screenshot { region, path } => {
                     let resolved_path = self.resolve_variables(path, &variables);
-                    debug!("Taking screenshot: {} (region: {:?})", resolved_path, region);
+                    debug!(
+                        "Taking screenshot: {} (region: {:?})",
+                        resolved_path, region
+                    );
 
                     match Self::capture_screenshot(&resolved_path, *region).await {
                         Ok(saved_path) => {
@@ -211,24 +235,34 @@ impl DesktopAutomation {
                     }
                 }
                 DesktopStep::FindAndClick { image, confidence } => {
-                    debug!("Finding image '{}' and clicking (confidence: {})", image, confidence);
+                    debug!(
+                        "Finding image '{}' and clicking (confidence: {})",
+                        image, confidence
+                    );
 
                     match Self::find_and_click(image, *confidence).await {
                         Ok((x, y, actual_confidence)) => {
-                            info!("Found image '{}' at ({}, {}) with confidence {}",
-                                image, x, y, actual_confidence);
+                            info!(
+                                "Found image '{}' at ({}, {}) with confidence {}",
+                                image, x, y, actual_confidence
+                            );
                             variables.insert("click_x".to_string(), x.to_string());
                             variables.insert("click_y".to_string(), y.to_string());
-                            variables.insert("match_confidence".to_string(), actual_confidence.to_string());
+                            variables.insert(
+                                "match_confidence".to_string(),
+                                actual_confidence.to_string(),
+                            );
 
                             // Perform the actual click
                             #[cfg(feature = "auto-working")]
                             {
-                                use enigo::{Mouse, Button};
-                                self.enigo.move_mouse(x, y, enigo::Coordinate::Abs)
+                                use enigo::{Button, Mouse};
+                                self.enigo
+                                    .move_mouse(x, y, enigo::Coordinate::Abs)
                                     .map_err(|e| RpaError::DesktopError(e.to_string()))?;
                                 tokio::time::sleep(Duration::from_millis(100)).await;
-                                self.enigo.button(Button::Left, enigo::Direction::Click)
+                                self.enigo
+                                    .button(Button::Left, enigo::Direction::Click)
                                     .map_err(|e| RpaError::DesktopError(e.to_string()))?;
                             }
                         }
@@ -268,28 +302,28 @@ impl DesktopAutomation {
                 RpaError::DesktopError(format!("Failed to enumerate screens: {}", e))
             })?;
 
-            let primary = screen.first().ok_or_else(|| {
-                RpaError::DesktopError("No screen found".to_string())
-            })?;
+            let primary = screen
+                .first()
+                .ok_or_else(|| RpaError::DesktopError("No screen found".to_string()))?;
 
             let image = if let Some(r) = region {
                 primary.capture_area(r.x, r.y, r.width, r.height)
             } else {
                 primary.capture()
-            }.map_err(|e| {
-                RpaError::DesktopError(format!("Failed to capture screenshot: {}", e))
-            })?;
+            }
+            .map_err(|e| RpaError::DesktopError(format!("Failed to capture screenshot: {}", e)))?;
 
             // Ensure parent directory exists
             let path_buf = PathBuf::from(path);
             if let Some(parent) = path_buf.parent() {
-                std::fs::create_dir_all(parent)
-                    .map_err(|e| RpaError::DesktopError(format!("Failed to create directory: {}", e)))?;
+                std::fs::create_dir_all(parent).map_err(|e| {
+                    RpaError::DesktopError(format!("Failed to create directory: {}", e))
+                })?;
             }
 
-            image.save(path).map_err(|e| {
-                RpaError::DesktopError(format!("Failed to save screenshot: {}", e))
-            })?;
+            image
+                .save(path)
+                .map_err(|e| RpaError::DesktopError(format!("Failed to save screenshot: {}", e)))?;
 
             Ok(path.to_string())
         }
@@ -303,14 +337,14 @@ impl DesktopAutomation {
             }
             // Write a minimal valid PNG (1x1 transparent pixel)
             let minimal_png: &[u8] = &[
-                0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D,
-                0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
-                0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4, 0x89, 0x00, 0x00, 0x00,
-                0x0A, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x62, 0x00, 0x00, 0x00, 0x02,
-                0x00, 0x01, 0xE2, 0x21, 0xBC, 0x33,
+                0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48,
+                0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00,
+                0x00, 0x1F, 0x15, 0xC4, 0x89, 0x00, 0x00, 0x00, 0x0A, 0x49, 0x44, 0x41, 0x54, 0x78,
+                0x9C, 0x62, 0x00, 0x00, 0x00, 0x02, 0x00, 0x01, 0xE2, 0x21, 0xBC, 0x33,
             ];
-            std::fs::write(path, minimal_png)
-                .map_err(|e| RpaError::DesktopError(format!("Failed to write placeholder: {}", e)))?;
+            std::fs::write(path, minimal_png).map_err(|e| {
+                RpaError::DesktopError(format!("Failed to write placeholder: {}", e))
+            })?;
             Ok(path.to_string())
         }
     }
@@ -319,10 +353,12 @@ impl DesktopAutomation {
     pub fn set_clipboard(content: &str) -> RpaResult<()> {
         #[cfg(feature = "auto-working")]
         {
-            let mut clipboard = arboard::Clipboard::new()
-                .map_err(|e| RpaError::DesktopError(format!("Failed to access clipboard: {}", e)))?;
+            let mut clipboard = arboard::Clipboard::new().map_err(|e| {
+                RpaError::DesktopError(format!("Failed to access clipboard: {}", e))
+            })?;
 
-            clipboard.set_text(content)
+            clipboard
+                .set_text(content)
                 .map_err(|e| RpaError::DesktopError(format!("Failed to set clipboard: {}", e)))?;
             Ok(())
         }
@@ -338,10 +374,12 @@ impl DesktopAutomation {
     pub fn get_clipboard() -> RpaResult<String> {
         #[cfg(feature = "auto-working")]
         {
-            let mut clipboard = arboard::Clipboard::new()
-                .map_err(|e| RpaError::DesktopError(format!("Failed to access clipboard: {}", e)))?;
+            let mut clipboard = arboard::Clipboard::new().map_err(|e| {
+                RpaError::DesktopError(format!("Failed to access clipboard: {}", e))
+            })?;
 
-            clipboard.get_text()
+            clipboard
+                .get_text()
                 .map_err(|e| RpaError::DesktopError(format!("Failed to get clipboard: {}", e)))
         }
 
@@ -353,9 +391,13 @@ impl DesktopAutomation {
 
     /// Find an image on screen and click on it
     /// Returns (x, y, actual_confidence)
-    pub async fn find_and_click(image_path: &str, min_confidence: f32) -> RpaResult<(i32, i32, f32)> {
+    pub async fn find_and_click(
+        image_path: &str,
+        min_confidence: f32,
+    ) -> RpaResult<(i32, i32, f32)> {
         // Step 1: Take a full screenshot
-        let screenshot_path = format!("/tmp/crablet_rpa_search_{}.png",
+        let screenshot_path = format!(
+            "/tmp/crablet_rpa_search_{}.png",
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
@@ -367,8 +409,9 @@ impl DesktopAutomation {
         let screenshot_img = image::open(&screenshot_path)
             .map_err(|e| RpaError::DesktopError(format!("Failed to load screenshot: {}", e)))?;
 
-        let template_img = image::open(image_path)
-            .map_err(|e| RpaError::DesktopError(format!("Failed to load template '{}': {}", image_path, e)))?;
+        let template_img = image::open(image_path).map_err(|e| {
+            RpaError::DesktopError(format!("Failed to load template '{}': {}", image_path, e))
+        })?;
 
         // Step 3: Template matching using normalized cross-correlation (NCC)
         let screenshot_gray = screenshot_img.to_luma8();
@@ -390,7 +433,11 @@ impl DesktopAutomation {
         let mut best_score: f32 = -1.0;
 
         // Sample step for performance (can be 1 for pixel-perfect matching)
-        let step = if (sw - tw) > 2000 || (sh - th) > 2000 { 4 } else { 2 };
+        let step = if (sw - tw) > 2000 || (sh - th) > 2000 {
+            4
+        } else {
+            2
+        };
 
         for y in 0..=(sh - th).saturating_sub(step as u32) {
             let yi = y as usize;
@@ -399,8 +446,10 @@ impl DesktopAutomation {
                 let score = compute_ncc(
                     &screenshot_gray,
                     &template_gray,
-                    xi, yi,
-                    tw as usize, th as usize,
+                    xi,
+                    yi,
+                    tw as usize,
+                    th as usize,
                 );
 
                 if score > best_score {
@@ -415,7 +464,11 @@ impl DesktopAutomation {
         let _ = std::fs::remove_file(&screenshot_path);
 
         if best_score >= min_confidence {
-            Ok((best_x + (tw / 2) as i32, best_y + (th / 2) as i32, best_score))
+            Ok((
+                best_x + (tw / 2) as i32,
+                best_y + (th / 2) as i32,
+                best_score,
+            ))
         } else {
             Err(RpaError::DesktopError(format!(
                 "Image '{}' not found on screen. Best match: {} at ({}, {}), required: {}",
@@ -517,7 +570,11 @@ fn compute_ncc(
     // Handle constant patches (zero variance) deterministically.
     // If both patches are constant and have same mean, treat as perfect match.
     if src_var < 1e-12 && tpl_var < 1e-12 {
-        return if (src_mean - tpl_mean).abs() < 1e-9 { 1.0 } else { 0.0 };
+        return if (src_mean - tpl_mean).abs() < 1e-9 {
+            1.0
+        } else {
+            0.0
+        };
     }
 
     let denom = (src_var.sqrt() * tpl_var.sqrt()).max(0.001);
@@ -548,7 +605,10 @@ pub enum DesktopStep {
     /// Press hotkey combination
     KeyboardHotkey { keys: Vec<Key> },
     /// Take screenshot
-    Screenshot { region: Option<Region>, path: String },
+    Screenshot {
+        region: Option<Region>,
+        path: String,
+    },
     /// Wait for specified seconds
     Wait { seconds: u64 },
     /// Set clipboard content
@@ -738,8 +798,12 @@ mod tests {
             name: "Test Workflow".to_string(),
             steps: vec![
                 DesktopStep::MouseMove { x: 100, y: 200 },
-                DesktopStep::MouseClick { button: MouseButton::Left },
-                DesktopStep::KeyboardType { text: "Hello".to_string() },
+                DesktopStep::MouseClick {
+                    button: MouseButton::Left,
+                },
+                DesktopStep::KeyboardType {
+                    text: "Hello".to_string(),
+                },
             ],
             variables: HashMap::new(),
         };
@@ -763,22 +827,35 @@ mod tests {
         // Ensure all step types round-trip through YAML
         let steps = vec![
             DesktopStep::MouseMove { x: 50, y: 50 },
-            DesktopStep::MouseClick { button: MouseButton::Right },
+            DesktopStep::MouseClick {
+                button: MouseButton::Right,
+            },
             DesktopStep::MouseDrag {
                 from: Point { x: 0, y: 0 },
                 to: Point { x: 100, y: 100 },
             },
-            DesktopStep::KeyboardType { text: "test".to_string() },
+            DesktopStep::KeyboardType {
+                text: "test".to_string(),
+            },
             DesktopStep::KeyboardHotkey {
                 keys: vec![Key::Control, Key::Char('v')],
             },
             DesktopStep::Screenshot {
-                region: Some(Region { x: 0, y: 0, width: 800, height: 600 }),
+                region: Some(Region {
+                    x: 0,
+                    y: 0,
+                    width: 800,
+                    height: 600,
+                }),
                 path: "/tmp/test.png".to_string(),
             },
             DesktopStep::Wait { seconds: 1 },
-            DesktopStep::ClipboardSet { content: "hello".to_string() },
-            DesktopStep::ClipboardGet { variable: "clip".to_string() },
+            DesktopStep::ClipboardSet {
+                content: "hello".to_string(),
+            },
+            DesktopStep::ClipboardGet {
+                variable: "clip".to_string(),
+            },
             DesktopStep::FindAndClick {
                 image: "button.png".to_string(),
                 confidence: 0.8,
@@ -800,7 +877,12 @@ mod tests {
 
     #[test]
     fn test_region_serialization() {
-        let region = Region { x: 10, y: 20, width: 800, height: 600 };
+        let region = Region {
+            x: 10,
+            y: 20,
+            width: 800,
+            height: 600,
+        };
         let yaml = serde_yaml::to_string(&region).unwrap();
         assert!(yaml.contains("x: 10"));
         assert!(yaml.contains("y: 20"));
@@ -813,7 +895,9 @@ mod tests {
         let variables: HashMap<String, String> = [
             ("name".to_string(), "world".to_string()),
             ("count".to_string(), "42".to_string()),
-        ].into_iter().collect();
+        ]
+        .into_iter()
+        .collect();
 
         let text = "Hello {{name}}, count={{count}}!";
         let engine = DesktopAutomation::new().unwrap();
@@ -828,7 +912,11 @@ mod tests {
         let img = image::GrayImage::from_raw(10, 10, img_data).unwrap();
 
         let score = compute_ncc(&img, &img, 0, 0, 10, 10);
-        assert!((score - 1.0).abs() < 0.001, "NCC of identical regions should be ~1.0, got {}", score);
+        assert!(
+            (score - 1.0).abs() < 0.001,
+            "NCC of identical regions should be ~1.0, got {}",
+            score
+        );
     }
 
     #[test]
@@ -840,7 +928,11 @@ mod tests {
         let bright = image::GrayImage::from_raw(10, 10, bright_data).unwrap();
 
         let score = compute_ncc(&dark, &bright, 0, 0, 10, 10);
-        assert!(score.abs() < 0.1, "NCC of black vs white should be near 0, got {}", score);
+        assert!(
+            score.abs() < 0.1,
+            "NCC of black vs white should be near 0, got {}",
+            score
+        );
     }
 
     #[tokio::test]

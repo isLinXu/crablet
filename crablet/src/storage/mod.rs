@@ -11,22 +11,22 @@
 //!                     ←←←←←←←←←←←←←←←←←←←←←
 //! ```
 
-pub mod redis_client;
-pub mod session_context;
 pub mod canvas_state;
+pub mod layer_cache;
 pub mod message_stars;
-pub mod layer_cache;  // P0: Multi-layer cache (L1 Memory + L2 Redis + L3 SQLite)
+pub mod redis_client;
+pub mod session_context; // P0: Multi-layer cache (L1 Memory + L2 Redis + L3 SQLite)
 
-use std::sync::Arc;
 use sqlx::sqlite::SqlitePool;
+use std::sync::Arc;
 
-use redis_client::RedisClient;
-use session_context::SessionContextStore;
-use canvas_state::CanvasStateStore;
-use message_stars::MessageStarsStore;
-use session_context::init_session_tables;
 use canvas_state::init_canvas_tables;
+use canvas_state::CanvasStateStore;
 use message_stars::init_message_stars_table;
+use message_stars::MessageStarsStore;
+use redis_client::RedisClient;
+use session_context::init_session_tables;
+use session_context::SessionContextStore;
 
 /// Hybrid storage configuration
 #[derive(Clone)]
@@ -52,18 +52,19 @@ impl HybridStorage {
 
         // Initialize Redis client (optional, graceful degradation)
         let redis = match &config.redis_url {
-            Some(url) => {
-                match RedisClient::new(url).await {
-                    Ok(client) => {
-                        tracing::info!("Redis connected successfully");
-                        Some(Arc::new(client))
-                    }
-                    Err(e) => {
-                        tracing::warn!("Redis connection failed, operating in SQLite-only mode: {}", e);
-                        None
-                    }
+            Some(url) => match RedisClient::new(url).await {
+                Ok(client) => {
+                    tracing::info!("Redis connected successfully");
+                    Some(Arc::new(client))
                 }
-            }
+                Err(e) => {
+                    tracing::warn!(
+                        "Redis connection failed, operating in SQLite-only mode: {}",
+                        e
+                    );
+                    None
+                }
+            },
             None => {
                 tracing::info!("Redis not configured, operating in SQLite-only mode");
                 None

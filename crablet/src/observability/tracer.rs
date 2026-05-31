@@ -2,8 +2,8 @@
 //!
 //! Traces and records every step of Agent execution for debugging and visualization.
 
-use super::{ObservabilityEvent, EventPublisher, ExecutionMetrics};
-use serde::{Serialize, Deserialize};
+use super::{EventPublisher, ExecutionMetrics, ObservabilityEvent};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -27,22 +27,31 @@ impl AgentTracer {
     /// Start a new trace session
     pub fn start_session(&mut self, session: TraceSession) {
         let execution_id = session.execution_id.clone();
-        
+
         // Store session
-        self.sessions.try_write().unwrap().insert(execution_id.clone(), session);
-        
+        if let Ok(mut sessions) = self.sessions.try_write() {
+            sessions.insert(execution_id.clone(), session);
+        }
+
         // Initialize span storage
-        self.active_spans.try_write().unwrap().insert(execution_id, Vec::new());
+        if let Ok(mut spans) = self.active_spans.try_write() {
+            spans.insert(execution_id, Vec::new());
+        }
     }
 
     /// Record a thought step
-    pub async fn trace_thought(&self, execution_id: &str, thought: &str, metadata: Option<ThoughtMetadata>) {
+    pub async fn trace_thought(
+        &self,
+        execution_id: &str,
+        thought: &str,
+        metadata: Option<ThoughtMetadata>,
+    ) {
         let span = AgentSpan::Thought {
             content: thought.to_string(),
             timestamp: current_timestamp(),
             metadata,
         };
-        
+
         self.record_span(execution_id, span).await;
     }
 
@@ -60,7 +69,7 @@ impl AgentTracer {
             reasoning,
             timestamp: current_timestamp(),
         };
-        
+
         self.record_span(execution_id, span).await;
     }
 
@@ -78,7 +87,7 @@ impl AgentTracer {
             success,
             timestamp: current_timestamp(),
         };
-        
+
         self.record_span(execution_id, span).await;
     }
 
@@ -96,7 +105,7 @@ impl AgentTracer {
             revised_response,
             timestamp: current_timestamp(),
         };
-        
+
         self.record_span(execution_id, span).await;
     }
 
@@ -116,7 +125,7 @@ impl AgentTracer {
             confidence,
             timestamp: current_timestamp(),
         };
-        
+
         self.record_span(execution_id, span).await;
     }
 
@@ -134,7 +143,7 @@ impl AgentTracer {
             resolution,
             timestamp: current_timestamp(),
         };
-        
+
         self.record_span(execution_id, span).await;
     }
 
@@ -145,7 +154,7 @@ impl AgentTracer {
             recoverable,
             timestamp: current_timestamp(),
         };
-        
+
         self.record_span(execution_id, span).await;
     }
 
@@ -161,12 +170,24 @@ impl AgentTracer {
             .await
             .get(execution_id)
             .map(|spans| {
-                spans.iter().rev().take(n).cloned().collect::<Vec<_>>().into_iter().rev().collect()
+                spans
+                    .iter()
+                    .rev()
+                    .take(n)
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .into_iter()
+                    .rev()
+                    .collect()
             })
     }
 
     /// Filter spans by type
-    pub async fn filter_spans(&self, execution_id: &str, filter: TraceFilter) -> Option<Vec<AgentSpan>> {
+    pub async fn filter_spans(
+        &self,
+        execution_id: &str,
+        filter: TraceFilter,
+    ) -> Option<Vec<AgentSpan>> {
         self.active_spans
             .read()
             .await
@@ -181,15 +202,21 @@ impl AgentTracer {
     }
 
     /// End a trace session
-    pub async fn end_session(&self, execution_id: &str, success: bool, final_output: Option<String>) {
+    pub async fn end_session(
+        &self,
+        execution_id: &str,
+        success: bool,
+        final_output: Option<String>,
+    ) {
         // Publish completion event
-        self.event_publisher.publish(ObservabilityEvent::SessionCompleted {
-            execution_id: execution_id.to_string(),
-            success,
-            final_output,
-            timestamp: current_timestamp(),
-        });
-        
+        self.event_publisher
+            .publish(ObservabilityEvent::SessionCompleted {
+                execution_id: execution_id.to_string(),
+                success,
+                final_output,
+                timestamp: current_timestamp(),
+            });
+
         // Clean up (or archive) spans
         if let Some(spans) = self.active_spans.write().await.remove(execution_id) {
             // Could persist to storage here
@@ -199,14 +226,16 @@ impl AgentTracer {
 
     /// List all sessions
     pub fn list_sessions(&self) -> Vec<TraceSession> {
-        self.sessions.try_read()
+        self.sessions
+            .try_read()
             .map(|sessions| sessions.values().cloned().collect())
             .unwrap_or_default()
     }
 
     /// Get a specific session
     pub fn get_session(&self, execution_id: &str) -> Option<TraceSession> {
-        self.sessions.try_read()
+        self.sessions
+            .try_read()
             .ok()
             .and_then(|sessions| sessions.get(execution_id).cloned())
     }
@@ -241,7 +270,11 @@ impl AgentTracer {
     }
 
     /// Modify session context
-    pub fn modify_session_context(&mut self, _execution_id: &str, _modifications: serde_json::Value) {
+    pub fn modify_session_context(
+        &mut self,
+        _execution_id: &str,
+        _modifications: serde_json::Value,
+    ) {
         // Placeholder for context modification
         // Would need to store context in session
     }
@@ -252,13 +285,14 @@ impl AgentTracer {
         if let Some(spans) = self.active_spans.write().await.get_mut(execution_id) {
             spans.push(span.clone());
         }
-        
+
         // Publish event
-        self.event_publisher.publish(ObservabilityEvent::SpanRecorded {
-            execution_id: execution_id.to_string(),
-            span,
-            timestamp: current_timestamp(),
-        });
+        self.event_publisher
+            .publish(ObservabilityEvent::SpanRecorded {
+                execution_id: execution_id.to_string(),
+                span,
+                timestamp: current_timestamp(),
+            });
     }
 }
 
@@ -272,7 +306,7 @@ pub enum AgentSpan {
         timestamp: u64,
         metadata: Option<ThoughtMetadata>,
     },
-    
+
     /// An action/tool call
     Action {
         tool: String,
@@ -280,7 +314,7 @@ pub enum AgentSpan {
         reasoning: Option<String>,
         timestamp: u64,
     },
-    
+
     /// An observation/result
     Observation {
         result: String,
@@ -288,7 +322,7 @@ pub enum AgentSpan {
         success: bool,
         timestamp: u64,
     },
-    
+
     /// A self-reflection
     Reflection {
         critique: String,
@@ -296,7 +330,7 @@ pub enum AgentSpan {
         revised_response: Option<String>,
         timestamp: u64,
     },
-    
+
     /// A decision point
     Decision {
         choices: Vec<String>,
@@ -305,7 +339,7 @@ pub enum AgentSpan {
         confidence: f64,
         timestamp: u64,
     },
-    
+
     /// Loop detection
     LoopDetected {
         loop_type: LoopType,
@@ -313,7 +347,7 @@ pub enum AgentSpan {
         resolution: LoopResolution,
         timestamp: u64,
     },
-    
+
     /// An error
     Error {
         error: String,
@@ -420,7 +454,7 @@ impl TraceFilter {
                 return false;
             }
         }
-        
+
         // Check time range
         let timestamp = match span {
             AgentSpan::Thought { timestamp, .. } => *timestamp,
@@ -431,24 +465,26 @@ impl TraceFilter {
             AgentSpan::LoopDetected { timestamp, .. } => *timestamp,
             AgentSpan::Error { timestamp, .. } => *timestamp,
         };
-        
+
         if let Some(start) = self.start_time {
             if timestamp < start {
                 return false;
             }
         }
-        
+
         if let Some(end) = self.end_time {
             if timestamp > end {
                 return false;
             }
         }
-        
+
         // Check text content
         if let Some(ref text) = self.contains_text {
             let content = match span {
                 AgentSpan::Thought { content, .. } => content.clone(),
-                AgentSpan::Action { tool, reasoning, .. } => {
+                AgentSpan::Action {
+                    tool, reasoning, ..
+                } => {
                     format!("{} {:?}", tool, reasoning)
                 }
                 AgentSpan::Observation { result, .. } => result.clone(),
@@ -461,7 +497,7 @@ impl TraceFilter {
                 return false;
             }
         }
-        
+
         true
     }
 }
@@ -469,6 +505,6 @@ impl TraceFilter {
 fn current_timestamp() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
+        .unwrap_or_default()
         .as_millis() as u64
 }

@@ -3,14 +3,14 @@
 //! Provides security controls for desktop automation operations.
 //! Every RPA action must pass through this layer before execution.
 
-use std::collections::HashSet;
-use std::sync::Arc;
-use parking_lot::RwLock;
-use tracing::{debug, info, warn};
 use chrono::Utc;
-use governor::{Quota, RateLimiter};
 use governor::clock::DefaultClock;
 use governor::state::{InMemoryState, NotKeyed};
+use governor::{Quota, RateLimiter};
+use parking_lot::RwLock;
+use std::collections::HashSet;
+use std::sync::Arc;
+use tracing::{debug, info, warn};
 
 use crate::rpa::desktop::DesktopStep;
 
@@ -127,7 +127,10 @@ impl RpaSafetyLayer {
 
     /// Create a new safety layer with custom configuration
     pub fn with_config(config: RpaSafetyConfig) -> Self {
-        let quota = Quota::per_minute(std::num::NonZeroU32::new(config.max_actions_per_minute).unwrap());
+        let quota = Quota::per_minute(
+            std::num::NonZeroU32::new(config.max_actions_per_minute)
+                .unwrap_or(std::num::NonZeroU32::MIN),
+        );
         let rate_limiter = Arc::new(RateLimiter::direct(quota));
 
         // Built-in blocked patterns for keyboard input
@@ -139,7 +142,10 @@ impl RpaSafetyLayer {
             r"(?i)mkfs\.",
             r"(?i)dd\s+if=/dev/zero",
             r"(?i)>\s*/dev/sd[a-z]",
-        ].into_iter().filter_map(|p| regex::Regex::new(p).ok()).collect();
+        ]
+        .into_iter()
+        .filter_map(|p| regex::Regex::new(p).ok())
+        .collect();
 
         Self {
             config,
@@ -166,9 +172,16 @@ impl RpaSafetyLayer {
                     "RPA rate limit exceeded (max {} actions/min)",
                     self.config.max_actions_per_minute
                 );
-                self.audit_action("rate_limit_exceeded", &RpaSafetyDecision::Block(
-                    format!("Rate limit exceeded: max {} actions/min", self.config.max_actions_per_minute)
-                ), user_id, session_id, None);
+                self.audit_action(
+                    "rate_limit_exceeded",
+                    &RpaSafetyDecision::Block(format!(
+                        "Rate limit exceeded: max {} actions/min",
+                        self.config.max_actions_per_minute
+                    )),
+                    user_id,
+                    session_id,
+                    None,
+                );
                 return RpaSafetyDecision::Block(format!(
                     "Rate limit: max {} actions per minute. Please wait.",
                     self.config.max_actions_per_minute
@@ -183,8 +196,14 @@ impl RpaSafetyLayer {
             if *count >= self.config.max_consecutive_actions {
                 *count = 0;
                 if self.config.batch_pause_ms > 0 {
-                    debug!("Pausing after {} consecutive actions", self.config.max_consecutive_actions);
-                    tokio::time::sleep(std::time::Duration::from_millis(self.config.batch_pause_ms)).await;
+                    debug!(
+                        "Pausing after {} consecutive actions",
+                        self.config.max_consecutive_actions
+                    );
+                    tokio::time::sleep(std::time::Duration::from_millis(
+                        self.config.batch_pause_ms,
+                    ))
+                    .await;
                 }
             }
         }
@@ -193,9 +212,18 @@ impl RpaSafetyLayer {
         if let DesktopStep::KeyboardType { text } = step {
             for pattern in self.blocked_patterns.iter() {
                 if pattern.is_match(text) {
-                    let reason = format!("Blocked dangerous keyboard input pattern: {}", pattern.as_str());
+                    let reason = format!(
+                        "Blocked dangerous keyboard input pattern: {}",
+                        pattern.as_str()
+                    );
                     warn!("{}", reason);
-                    self.audit_action("blocked_input", &RpaSafetyDecision::Block(reason.clone()), user_id, session_id, None);
+                    self.audit_action(
+                        "blocked_input",
+                        &RpaSafetyDecision::Block(reason.clone()),
+                        user_id,
+                        session_id,
+                        None,
+                    );
                     return RpaSafetyDecision::Block(reason);
                 }
             }
@@ -207,8 +235,17 @@ impl RpaSafetyLayer {
             let key_names: Vec<String> = keys.iter().map(|k| format!("{:?}", k)).collect();
             for key_name in &key_names {
                 if dangerous_keys.contains(key_name.as_str()) {
-                    let reason = format!("Dangerous hotkey combination requires confirmation: {:?}", keys);
-                    self.audit_action("confirm_hotkey", &RpaSafetyDecision::RequireConfirmation(reason.clone()), user_id, session_id, None);
+                    let reason = format!(
+                        "Dangerous hotkey combination requires confirmation: {:?}",
+                        keys
+                    );
+                    self.audit_action(
+                        "confirm_hotkey",
+                        &RpaSafetyDecision::RequireConfirmation(reason.clone()),
+                        user_id,
+                        session_id,
+                        None,
+                    );
                     return RpaSafetyDecision::RequireConfirmation(reason);
                 }
             }
@@ -238,7 +275,7 @@ impl RpaSafetyLayer {
         // 7. If confirmation is globally required, upgrade Allow to RequireConfirmation
         if self.config.confirmation_required {
             RpaSafetyDecision::RequireConfirmation(
-                "Global confirmation required for RPA operations".to_string()
+                "Global confirmation required for RPA operations".to_string(),
             )
         } else {
             RpaSafetyDecision::Allow
@@ -260,8 +297,10 @@ impl RpaSafetyLayer {
         };
 
         let in_whitelist = whitelist.iter().any(|region| {
-            x >= region.x && x <= (region.x + region.width as i32)
-                && y >= region.y && y <= (region.y + region.height as i32)
+            x >= region.x
+                && x <= (region.x + region.width as i32)
+                && y >= region.y
+                && y <= (region.y + region.height as i32)
         });
 
         if in_whitelist {
@@ -310,7 +349,9 @@ impl RpaSafetyLayer {
             action_type: action_type.to_string(),
             decision: format!("{:?}", decision),
             reason: match decision {
-                RpaSafetyDecision::Block(r) | RpaSafetyDecision::RequireConfirmation(r) | RpaSafetyDecision::Warn(r) => Some(r.clone()),
+                RpaSafetyDecision::Block(r)
+                | RpaSafetyDecision::RequireConfirmation(r)
+                | RpaSafetyDecision::Warn(r) => Some(r.clone()),
                 _ => None,
             },
             user_id: user_id.map(String::from),
@@ -395,7 +436,12 @@ mod tests {
 
         assert!(layer.regions().is_empty());
 
-        layer.add_region(ScreenRegion { x: 0, y: 0, width: 800, height: 600 });
+        layer.add_region(ScreenRegion {
+            x: 0,
+            y: 0,
+            width: 800,
+            height: 600,
+        });
         assert_eq!(layer.regions().len(), 1);
 
         layer.clear_regions();

@@ -1,16 +1,16 @@
+use crate::auth::oidc::OidcProvider;
+use crate::auth::{JwtClaims, UserContext};
 use axum::{
+    debug_handler,
     extract::{Query, State},
     response::{IntoResponse, Redirect, Response},
     Json,
-    debug_handler,
 };
 use axum_extra::extract::cookie::{Cookie, CookieJar};
 use chrono::Utc;
 use jsonwebtoken::{encode, EncodingKey, Header};
-use crate::auth::oidc::OidcProvider;
-use crate::auth::{JwtClaims, UserContext};
-use std::sync::Arc;
 use serde::Deserialize;
+use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct AuthState {
@@ -30,7 +30,11 @@ pub async fn login_handler(State(state): State<Arc<AuthState>>) -> Response {
         let auth_url = oidc.get_authorization_url();
         Redirect::temporary(auth_url.as_str()).into_response()
     } else {
-        (axum::http::StatusCode::SERVICE_UNAVAILABLE, "OIDC not configured").into_response()
+        (
+            axum::http::StatusCode::SERVICE_UNAVAILABLE,
+            "OIDC not configured",
+        )
+            .into_response()
     }
 }
 
@@ -75,10 +79,9 @@ pub async fn callback_handler(
                         .clone()
                         .or_else(|| userinfo.name.clone())
                         .or_else(|| {
-                            userinfo
-                                .email
-                                .as_ref()
-                                .and_then(|email| email.split('@').next().map(|value| value.to_string()))
+                            userinfo.email.as_ref().and_then(|email| {
+                                email.split('@').next().map(|value| value.to_string())
+                            })
                         })
                         .unwrap_or_else(|| "user".to_string()),
                     email: userinfo.email.clone(),
@@ -112,15 +115,21 @@ pub async fn callback_handler(
                     .same_site(axum_extra::extract::cookie::SameSite::Lax)
                     .secure(!cfg!(debug_assertions)) // Secure in release mode
                     .build();
-                
+
                 (jar.add(cookie), Redirect::to("/")).into_response()
             }
-            Err(e) => {
-                (axum::http::StatusCode::BAD_REQUEST, format!("Auth failed: {}", e)).into_response()
-            }
+            Err(e) => (
+                axum::http::StatusCode::BAD_REQUEST,
+                format!("Auth failed: {}", e),
+            )
+                .into_response(),
         }
     } else {
-        (axum::http::StatusCode::SERVICE_UNAVAILABLE, "OIDC not configured").into_response()
+        (
+            axum::http::StatusCode::SERVICE_UNAVAILABLE,
+            "OIDC not configured",
+        )
+            .into_response()
     }
 }
 

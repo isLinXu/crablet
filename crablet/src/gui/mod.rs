@@ -210,10 +210,12 @@ impl GuiSystem {
         let mut icons = self.tray_icons.write().await;
         let id = format!("tray_{}", uuid::Uuid::new_v4());
         
-        // TODO: 实现系统托盘创建
-        // - Windows: 使用 windows-rs 创建系统托盘
-        // - macOS: 使用 NSStatusItem
-        // - Linux: 使用 libappindicator
+        // System tray creation is platform-specific:
+        // - Windows: use windows-rs to create system tray via Shell_NotifyIconW
+        // - macOS: use NSStatusItem via objc2-app-kit
+        // - Linux: use libappindicator via ashpd
+        // Currently the icon is stored in memory only; platform integration
+        // will be added when the GUI subsystem is fully implemented.
         
         icons.push(icon);
         Ok(id)
@@ -256,7 +258,12 @@ impl GuiSystem {
         
         #[cfg(target_os = "windows")]
         {
-            // TODO: 使用 windows-rs 实现 toast 通知
+            // Windows toast notification via windows-rs:
+            // Use windows::UI::Notifications::ToastNotificationManager
+            // to create and show toast notifications.
+            // Requires windows crate with "UI_Notifications" feature.
+            // For now, fall back to logging.
+            info!("Windows toast notification: {} - {}", notification.title, notification.body);
         }
         
         Ok(id)

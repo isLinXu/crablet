@@ -1,8 +1,8 @@
-use serde::{Serialize, Deserialize};
-use std::collections::HashMap;
-use chrono::{DateTime, Utc};
 #[allow(unused_imports)]
 use anyhow::Result;
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -19,7 +19,7 @@ pub struct AgentCard {
 pub struct AgentCapabilityDescriptor {
     pub name: String,
     pub description: String,
-    pub inputs: serde_json::Value, // JSON Schema
+    pub inputs: serde_json::Value,  // JSON Schema
     pub outputs: serde_json::Value, // JSON Schema
 }
 
@@ -93,16 +93,24 @@ impl A2AAdapter {
             },
         }
     }
-    
-    pub fn register_capability(&mut self, name: &str, desc: &str, input_schema: serde_json::Value, output_schema: serde_json::Value) {
-        self.agent_card.capabilities.push(AgentCapabilityDescriptor {
-            name: name.to_string(),
-            description: desc.to_string(),
-            inputs: input_schema,
-            outputs: output_schema,
-        });
+
+    pub fn register_capability(
+        &mut self,
+        name: &str,
+        desc: &str,
+        input_schema: serde_json::Value,
+        output_schema: serde_json::Value,
+    ) {
+        self.agent_card
+            .capabilities
+            .push(AgentCapabilityDescriptor {
+                name: name.to_string(),
+                description: desc.to_string(),
+                inputs: input_schema,
+                outputs: output_schema,
+            });
     }
-    
+
     pub async fn create_task(&self, instruction: &str, target_id: &str) -> A2ATask {
         A2ATask {
             id: Uuid::new_v4().to_string(),

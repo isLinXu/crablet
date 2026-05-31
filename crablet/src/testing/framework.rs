@@ -2,12 +2,12 @@
 //!
 //! 提供全面的单元测试、集成测试和性能测试支持
 
+use anyhow::Result;
+use serde::{Deserialize, Serialize};
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use anyhow::Result;
-use serde::{Deserialize, Serialize};
 use tokio::time::timeout;
 
 /// 测试结果
@@ -34,7 +34,8 @@ pub struct TestSuite {
     name: String,
     tests: Vec<TestCase>,
     setup: Option<Box<dyn Fn() -> Pin<Box<dyn Future<Output = Result<()>> + Send>> + Send + Sync>>,
-    teardown: Option<Box<dyn Fn() -> Pin<Box<dyn Future<Output = Result<()>> + Send>> + Send + Sync>>,
+    teardown:
+        Option<Box<dyn Fn() -> Pin<Box<dyn Future<Output = Result<()>> + Send>> + Send + Sync>>,
 }
 
 /// 测试用例
@@ -168,9 +169,15 @@ impl TestSuite {
             let _ = teardown().await;
         }
 
-        let passed_tests = results.iter().filter(|r| r.passed && r.message != Some("Skipped".to_string())).count();
+        let passed_tests = results
+            .iter()
+            .filter(|r| r.passed && r.message != Some("Skipped".to_string()))
+            .count();
         let failed_tests = results.iter().filter(|r| !r.passed).count();
-        let skipped_tests = results.iter().filter(|r| r.message == Some("Skipped".to_string())).count();
+        let skipped_tests = results
+            .iter()
+            .filter(|r| r.message == Some("Skipped".to_string()))
+            .count();
 
         TestSuiteResult {
             suite_name: self.name.clone(),
@@ -203,10 +210,12 @@ pub struct TestSuiteResult {
 impl TestSuiteResult {
     pub fn print_report(&self) {
         println!("\n{:=^60}", format!(" Test Suite: {} ", self.suite_name));
-        println!("Total: {} | Passed: {} | Failed: {} | Skipped: {}",
-            self.total_tests, self.passed_tests, self.failed_tests, self.skipped_tests);
+        println!(
+            "Total: {} | Passed: {} | Failed: {} | Skipped: {}",
+            self.total_tests, self.passed_tests, self.failed_tests, self.skipped_tests
+        );
         println!("Duration: {}ms", self.duration_ms);
-        
+
         if let Some(ref error) = self.error {
             println!("Error: {}", error);
         }
@@ -219,9 +228,9 @@ impl TestSuiteResult {
             } else {
                 "FAIL"
             };
-            
+
             println!("  [{}] {} ({}ms)", status, result.name, result.duration_ms);
-            
+
             if let Some(ref message) = result.message {
                 if !result.passed || message != "Skipped" {
                     println!("       {}", message);
@@ -323,7 +332,11 @@ impl TestBuilder {
             description: description.into(),
             passed,
             expected: "Err".to_string(),
-            actual: if passed { "Err".to_string() } else { "Ok".to_string() },
+            actual: if passed {
+                "Err".to_string()
+            } else {
+                "Ok".to_string()
+            },
         });
         self
     }
@@ -450,12 +463,12 @@ macro_rules! mock {
     ($trait:ident, $method:ident, $return_type:ty) => {{
         use std::sync::Arc;
         use tokio::sync::Mutex;
-        
+
         struct Mock$trait {
             calls: Arc<Mutex<Vec<Vec<Box<dyn std::any::Any + Send>>>>>,
             return_values: Arc<Mutex<Vec<$return_type>>>,
         }
-        
+
         impl Mock$trait {
             fn new() -> Self {
                 Self {
@@ -463,16 +476,16 @@ macro_rules! mock {
                     return_values: Arc::new(Mutex::new(Vec::new())),
                 }
             }
-            
+
             async fn when(&self, return_value: $return_type) {
                 self.return_values.lock().await.push(return_value);
             }
-            
+
             async fn call_count(&self) -> usize {
                 self.calls.lock().await.len()
             }
         }
-        
+
         Mock$trait::new()
     }};
 }
@@ -549,7 +562,7 @@ impl ConcurrencyTest {
         T: Send,
     {
         use tokio::task::JoinSet;
-        
+
         let start = Instant::now();
         let mut join_set = JoinSet::new();
         let f = Arc::new(f);
@@ -559,14 +572,14 @@ impl ConcurrencyTest {
             join_set.spawn(async move {
                 let mut successes = 0;
                 let mut failures = 0;
-                
+
                 for _ in 0..self.iterations {
                     match f().await {
                         Ok(_) => successes += 1,
                         Err(_) => failures += 1,
                     }
                 }
-                
+
                 (successes, failures)
             });
         }
@@ -618,7 +631,10 @@ impl ConcurrencyTestResult {
         println!("Concurrency: {}", self.concurrency);
         println!("Iterations per worker: {}", self.iterations);
         println!("Total Operations: {}", self.total_operations);
-        println!("Successes: {} | Failures: {}", self.successes, self.failures);
+        println!(
+            "Successes: {} | Failures: {}",
+            self.successes, self.failures
+        );
         println!("Success Rate: {:.2}%", self.success_rate * 100.0);
         println!("Duration: {}ms", self.duration_ms);
         println!("Throughput: {:.2} ops/sec", self.ops_per_sec);
@@ -646,14 +662,10 @@ mod tests {
     async fn test_test_suite() {
         let suite = TestSuite::new("example suite")
             .add_test("test 1", || async {
-                TestBuilder::new("test 1")
-                    .assert_true("pass", true)
-                    .build()
+                TestBuilder::new("test 1").assert_true("pass", true).build()
             })
             .add_test("test 2", || async {
-                TestBuilder::new("test 2")
-                    .assert("fail", 1, 2)
-                    .build()
+                TestBuilder::new("test 2").assert("fail", 1, 2).build()
             });
 
         let result = suite.run().await;

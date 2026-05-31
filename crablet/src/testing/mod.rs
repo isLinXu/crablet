@@ -40,13 +40,15 @@ pub mod helpers {
 
 /// 测试数据生成器
 pub mod fixtures {
-    use crate::types::{Message, ContentPart};
+    use crate::types::{ContentPart, Message};
 
     /// 创建测试消息
     pub fn create_test_message(content: &str, role: &str) -> Message {
         Message {
             role: role.to_string(),
-            content: Some(vec![ContentPart::Text { text: content.to_string() }]),
+            content: Some(vec![ContentPart::Text {
+                text: content.to_string(),
+            }]),
             tool_calls: None,
             tool_call_id: None,
         }
@@ -74,10 +76,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_helpers() {
-        let result = helpers::with_default_timeout(async {
-            "success"
-        }).await;
-        
+        let result = helpers::with_default_timeout(async { "success" }).await;
+
         assert_eq!(result.unwrap(), "success");
     }
 

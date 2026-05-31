@@ -1,15 +1,15 @@
+use crate::auth::handlers::AuthState;
+use crate::auth::{JwtClaims, UserContext};
 use axum::{
     async_trait,
     extract::FromRequestParts,
+    extract::State,
     http::{request::Parts, StatusCode},
     middleware::Next,
     response::Response,
-    extract::State,
 };
 use axum_extra::extract::cookie::CookieJar;
 use jsonwebtoken::{decode, DecodingKey, Validation};
-use crate::auth::{JwtClaims, UserContext};
-use crate::auth::handlers::AuthState;
 use std::sync::Arc;
 
 pub async fn auth_middleware(
@@ -35,15 +35,16 @@ pub async fn auth_middleware(
             &DecodingKey::from_secret(auth_state.jwt_secret.as_bytes()),
             &Validation::default(),
         ) {
-            Ok(token_data) => {
-                UserContext {
-                    user_id: token_data.claims.sub,
-                    username: token_data.claims.username.unwrap_or_else(|| "user".to_string()),
-                    email: None,
-                    roles: token_data.claims.roles.unwrap_or_default(),
-                    tenant_id: token_data.claims.tenant_id,
-                }
-            }
+            Ok(token_data) => UserContext {
+                user_id: token_data.claims.sub,
+                username: token_data
+                    .claims
+                    .username
+                    .unwrap_or_else(|| "user".to_string()),
+                email: None,
+                roles: token_data.claims.roles.unwrap_or_default(),
+                tenant_id: token_data.claims.tenant_id,
+            },
             Err(_) => {
                 // Invalid token
                 return Err(StatusCode::UNAUTHORIZED);

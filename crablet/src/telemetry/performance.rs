@@ -3,11 +3,11 @@
 //! Provides real-time performance metrics, bottleneck detection,
 //! and automatic optimization recommendations.
 
+use dashmap::DashMap;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use dashmap::DashMap;
-use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 use tokio::time::interval;
 use tracing::{debug, info};
@@ -140,7 +140,7 @@ impl OperationTracker {
         if let Some(start) = self.start_time {
             let duration = start.elapsed().as_secs_f64() * 1000.0;
             self.durations.push(duration);
-            
+
             // Keep only last 10000 measurements
             if self.durations.len() > 10000 {
                 self.durations.remove(0);
@@ -164,12 +164,12 @@ impl OperationTracker {
         let count = self.durations.len() as u64;
         let total: f64 = self.durations.iter().sum();
         let avg = total / count as f64;
-        
-        let mut sorted = self.durations.clone();
-        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
 
-        let min = *sorted.first().unwrap();
-        let max = *sorted.last().unwrap();
+        let mut sorted = self.durations.clone();
+        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+
+        let min = *sorted.first().unwrap_or(&0.0);
+        let max = *sorted.last().unwrap_or(&0.0);
         let p50 = sorted[sorted.len() / 2];
         let p95_idx = (sorted.len() as f64 * 0.95) as usize;
         let p95 = sorted[p95_idx.min(sorted.len() - 1)];
@@ -256,18 +256,14 @@ impl PerformanceMonitor {
             let trackers = monitor.trackers.clone();
             let system_load = monitor.system_load.clone();
             let config = monitor.config.clone();
-            
+
             tokio::spawn(async move {
                 let mut ticker = interval(Duration::from_secs(config.report_interval_secs));
                 loop {
                     ticker.tick().await;
-                    
-                    let snapshot = Self::generate_snapshot(
-                        &trackers,
-                        &system_load,
-                        &config,
-                    ).await;
-                    
+
+                    let snapshot = Self::generate_snapshot(&trackers, &system_load, &config).await;
+
                     info!(
                         "Performance Report:\n{}",
                         serde_json::to_string_pretty(&snapshot).unwrap_or_default()
@@ -281,10 +277,11 @@ impl PerformanceMonitor {
 
     /// Start tracking an operation
     pub async fn start_operation(&self, operation_name: &str) {
-        let tracker = self.trackers
+        let tracker = self
+            .trackers
             .entry(operation_name.to_string())
             .or_insert_with(|| RwLock::new(OperationTracker::new()));
-        
+
         tracker.write().await.start();
     }
 
@@ -303,15 +300,15 @@ impl PerformanceMonitor {
     {
         self.start_operation(operation_name).await;
         let start = Instant::now();
-        
+
         let result = f().await;
-        
+
         let success = true; // Could be determined by result type
         self.finish_operation(operation_name, success).await;
-        
+
         let duration = start.elapsed();
         debug!("Operation {} took {:?}", operation_name, duration);
-        
+
         result
     }
 
@@ -322,11 +319,7 @@ impl PerformanceMonitor {
 
     /// Get current performance snapshot
     pub async fn snapshot(&self) -> PerformanceSnapshot {
-        Self::generate_snapshot(
-            &self.trackers,
-            &self.system_load,
-            &self.config,
-        ).await
+        Self::generate_snapshot(&self.trackers, &self.system_load, &self.config).await
     }
 
     /// Get metrics for a specific operation
@@ -343,10 +336,7 @@ impl PerformanceMonitor {
         let mut metrics = HashMap::new();
         for entry in self.trackers.iter() {
             let m = entry.value().read().await.metrics(entry.key());
-            metrics.insert(
-                entry.key().clone(),
-                m,
-            );
+            metrics.insert(entry.key().clone(), m);
         }
         metrics
     }
@@ -354,10 +344,10 @@ impl PerformanceMonitor {
     /// Detect bottlenecks
     pub async fn detect_bottlenecks(&self) -> Vec<Bottleneck> {
         let mut bottlenecks = Vec::new();
-        
+
         for entry in self.trackers.iter() {
             let metrics = entry.value().read().await.metrics(entry.key());
-            
+
             // Check P95 latency
             if metrics.p95_duration_ms > self.config.bottleneck_threshold_p95_ms {
                 bottlenecks.push(Bottleneck {
@@ -369,16 +359,13 @@ impl PerformanceMonitor {
                     } else {
                         BottleneckSeverity::Medium
                     },
-                    description: format!(
-                        "High P95 latency: {:.2}ms",
-                        metrics.p95_duration_ms
-                    ),
+                    description: format!("High P95 latency: {:.2}ms", metrics.p95_duration_ms),
                     metric_value: metrics.p95_duration_ms,
                     threshold: self.config.bottleneck_threshold_p95_ms,
                     suggested_action: "Consider caching, optimization, or scaling".to_string(),
                 });
             }
-            
+
             // Check error rate
             if metrics.error_rate > self.config.bottleneck_threshold_error_rate {
                 bottlenecks.push(Bottleneck {
@@ -390,17 +377,14 @@ impl PerformanceMonitor {
                     } else {
                         BottleneckSeverity::Medium
                     },
-                    description: format!(
-                        "High error rate: {:.1}%",
-                        metrics.error_rate * 100.0
-                    ),
+                    description: format!("High error rate: {:.1}%", metrics.error_rate * 100.0),
                     metric_value: metrics.error_rate,
                     threshold: self.config.bottleneck_threshold_error_rate,
                     suggested_action: "Review error logs and add error handling".to_string(),
                 });
             }
         }
-        
+
         // Sort by severity
         bottlenecks.sort_by(|a, b| {
             let severity_order = |s: &BottleneckSeverity| match s {
@@ -411,7 +395,7 @@ impl PerformanceMonitor {
             };
             severity_order(&a.severity).cmp(&severity_order(&b.severity))
         });
-        
+
         bottlenecks
     }
 
@@ -419,7 +403,7 @@ impl PerformanceMonitor {
     pub async fn generate_recommendations(&self) -> Vec<OptimizationRecommendation> {
         let mut recommendations = Vec::new();
         let bottlenecks = self.detect_bottlenecks().await;
-        
+
         for bottleneck in bottlenecks {
             let recommendation = match bottleneck.severity {
                 BottleneckSeverity::Critical => OptimizationRecommendation {
@@ -427,8 +411,7 @@ impl PerformanceMonitor {
                     priority: RecommendationPriority::Critical,
                     description: format!(
                         "Critical bottleneck in {}: {}",
-                        bottleneck.component,
-                        bottleneck.description
+                        bottleneck.component, bottleneck.description
                     ),
                     expected_impact: "50-80% latency reduction".to_string(),
                     implementation_effort: "High".to_string(),
@@ -438,8 +421,7 @@ impl PerformanceMonitor {
                     priority: RecommendationPriority::High,
                     description: format!(
                         "High severity issue in {}: {}",
-                        bottleneck.component,
-                        bottleneck.description
+                        bottleneck.component, bottleneck.description
                     ),
                     expected_impact: "30-50% improvement".to_string(),
                     implementation_effort: "Medium".to_string(),
@@ -449,17 +431,16 @@ impl PerformanceMonitor {
                     priority: RecommendationPriority::Medium,
                     description: format!(
                         "Optimization opportunity in {}: {}",
-                        bottleneck.component,
-                        bottleneck.description
+                        bottleneck.component, bottleneck.description
                     ),
                     expected_impact: "10-20% improvement".to_string(),
                     implementation_effort: "Low".to_string(),
                 },
             };
-            
+
             recommendations.push(recommendation);
         }
-        
+
         recommendations
     }
 
@@ -471,16 +452,16 @@ impl PerformanceMonitor {
         config: &PerformanceConfig,
     ) -> PerformanceSnapshot {
         let mut operations = HashMap::new();
-        
+
         for entry in trackers.iter() {
             operations.insert(
                 entry.key().clone(),
                 entry.value().read().await.metrics(entry.key()),
             );
         }
-        
+
         let load = system_load.read().await.clone();
-        
+
         // Detect bottlenecks
         let mut bottlenecks = Vec::new();
         for (name, metrics) in &operations {
@@ -495,20 +476,23 @@ impl PerformanceMonitor {
                 });
             }
         }
-        
+
         // Generate recommendations
-        let recommendations = bottlenecks.iter().map(|b| OptimizationRecommendation {
-            category: "Performance".to_string(),
-            priority: match b.severity {
-                BottleneckSeverity::Critical => RecommendationPriority::Critical,
-                BottleneckSeverity::High => RecommendationPriority::High,
-                _ => RecommendationPriority::Medium,
-            },
-            description: b.description.clone(),
-            expected_impact: "Significant improvement".to_string(),
-            implementation_effort: "Medium".to_string(),
-        }).collect();
-        
+        let recommendations = bottlenecks
+            .iter()
+            .map(|b| OptimizationRecommendation {
+                category: "Performance".to_string(),
+                priority: match b.severity {
+                    BottleneckSeverity::Critical => RecommendationPriority::Critical,
+                    BottleneckSeverity::High => RecommendationPriority::High,
+                    _ => RecommendationPriority::Medium,
+                },
+                description: b.description.clone(),
+                expected_impact: "Significant improvement".to_string(),
+                implementation_effort: "Medium".to_string(),
+            })
+            .collect();
+
         PerformanceSnapshot {
             timestamp: chrono::Utc::now(),
             operations,
@@ -568,10 +552,11 @@ impl AutoScaler {
     /// Evaluate scaling decision
     pub async fn evaluate(&self) -> ScaleDecision {
         let snapshot = self.monitor.snapshot().await;
-        
+
         // Calculate average CPU/memory utilization
-        let avg_load = (snapshot.system_load.cpu_percent + snapshot.system_load.memory_percent) / 2.0;
-        
+        let avg_load =
+            (snapshot.system_load.cpu_percent + snapshot.system_load.memory_percent) / 2.0;
+
         if avg_load > self.config.scale_up_threshold * 100.0 {
             ScaleDecision::ScaleUp
         } else if avg_load < self.config.scale_down_threshold * 100.0 {
@@ -596,17 +581,17 @@ mod tests {
     #[tokio::test]
     async fn test_performance_monitor() {
         let monitor = PerformanceMonitor::new();
-        
+
         // Simulate some operations
         for _i in 0..10 {
             monitor.start_operation("test_op").await;
             tokio::time::sleep(Duration::from_millis(10)).await;
             monitor.finish_operation("test_op", true).await;
         }
-        
+
         let metrics = monitor.get_metrics("test_op").await;
         assert!(metrics.is_some());
-        
+
         let metrics = metrics.unwrap();
         assert_eq!(metrics.count, 10);
         assert!(metrics.avg_duration_ms > 0.0);
@@ -620,14 +605,14 @@ mod tests {
             bottleneck_threshold_p95_ms: 50.0,
             bottleneck_threshold_error_rate: 0.05,
         });
-        
+
         // Simulate slow operation
         for _ in 0..5 {
             monitor.start_operation("slow_op").await;
             tokio::time::sleep(Duration::from_millis(100)).await;
             monitor.finish_operation("slow_op", true).await;
         }
-        
+
         let bottlenecks = monitor.detect_bottlenecks().await;
         assert!(!bottlenecks.is_empty());
     }

@@ -126,7 +126,9 @@ struct L1Cache<K, V> {
 impl<K: Eq + Hash, V: Clone> L1Cache<K, V> {
     fn new(size: usize, ttl: Duration) -> Self {
         Self {
-            cache: RwLock::new(LruCache::new(std::num::NonZeroUsize::new(size).unwrap())),
+            cache: RwLock::new(LruCache::new(
+                std::num::NonZeroUsize::new(size).unwrap_or(std::num::NonZeroUsize::MIN),
+            )),
             ttl,
         }
     }

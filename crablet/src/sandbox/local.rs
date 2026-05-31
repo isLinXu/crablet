@@ -1,6 +1,6 @@
-use super::{Sandbox, Language, ExecutionResult};
-use async_trait::async_trait;
+use super::{ExecutionResult, Language, Sandbox};
 use anyhow::Result;
+use async_trait::async_trait;
 use std::time::Instant;
 use tokio::process::Command;
 use tracing::warn;
@@ -28,7 +28,10 @@ impl Sandbox for LocalSandbox {
             });
         }
 
-        warn!("EXECUTING IN LOCAL SANDBOX: No isolation for language {:?}. Code: {}", language, code);
+        warn!(
+            "EXECUTING IN LOCAL SANDBOX: No isolation for language {:?}. Code: {}",
+            language, code
+        );
         // DANGER: This is not sandboxed! Only for dev/test or when Docker is unavailable.
         let (program, args) = match language {
             Language::Python => ("python3", vec!["-c", code]),
@@ -36,7 +39,7 @@ impl Sandbox for LocalSandbox {
             Language::Shell => ("sh", vec!["-c", code]),
             Language::Lua => ("lua", vec!["-e", code]),
         };
-        
+
         let start = Instant::now();
         let output_result = Command::new(program)
             .args(&args) // Borrow args
@@ -46,14 +49,12 @@ impl Sandbox for LocalSandbox {
         let duration = start.elapsed();
 
         match output_result {
-            Ok(output) => {
-                Ok(ExecutionResult {
-                    stdout: String::from_utf8_lossy(&output.stdout).to_string(),
-                    stderr: String::from_utf8_lossy(&output.stderr).to_string(),
-                    exit_code: output.status.code().unwrap_or(-1),
-                    duration_ms: duration.as_millis() as u64,
-                })
-            },
+            Ok(output) => Ok(ExecutionResult {
+                stdout: String::from_utf8_lossy(&output.stdout).to_string(),
+                stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+                exit_code: output.status.code().unwrap_or(-1),
+                duration_ms: duration.as_millis() as u64,
+            }),
             Err(e) => {
                 // Return error as result but format it
                 Ok(ExecutionResult {
