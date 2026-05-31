@@ -10,30 +10,18 @@ use crate::channels::cli::args::ConnectorSubcommands;
 /// Handle connector subcommands
 pub async fn handle_connector(subcmd: &ConnectorSubcommands) -> Result<()> {
     match subcmd {
-        ConnectorSubcommands::List { active } => {
-            list_connectors(*active).await
-        }
-        ConnectorSubcommands::Add { connector_type, name, config } => {
-            add_connector(connector_type, name, config.as_deref()).await
-        }
-        ConnectorSubcommands::Remove { id } => {
-            remove_connector(id).await
-        }
-        ConnectorSubcommands::Test { id } => {
-            test_connector(id).await
-        }
-        ConnectorSubcommands::Status { id } => {
-            show_status(id).await
-        }
-        ConnectorSubcommands::Start { id } => {
-            start_connector(id).await
-        }
-        ConnectorSubcommands::Stop { id } => {
-            stop_connector(id).await
-        }
-        ConnectorSubcommands::Logs { id, lines, follow } => {
-            show_logs(id, *lines, *follow).await
-        }
+        ConnectorSubcommands::List { active } => list_connectors(*active).await,
+        ConnectorSubcommands::Add {
+            connector_type,
+            name,
+            config,
+        } => add_connector(connector_type, name, config.as_deref()).await,
+        ConnectorSubcommands::Remove { id } => remove_connector(id).await,
+        ConnectorSubcommands::Test { id } => test_connector(id).await,
+        ConnectorSubcommands::Status { id } => show_status(id).await,
+        ConnectorSubcommands::Start { id } => start_connector(id).await,
+        ConnectorSubcommands::Stop { id } => stop_connector(id).await,
+        ConnectorSubcommands::Logs { id, lines, follow } => show_logs(id, *lines, *follow).await,
     }
 }
 
@@ -41,7 +29,8 @@ async fn list_connectors(active_only: bool) -> Result<()> {
     println!("{}", "🔌 Configured Connectors".bold().underline());
     println!();
 
-    println!("{:<36} {:<20} {:<15} {:<12} {}",
+    println!(
+        "{:<36} {:<20} {:<15} {:<12} {}",
         "ID".dimmed(),
         "Name".dimmed(),
         "Type".dimmed(),
@@ -53,10 +42,34 @@ async fn list_connectors(active_only: bool) -> Result<()> {
     // Placeholder data
     let connectors = vec![
         ("conn-001", "Gmail Inbox", "email", "active", "healthy"),
-        ("conn-002", "GitHub Webhooks", "webhook", "active", "healthy"),
-        ("conn-003", "Uploads Folder", "filesystem", "active", "healthy"),
-        ("conn-004", "Production DB", "database", "inactive", "unknown"),
-        ("conn-005", "Work Calendar", "calendar", "active", "degraded"),
+        (
+            "conn-002",
+            "GitHub Webhooks",
+            "webhook",
+            "active",
+            "healthy",
+        ),
+        (
+            "conn-003",
+            "Uploads Folder",
+            "filesystem",
+            "active",
+            "healthy",
+        ),
+        (
+            "conn-004",
+            "Production DB",
+            "database",
+            "inactive",
+            "unknown",
+        ),
+        (
+            "conn-005",
+            "Work Calendar",
+            "calendar",
+            "active",
+            "degraded",
+        ),
     ];
 
     for (id, name, conn_type, status, health) in connectors {
@@ -86,7 +99,8 @@ async fn list_connectors(active_only: bool) -> Result<()> {
             _ => "🔌",
         };
 
-        println!("{:<36} {:<20} {} {:<15} {:<12} {}",
+        println!(
+            "{:<36} {:<20} {} {:<15} {:<12} {}",
             id.cyan(),
             name,
             type_icon,
@@ -97,7 +111,8 @@ async fn list_connectors(active_only: bool) -> Result<()> {
     }
 
     println!();
-    println!("{}: Use '{}' for detailed status",
+    println!(
+        "{}: Use '{}' for detailed status",
         "Tip".italic().dimmed(),
         "crablet connector status <id>".cyan()
     );
@@ -105,11 +120,7 @@ async fn list_connectors(active_only: bool) -> Result<()> {
     Ok(())
 }
 
-async fn add_connector(
-    connector_type: &str,
-    name: &str,
-    config_path: Option<&str>,
-) -> Result<()> {
+async fn add_connector(connector_type: &str, name: &str, config_path: Option<&str>) -> Result<()> {
     println!("{}", "➕ Add Connector".bold().underline());
     println!();
 
@@ -124,7 +135,11 @@ async fn add_connector(
     // Validate connector type
     let valid_types = vec!["email", "webhook", "filesystem", "database", "calendar"];
     if !valid_types.contains(&connector_type) {
-        println!("{} Unknown connector type: {}", "✗".red().bold(), connector_type);
+        println!(
+            "{} Unknown connector type: {}",
+            "✗".red().bold(),
+            connector_type
+        );
         println!();
         println!("{} Valid types are:", "Valid types:".dimmed());
         for t in valid_types {
@@ -174,14 +189,17 @@ async fn add_connector(
     println!("{}", serde_json::to_string_pretty(&config)?);
     println!();
 
-    let conn_id = format!("conn-{}", uuid::Uuid::new_v4().to_string()[..8].to_string());
-    println!("{} Connector '{}' added successfully",
+    let raw_id = uuid::Uuid::new_v4().to_string();
+    let conn_id = format!("conn-{}", &raw_id[..8]);
+    println!(
+        "{} Connector '{}' added successfully",
         "✓".green().bold(),
         name.cyan()
     );
     println!("{}: {}", "ID".dimmed(), conn_id.cyan());
     println!();
-    println!("{}: Use '{}' to start the connector",
+    println!(
+        "{}: Use '{}' to start the connector",
         "Next".italic().dimmed(),
         format!("crablet connector start {}", conn_id).cyan()
     );
@@ -201,7 +219,8 @@ async fn remove_connector(id: &str) -> Result<()> {
     // 2. Stop if running
     // 3. Remove from database
 
-    println!("{} Connector '{}' removed successfully",
+    println!(
+        "{} Connector '{}' removed successfully",
         "✓".green().bold(),
         id.cyan()
     );
@@ -238,8 +257,8 @@ async fn show_status(id: &str) -> Result<()> {
 
     // Placeholder data
     println!("{}: {}", "ID".bold(), id.cyan());
-    println!("{}: {}", "Name".bold(), "Gmail Inbox");
-    println!("{}: {}", "Type".bold(), "email");
+    println!("{}: Gmail Inbox", "Name".bold());
+    println!("{}: email", "Type".bold());
     println!("{}: {}", "Status".bold(), "active".green());
     println!("{}: {}", "Health".bold(), "healthy".green());
     println!();
@@ -284,7 +303,8 @@ async fn start_connector(id: &str) -> Result<()> {
     println!("  {} Starting event listener", "✓".green());
     println!();
 
-    println!("{} Connector '{}' started successfully",
+    println!(
+        "{} Connector '{}' started successfully",
         "✓".green().bold(),
         id.cyan()
     );
@@ -307,10 +327,7 @@ async fn stop_connector(id: &str) -> Result<()> {
     println!("  {} Cleaning up", "✓".green());
     println!();
 
-    println!("{} Connector '{}' stopped",
-        "✓".green().bold(),
-        id.cyan()
-    );
+    println!("{} Connector '{}' stopped", "✓".green().bold(), id.cyan());
 
     Ok(())
 }
@@ -326,17 +343,33 @@ async fn show_logs(id: &str, lines: usize, follow: bool) -> Result<()> {
 
     // Placeholder logs
     let logs = vec![
-        ("2024-01-15 14:35:01", "INFO", "Connected to imap.gmail.com:993"),
+        (
+            "2024-01-15 14:35:01",
+            "INFO",
+            "Connected to imap.gmail.com:993",
+        ),
         ("2024-01-15 14:35:02", "INFO", "Authenticated successfully"),
         ("2024-01-15 14:35:03", "INFO", "Selected folder: INBOX"),
         ("2024-01-15 14:35:04", "INFO", "Started IDLE mode"),
-        ("2024-01-15 14:40:15", "INFO", "Received new email: subject='Meeting Notes'"),
+        (
+            "2024-01-15 14:40:15",
+            "INFO",
+            "Received new email: subject='Meeting Notes'",
+        ),
         ("2024-01-15 14:40:16", "INFO", "Processed email event"),
-        ("2024-01-15 14:45:22", "INFO", "Received new email: subject='Weekly Report'"),
+        (
+            "2024-01-15 14:45:22",
+            "INFO",
+            "Received new email: subject='Weekly Report'",
+        ),
         ("2024-01-15 14:45:23", "INFO", "Processed email event"),
     ];
 
-    let start = if logs.len() > lines { logs.len() - lines } else { 0 };
+    let start = if logs.len() > lines {
+        logs.len() - lines
+    } else {
+        0
+    };
 
     for (timestamp, level, message) in &logs[start..] {
         let level_colored = match *level {

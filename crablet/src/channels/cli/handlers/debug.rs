@@ -1,28 +1,33 @@
-use anyhow::Result;
-use crate::events::EventBus;
 use crate::events::AgentEvent;
-use std::sync::Arc;
+use crate::events::EventBus;
+use anyhow::Result;
 use colored::Colorize;
+use std::sync::Arc;
 
 pub async fn handle_debug(session_id: &str, event_bus: Arc<EventBus>) -> Result<()> {
-    println!("{}", format!("Debugging Session: {}", session_id).bold().blue());
-    
+    println!(
+        "{}",
+        format!("Debugging Session: {}", session_id).bold().blue()
+    );
+
     let events = event_bus.replay(session_id).await;
-    
+
     if events.is_empty() {
         println!("{}", "No events found for this session.".yellow());
         return Ok(());
     }
-    
+
     println!("{}", format!("Found {} events:", events.len()).green());
-    
+
     for (i, event) in events.iter().enumerate() {
         print!("{}. ", i + 1);
         match &event.payload {
             AgentEvent::UserInput(s) => println!("USER: {}", s.white()),
             AgentEvent::SystemLog(s) => println!("SYSTEM: {}", s.dimmed()),
             AgentEvent::ThoughtGenerated(s) => println!("THOUGHT: {}", s.cyan()),
-            AgentEvent::ToolExecutionStarted { tool, args } => println!("TOOL CALL: {}({})", tool.yellow(), args),
+            AgentEvent::ToolExecutionStarted { tool, args } => {
+                println!("TOOL CALL: {}({})", tool.yellow(), args)
+            }
             AgentEvent::ToolExecutionFinished { tool, output } => {
                 let out_preview = if output.len() > 100 {
                     format!("{}...", &output[..100])
@@ -30,40 +35,110 @@ pub async fn handle_debug(session_id: &str, event_bus: Arc<EventBus>) -> Result<
                     output.clone()
                 };
                 println!("TOOL OUT: {} -> {}", tool.yellow(), out_preview.dimmed());
-            },
-            AgentEvent::CanvasUpdate { title, kind, .. } => println!("CANVAS: [{}] {}", kind, title.magenta()),
-            AgentEvent::SwarmActivity { task_id, from, to, message_type, content, .. } => {
-                println!("SWARM [{}]: {} -> {} ({}): {}", task_id, from.blue(), to.blue(), message_type.yellow(), content.dimmed());
-            },
-            AgentEvent::SwarmGraphUpdate { graph_id, status, .. } => {
+            }
+            AgentEvent::CanvasUpdate { title, kind, .. } => {
+                println!("CANVAS: [{}] {}", kind, title.magenta())
+            }
+            AgentEvent::SwarmActivity {
+                task_id,
+                from,
+                to,
+                message_type,
+                content,
+                ..
+            } => {
+                println!(
+                    "SWARM [{}]: {} -> {} ({}): {}",
+                    task_id,
+                    from.blue(),
+                    to.blue(),
+                    message_type.yellow(),
+                    content.dimmed()
+                );
+            }
+            AgentEvent::SwarmGraphUpdate {
+                graph_id, status, ..
+            } => {
                 println!("SWARM GRAPH [{}]: Status -> {}", graph_id, status.yellow());
-            },
-            AgentEvent::SwarmTaskUpdate { graph_id, task_id, status, .. } => {
-                println!("SWARM TASK [{}/{}]: Status -> {}", graph_id, task_id, status.yellow());
-            },
-            AgentEvent::SwarmLog { graph_id, task_id, content, .. } => {
+            }
+            AgentEvent::SwarmTaskUpdate {
+                graph_id,
+                task_id,
+                status,
+                ..
+            } => {
+                println!(
+                    "SWARM TASK [{}/{}]: Status -> {}",
+                    graph_id,
+                    task_id,
+                    status.yellow()
+                );
+            }
+            AgentEvent::SwarmLog {
+                graph_id,
+                task_id,
+                content,
+                ..
+            } => {
                 println!("SWARM LOG [{}/{}]: {}", graph_id, task_id, content.dimmed());
-            },
+            }
             AgentEvent::GraphRagEntityModeChanged { from_mode, to_mode } => {
-                println!("GRAPH_RAG MODE: {} -> {}", from_mode.yellow(), to_mode.yellow());
-            },
+                println!(
+                    "GRAPH_RAG MODE: {} -> {}",
+                    from_mode.yellow(),
+                    to_mode.yellow()
+                );
+            }
             AgentEvent::ResponseGenerated(s) => println!("RESPONSE: {}", s.green()),
-            AgentEvent::CognitiveLayerChanged { layer } => println!("COGNITIVE: {}", layer.magenta()),
+            AgentEvent::CognitiveLayerChanged { layer } => {
+                println!("COGNITIVE: {}", layer.magenta())
+            }
             AgentEvent::Error(s) => println!("ERROR: {}", s.red()),
-            AgentEvent::Heartbeat { timestamp, active_sessions } => {
-                println!("HEARTBEAT: {} ({} active sessions)", timestamp, active_sessions);
-            },
+            AgentEvent::Heartbeat {
+                timestamp,
+                active_sessions,
+            } => {
+                println!(
+                    "HEARTBEAT: {} ({} active sessions)",
+                    timestamp, active_sessions
+                );
+            }
             AgentEvent::BackgroundThinkingTriggered { reason, .. } => {
                 println!("BG THINK: {}", reason.dimmed());
-            },
-            AgentEvent::BackgroundThinkingResult { insights, memories_updated, .. } => {
-                println!("BG RESULT: {} ({} updates)", insights, memories_updated.len());
-            },
-            AgentEvent::CoreMemoryUpdated { block, operation, .. } => {
+            }
+            AgentEvent::BackgroundThinkingResult {
+                insights,
+                memories_updated,
+                ..
+            } => {
+                println!(
+                    "BG RESULT: {} ({} updates)",
+                    insights,
+                    memories_updated.len()
+                );
+            }
+            AgentEvent::CoreMemoryUpdated {
+                block, operation, ..
+            } => {
                 println!("CORE MEM: {} {}", operation, block.cyan());
-            },
+            }
+            AgentEvent::InsightLearningSignal {
+                insight_id,
+                insight_type,
+                content,
+                confidence,
+                ..
+            } => {
+                println!(
+                    "INSIGHT SIGNAL [{}] {}: {} (conf={:.2})",
+                    insight_id,
+                    insight_type.cyan(),
+                    &content[..content.len().min(80)],
+                    confidence
+                );
+            }
         }
     }
-    
+
     Ok(())
 }

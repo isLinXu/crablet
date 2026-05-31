@@ -1,8 +1,8 @@
+use crate::channels::Channel;
+use crate::cognitive::router::CognitiveRouter;
+use crate::config::Config;
 use std::collections::HashMap;
 use std::sync::Arc;
-use crate::channels::Channel;
-use crate::config::Config;
-use crate::cognitive::router::CognitiveRouter;
 
 pub struct ChannelManager {
     channels: HashMap<String, Arc<dyn Channel>>,
@@ -41,12 +41,16 @@ impl ChannelManager {
                 "telegram" => {
                     #[cfg(feature = "telegram")]
                     {
-                        let channel = crate::channels::international::telegram::TelegramChannel::new(_router.clone());
+                        let channel =
+                            crate::channels::international::telegram::TelegramChannel::new(
+                                _router.clone(),
+                            );
                         self.channels.insert(name.to_string(), Arc::new(channel));
                     }
                 }
                 "webhook" => {
-                    let channel = crate::channels::universal::http_webhook::HttpWebhookChannel::new();
+                    let channel =
+                        crate::channels::universal::http_webhook::HttpWebhookChannel::new();
                     self.register(Arc::new(channel));
                 }
                 _ => {
@@ -63,7 +67,7 @@ impl ChannelManager {
     pub fn get(&self, name: &str) -> Option<Arc<dyn Channel>> {
         self.channels.get(name).cloned()
     }
-    
+
     pub async fn start_all(&self) {
         for (name, channel) in &self.channels {
             let name = name.clone();

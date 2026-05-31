@@ -1,12 +1,12 @@
 use crate::channels::Channel;
 use anyhow::Result;
 use async_trait::async_trait;
-use serde_json::json;
-use tracing::{info, error, warn};
-use reqwest::Client;
-use base64::{Engine as _, engine::general_purpose};
+use base64::{engine::general_purpose, Engine as _};
 use hmac::{Hmac, Mac};
+use reqwest::Client;
+use serde_json::json;
 use sha2::Sha256;
+use tracing::{error, info, warn};
 use urlencoding::encode;
 
 pub struct DingTalkChannel {
@@ -48,8 +48,8 @@ impl DingTalkChannel {
 impl Channel for DingTalkChannel {
     async fn send(&self, _to: &str, content: &str) -> Result<()> {
         if self.webhook_url.is_empty() {
-             error!("DINGTALK_WEBHOOK not set");
-             return Ok(());
+            error!("DINGTALK_WEBHOOK not set");
+            return Ok(());
         }
 
         let mut url = self.webhook_url.clone();
@@ -63,26 +63,23 @@ impl Channel for DingTalkChannel {
                 }
             }
         }
-        
+
         let payload = json!({
             "msgtype": "text",
             "text": {
                 "content": content
             }
         });
-        
-        let res = self.client.post(&url)
-            .json(&payload)
-            .send()
-            .await?;
-            
+
+        let res = self.client.post(&url).json(&payload).send().await?;
+
         if !res.status().is_success() {
             let status = res.status();
             let text = res.text().await.unwrap_or_default();
             error!("DingTalk webhook send failed: {} - {}", status, text);
             return Err(anyhow::anyhow!("DingTalk send failed: {}", status));
         }
-        
+
         Ok(())
     }
 
@@ -93,7 +90,7 @@ impl Channel for DingTalkChannel {
         }
         Ok(())
     }
-    
+
     fn name(&self) -> &str {
         "dingtalk"
     }

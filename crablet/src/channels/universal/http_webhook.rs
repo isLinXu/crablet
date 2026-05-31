@@ -3,7 +3,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use reqwest::Client;
 use serde_json::json;
-use tracing::{info, warn, error};
+use tracing::{error, info, warn};
 
 pub struct HttpWebhookChannel {
     url: String,
@@ -34,21 +34,21 @@ impl Channel for HttpWebhookChannel {
             error!("WEBHOOK_URL not set");
             return Ok(());
         }
-        
+
         let payload = json!({
             "to": to,
             "content": content,
             "timestamp": chrono::Utc::now().to_rfc3339()
         });
-        
+
         let builder = match self.method.to_uppercase().as_str() {
             "GET" => self.client.get(&self.url),
             "PUT" => self.client.put(&self.url),
             _ => self.client.post(&self.url),
         };
-        
+
         let res = builder.json(&payload).send().await?;
-        
+
         if !res.status().is_success() {
             let status = res.status();
             let text = res.text().await.unwrap_or_default();
@@ -64,7 +64,7 @@ impl Channel for HttpWebhookChannel {
         }
         Ok(())
     }
-    
+
     fn name(&self) -> &str {
         "webhook"
     }

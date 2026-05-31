@@ -1,3 +1,9 @@
+//! Legacy compatibility web host.
+//!
+//! The supported product control plane is the Axum gateway in `crate::gateway`.
+//! This module remains available for compatibility and migration testing, and
+//! its legacy API surface is disabled by default.
+
 use crate::agent::hitl::HumanDecision;
 use crate::agent::swarm::{GraphStatus, TaskGraph, TaskNode, TaskStatus};
 use crate::auth::handlers::{callback_handler, login_handler, me_handler, AuthState};
@@ -22,6 +28,9 @@ use std::sync::Arc;
 use tokio::fs;
 use tower_http::services::{ServeDir, ServeFile};
 use tracing::{error, info};
+
+const MAX_LEGACY_UPLOAD_BYTES: usize = 10 * 1024 * 1024;
+const MAX_LEGACY_UPLOADS_PER_REQUEST: usize = 20;
 
 #[derive(Deserialize, Debug, Clone)]
 struct ChatInput {
@@ -132,25 +141,34 @@ pub async fn run(
     let auth_router = Router::new()
         .route("/login", get(login_handler))
         .route("/callback", get(callback_handler))
-        .with_state(auth_state);
+        .with_state(auth_state.clone());
 
     let enable_legacy_api = std::env::var("CRABLET_ENABLE_LEGACY_WEB_API")
         .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
         .unwrap_or(false);
 
+    let legacy_root_routes = Router::new()
+        .route("/ws", get(ws_handler))
+        .route("/legacy_chat", post(chat))
+        .layer(axum::middleware::from_fn_with_state(
+            auth_state.clone(),
+            auth_middleware,
+        ));
+
     let app = if enable_legacy_api {
         info!("Legacy Web API is enabled on port {}", port);
         Router::new()
-            .route("/ws", get(ws_handler))
+            .merge(legacy_root_routes)
             .nest("/api", api_router)
             .nest("/auth", auth_router)
-            .route("/legacy_chat", post(chat))
             .fallback_service(
                 ServeDir::new(static_dir)
                     .append_index_html_on_directories(true)
                     .not_found_service(ServeFile::new(index_file)),
             )
-            .layer(axum::extract::DefaultBodyLimit::max(1024 * 1024 * 50))
+            .layer(axum::extract::DefaultBodyLimit::max(
+                MAX_LEGACY_UPLOAD_BYTES * MAX_LEGACY_UPLOADS_PER_REQUEST,
+            ))
             .with_state(app_state)
     } else {
         info!(
@@ -164,7 +182,9 @@ pub async fn run(
                     .append_index_html_on_directories(true)
                     .not_found_service(ServeFile::new(index_file)),
             )
-            .layer(axum::extract::DefaultBodyLimit::max(1024 * 1024 * 50))
+            .layer(axum::extract::DefaultBodyLimit::max(
+                MAX_LEGACY_UPLOAD_BYTES * MAX_LEGACY_UPLOADS_PER_REQUEST,
+            ))
             .with_state(app_state)
     };
 
@@ -180,45 +200,143 @@ pub async fn run(
 // Remove index handler as it conflicts with static file serving (React App)
 // or we can keep it mapped to a specific route like /old-ui
 
+fn sanitize_upload_filename(file_name: &str) -> Option<String> {
+    let path = PathBuf::from(file_name);
+    let base_name = path
+        .file_name()
+        .and_then(|name| name.to_str())?
+        .trim()
+        .trim_matches('.');
+
+    if base_name.is_empty() {
+        return None;
+    }
+
+    let safe_name: String = base_name
+        .chars()
+        .filter(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '-'))
+        .take(120)
+        .collect();
+
+    if safe_name.is_empty() {
+        None
+    } else {
+        Some(safe_name)
+    }
+}
+
+fn is_allowed_upload_filename(file_name: &str) -> bool {
+    let Some(ext) = PathBuf::from(file_name)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ext.to_ascii_lowercase())
+    else {
+        return false;
+    };
+
+    matches!(
+        ext.as_str(),
+        "txt"
+            | "md"
+            | "pdf"
+            | "png"
+            | "jpg"
+            | "jpeg"
+            | "webp"
+            | "gif"
+            | "json"
+            | "toml"
+            | "yaml"
+            | "yml"
+            | "csv"
+            | "rs"
+            | "py"
+            | "js"
+            | "ts"
+            | "tsx"
+            | "html"
+            | "css"
+    )
+}
+
+fn legacy_upload_path(file_name: &str) -> Option<PathBuf> {
+    let safe_name = sanitize_upload_filename(file_name)?;
+    if !is_allowed_upload_filename(&safe_name) {
+        return None;
+    }
+
+    Some(PathBuf::from("uploads").join(format!("{}-{}", uuid::Uuid::new_v4(), safe_name)))
+}
+
 async fn upload_handler(
     State(router): State<Arc<CognitiveRouter>>,
     mut multipart: Multipart,
 ) -> impl IntoResponse {
     let mut uploaded_files = Vec::new();
+    let mut rejected_files = Vec::new();
+    let mut seen_files = 0usize;
 
     while let Ok(Some(field)) = multipart.next_field().await {
+        seen_files += 1;
+        if seen_files > MAX_LEGACY_UPLOADS_PER_REQUEST {
+            rejected_files.push(serde_json::json!({
+                "file": "request",
+                "reason": "too many files"
+            }));
+            break;
+        }
+
         let file_name = if let Some(name) = field.file_name() {
             name.to_string()
         } else {
+            rejected_files.push(serde_json::json!({
+                "file": "unknown",
+                "reason": "missing filename"
+            }));
             continue;
         };
 
         let data = if let Ok(bytes) = field.bytes().await {
             bytes
         } else {
+            rejected_files.push(serde_json::json!({
+                "file": file_name,
+                "reason": "failed to read multipart field"
+            }));
             continue;
         };
 
-        // Sanitize filename to prevent directory traversal
-        let safe_name = PathBuf::from(&file_name)
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("unknown_file")
-            .to_string();
-
-        let file_path = format!("uploads/{}", safe_name);
-
-        if let Err(e) = fs::write(&file_path, &data).await {
-            error!("Failed to save uploaded file: {}", e);
+        if data.len() > MAX_LEGACY_UPLOAD_BYTES {
+            rejected_files.push(serde_json::json!({
+                "file": file_name,
+                "reason": "file too large"
+            }));
             continue;
         }
 
-        info!("File uploaded successfully: {}", file_path);
+        let Some(file_path) = legacy_upload_path(&file_name) else {
+            rejected_files.push(serde_json::json!({
+                "file": file_name,
+                "reason": "unsupported or unsafe filename"
+            }));
+            continue;
+        };
+
+        if let Err(e) = fs::write(&file_path, &data).await {
+            error!("Failed to save uploaded file: {}", e);
+            rejected_files.push(serde_json::json!({
+                "file": file_name,
+                "reason": "failed to save file"
+            }));
+            continue;
+        }
+
+        info!("File uploaded successfully: {}", file_path.display());
         // Return absolute path for the agent to use
         let abs_path_str = if let Ok(abs_path) = std::fs::canonicalize(&file_path) {
             abs_path.to_string_lossy().to_string()
         } else {
-            file_path.clone()
+            file_path.to_string_lossy().to_string()
         };
 
         uploaded_files.push(abs_path_str.clone());
@@ -235,7 +353,8 @@ async fn upload_handler(
 
     Json(serde_json::json!({
         "status": "success",
-        "files": uploaded_files
+        "files": uploaded_files,
+        "rejected": rejected_files
     }))
 }
 
@@ -1851,11 +1970,55 @@ async fn dashboard_handler(State(router): State<Arc<CognitiveRouter>>) -> impl I
 #[cfg(test)]
 mod tests {
     use super::{
-        build_swarm_replay_snapshot, swarm_timeline_entry_from_event, swarm_timeline_entry_matches,
+        build_swarm_replay_snapshot, is_allowed_upload_filename, legacy_upload_path,
+        sanitize_upload_filename, swarm_timeline_entry_from_event, swarm_timeline_entry_matches,
         SwarmGraphResponse, SwarmTimelineEntry, SwarmTimelineQuery,
     };
     use crate::agent::swarm::{GraphStatus, TaskGraph, TaskStatus};
     use crate::events::AgentEvent;
+
+    #[test]
+    fn upload_filename_sanitizer_strips_paths_and_unsafe_chars() {
+        assert_eq!(
+            sanitize_upload_filename("../../my report!.md"),
+            Some("myreport.md".to_string())
+        );
+        assert_eq!(
+            sanitize_upload_filename("...hidden"),
+            Some("hidden".to_string())
+        );
+        assert_eq!(sanitize_upload_filename("../..."), None);
+    }
+
+    #[test]
+    fn upload_filename_allowlist_blocks_executables() {
+        assert!(is_allowed_upload_filename("notes.md"));
+        assert!(is_allowed_upload_filename("image.PNG"));
+        assert!(!is_allowed_upload_filename("script.sh"));
+        assert!(!is_allowed_upload_filename("archive.zip"));
+        assert!(!is_allowed_upload_filename("no-extension"));
+    }
+
+    #[test]
+    fn legacy_upload_path_uses_unique_uploads_prefix() {
+        let first = legacy_upload_path("../photo.png").expect("png should be allowed");
+        let second = legacy_upload_path("../photo.png").expect("png should be allowed");
+
+        assert!(first.starts_with("uploads"));
+        assert!(second.starts_with("uploads"));
+        assert_ne!(first, second);
+        assert!(first
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap()
+            .ends_with("-photo.png"));
+    }
+
+    #[test]
+    fn legacy_upload_path_rejects_disallowed_extensions() {
+        assert!(legacy_upload_path("payload.sh").is_none());
+        assert!(legacy_upload_path("../").is_none());
+    }
 
     #[test]
     fn swarm_graph_response_exposes_observability_fields() {

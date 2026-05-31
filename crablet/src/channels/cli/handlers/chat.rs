@@ -1,11 +1,17 @@
-use anyhow::Result;
-use tracing::info;
-use crate::cognitive::router::CognitiveRouter;
 use crate::cognitive::lane::LaneRouter;
+use crate::cognitive::router::CognitiveRouter;
+use anyhow::Result;
 use std::io::{self, Write};
+use tracing::info;
 
-pub async fn handle_chat(lane_router: &LaneRouter, router: &CognitiveRouter, session: Option<&str>) -> Result<()> {
-    let session_id = session.map(|s| s.to_string()).unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+pub async fn handle_chat(
+    lane_router: &LaneRouter,
+    router: &CognitiveRouter,
+    session: Option<&str>,
+) -> Result<()> {
+    let session_id = session
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
     info!("Starting chat mode (Session: {})...", session_id);
     println!("╔════════════════════════════════════════════╗");
     println!("║  🦀 Crablet v0.1.0                         ║");
@@ -17,8 +23,14 @@ pub async fn handle_chat(lane_router: &LaneRouter, router: &CognitiveRouter, ses
     start_chat_loop(lane_router, router, &session_id).await
 }
 
-pub async fn handle_run(lane_router: &LaneRouter, prompt: &str, session: Option<&str>) -> Result<()> {
-    let session_id = session.map(|s| s.to_string()).unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+pub async fn handle_run(
+    lane_router: &LaneRouter,
+    prompt: &str,
+    session: Option<&str>,
+) -> Result<()> {
+    let session_id = session
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
 
     let spinner = indicatif::ProgressBar::new_spinner();
     spinner.set_style(
@@ -31,14 +43,20 @@ pub async fn handle_run(lane_router: &LaneRouter, prompt: &str, session: Option<
 
     info!("Running prompt: {} (Session: {})", prompt, session_id);
     // Use Lane Router for dispatch
-    let (response, _traces) = lane_router.dispatch(&session_id, prompt.to_string()).await?;
+    let (response, _traces) = lane_router
+        .dispatch(&session_id, prompt.to_string())
+        .await?;
 
     spinner.finish_and_clear();
     println!("🦀 Crablet: {}", response);
     Ok(())
 }
 
-async fn start_chat_loop(lane_router: &LaneRouter, router: &CognitiveRouter, session_id: &str) -> Result<()> {
+async fn start_chat_loop(
+    lane_router: &LaneRouter,
+    router: &CognitiveRouter,
+    session_id: &str,
+) -> Result<()> {
     let _ = router; // Silence if unused
     let mut input = String::new();
     let stdin = io::stdin(); // Create stdin handle outside loop
@@ -73,14 +91,16 @@ async fn start_chat_loop(lane_router: &LaneRouter, router: &CognitiveRouter, ses
             Ok((response, _traces)) => {
                 spinner.finish_and_clear();
                 println!("🦀 Crablet: {}", response);
-            },
+            }
             Err(e) => {
                 spinner.finish_and_clear();
                 tracing::error!("Error: {}", e);
                 println!("❌ Error: {}", e);
 
                 // Interactive Configuration Prompt
-                if e.to_string().contains("Ollama API returned error") || e.to_string().contains("LLM Initial Failure") {
+                if e.to_string().contains("Ollama API returned error")
+                    || e.to_string().contains("LLM Initial Failure")
+                {
                     println!("\n⚠️ It seems the local LLM service (Ollama) is not available or returned an error.");
                     println!("Would you like to switch to Cloud Model configuration? [y/N]");
 
@@ -100,9 +120,9 @@ async fn start_chat_loop(lane_router: &LaneRouter, router: &CognitiveRouter, ses
     {
         println!("Consolidating memory...");
         if let Err(e) = router.consolidate_memory(session_id).await {
-             tracing::warn!("Memory consolidation failed: {}", e);
+            tracing::warn!("Memory consolidation failed: {}", e);
         } else {
-             println!("Memory consolidated.");
+            println!("Memory consolidated.");
         }
     }
 

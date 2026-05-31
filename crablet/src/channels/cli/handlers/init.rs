@@ -8,17 +8,19 @@ pub async fn init_environment() -> Result<()> {
     if let Some(proj_dirs) = ProjectDirs::from("com", "crablet", "crablet") {
         // Fallback to ~/.config/crablet if system path fails (macOS sandbox issue)
         let config_dir = if fs::create_dir_all(proj_dirs.config_dir()).is_err() {
-            let home = directories::UserDirs::new().ok_or_else(|| anyhow::anyhow!("Home dir not found"))?;
+            let home = directories::UserDirs::new()
+                .ok_or_else(|| anyhow::anyhow!("Home dir not found"))?;
             home.home_dir().join(".config").join("crablet")
         } else {
             proj_dirs.config_dir().to_path_buf()
         };
-        
+
         let data_dir = if fs::create_dir_all(proj_dirs.data_dir()).is_err() {
-             let home = directories::UserDirs::new().ok_or_else(|| anyhow::anyhow!("Home dir not found"))?;
-             home.home_dir().join(".local").join("share").join("crablet")
+            let home = directories::UserDirs::new()
+                .ok_or_else(|| anyhow::anyhow!("Home dir not found"))?;
+            home.home_dir().join(".local").join("share").join("crablet")
         } else {
-             proj_dirs.data_dir().to_path_buf()
+            proj_dirs.data_dir().to_path_buf()
         };
 
         // 1. Create Config Directory
@@ -52,26 +54,29 @@ log_level = "info"
         if !skills_dir.exists() {
             println!("Creating skills directory: {:?}", skills_dir);
             fs::create_dir_all(&skills_dir)?;
-            
+
             // Create a sample skill?
             let hello_skill = skills_dir.join("hello");
             fs::create_dir_all(&hello_skill)?;
-            fs::write(hello_skill.join("skill.yaml"), r#"
+            fs::write(
+                hello_skill.join("skill.yaml"),
+                r#"
 name: hello
 description: A built-in hello world skill
 version: 1.0.0
 entrypoint: echo "Hello from global skill!"
 parameters: {}
-"#)?;
+"#,
+            )?;
         }
-        
+
         // 4. Add to PATH in .zshrc
         if let Some(user_dirs) = directories::UserDirs::new() {
             let home_dir = user_dirs.home_dir();
             let zshrc_path = home_dir.join(".zshrc");
             let cargo_bin_path = "$HOME/.cargo/bin";
             let export_line = format!(r#"export PATH="{}:$PATH""#, cargo_bin_path);
-            
+
             // Check if file exists
             let mut content = if zshrc_path.exists() {
                 std::fs::read_to_string(&zshrc_path)?

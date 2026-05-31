@@ -1,10 +1,10 @@
-use teloxide::prelude::*;
-use crate::cognitive::router::CognitiveRouter;
-use std::sync::Arc;
-use anyhow::Result;
-use tracing::{info, error};
-use async_trait::async_trait;
 use crate::channels::Channel;
+use crate::cognitive::router::CognitiveRouter;
+use anyhow::Result;
+use async_trait::async_trait;
+use std::sync::Arc;
+use teloxide::prelude::*;
+use tracing::{error, info};
 
 pub struct TelegramChannel {
     bot: Bot,
@@ -23,7 +23,9 @@ impl TelegramChannel {
 #[async_trait]
 impl Channel for TelegramChannel {
     async fn send(&self, to: &str, content: &str) -> Result<()> {
-        let chat_id = to.parse::<i64>().map_err(|_| anyhow::anyhow!("Invalid chat_id"))?;
+        let chat_id = to
+            .parse::<i64>()
+            .map_err(|_| anyhow::anyhow!("Invalid chat_id"))?;
         self.bot.send_message(ChatId(chat_id), content).await?;
         Ok(())
     }
@@ -40,12 +42,14 @@ impl Channel for TelegramChannel {
         // We need to clone the router for the handler
         let router = self.router.clone();
 
-        let handler = Update::filter_message()
-            .endpoint(move |bot: Bot, msg: Message, router: Arc<CognitiveRouter>| async move {
+        let handler = Update::filter_message().endpoint(
+            move |bot: Bot, msg: Message, router: Arc<CognitiveRouter>| async move {
                 if let Some(text) = msg.text() {
                     // Show "typing..." status
-                    let _ = bot.send_chat_action(msg.chat.id, teloxide::types::ChatAction::Typing).await;
-                    
+                    let _ = bot
+                        .send_chat_action(msg.chat.id, teloxide::types::ChatAction::Typing)
+                        .await;
+
                     // Process message through Cognitive Router
                     let session_id = format!("telegram_{}", msg.chat.id);
                     match router.process(text, &session_id).await {
@@ -62,7 +66,8 @@ impl Channel for TelegramChannel {
                     }
                 }
                 respond(())
-            });
+            },
+        );
 
         Dispatcher::builder(self.bot.clone(), handler)
             .dependencies(dptree::deps![router])

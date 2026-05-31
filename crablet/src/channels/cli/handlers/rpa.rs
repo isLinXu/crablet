@@ -10,27 +10,23 @@ use crate::channels::cli::args::RpaSubcommands;
 /// Handle RPA subcommands
 pub async fn handle_rpa(subcmd: &RpaSubcommands) -> Result<()> {
     match subcmd {
-        RpaSubcommands::BrowserSessions => {
-            list_browser_sessions().await
-        }
-        RpaSubcommands::BrowserStart { headless, width, height } => {
-            start_browser_session(*headless, *width, *height).await
-        }
-        RpaSubcommands::BrowserClose { id } => {
-            close_browser_session(id).await
-        }
+        RpaSubcommands::BrowserSessions => list_browser_sessions().await,
+        RpaSubcommands::BrowserStart {
+            headless,
+            width,
+            height,
+        } => start_browser_session(*headless, *width, *height).await,
+        RpaSubcommands::BrowserClose { id } => close_browser_session(id).await,
         RpaSubcommands::BrowserExec { session, workflow } => {
             exec_browser_automation(session.as_deref(), workflow).await
         }
-        RpaSubcommands::Screenshot { url, output, full_page } => {
-            take_screenshot(url, output, *full_page).await
-        }
-        RpaSubcommands::Workflows => {
-            list_rpa_workflows().await
-        }
-        RpaSubcommands::Desktop { workflow } => {
-            exec_desktop_automation(workflow).await
-        }
+        RpaSubcommands::Screenshot {
+            url,
+            output,
+            full_page,
+        } => take_screenshot(url, output, *full_page).await,
+        RpaSubcommands::Workflows => list_rpa_workflows().await,
+        RpaSubcommands::Desktop { workflow } => exec_desktop_automation(workflow).await,
     }
 }
 
@@ -38,7 +34,8 @@ async fn list_browser_sessions() -> Result<()> {
     println!("{}", "🌐 Browser Sessions".bold().underline());
     println!();
 
-    println!("{:<36} {:<20} {:<15} {:<15} {}",
+    println!(
+        "{:<36} {:<20} {:<15} {:<15} {}",
         "Session ID".dimmed(),
         "Status".dimmed(),
         "Viewport".dimmed(),
@@ -62,7 +59,8 @@ async fn list_browser_sessions() -> Result<()> {
             _ => status.normal(),
         };
 
-        println!("{:<36} {:<20} {:<15} {:<15} {}",
+        println!(
+            "{:<36} {:<20} {:<15} {:<15} {}",
             id.cyan(),
             status_colored,
             viewport,
@@ -72,7 +70,8 @@ async fn list_browser_sessions() -> Result<()> {
     }
 
     println!();
-    println!("{}: Use '{}' to create a new session",
+    println!(
+        "{}: Use '{}' to create a new session",
         "Tip".italic().dimmed(),
         "crablet rpa browser-start".cyan()
     );
@@ -91,19 +90,22 @@ async fn start_browser_session(headless: bool, width: u32, height: u32) -> Resul
     println!("{}", "Starting browser...".dimmed());
     tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
 
-    let session_id = format!("sess-{}", uuid::Uuid::new_v4().to_string()[..8].to_string());
+    let raw_id = uuid::Uuid::new_v4().to_string();
+    let session_id = format!("sess-{}", &raw_id[..8]);
 
     println!("  {} Browser process started", "✓".green());
     println!("  {} DevTools protocol connected", "✓".green());
     println!("  {} Session initialized", "✓".green());
     println!();
 
-    println!("{} Browser session started successfully",
+    println!(
+        "{} Browser session started successfully",
         "✓".green().bold()
     );
     println!("{}: {}", "Session ID".dimmed(), session_id.cyan());
     println!();
-    println!("{}: Use '{}' to automate",
+    println!(
+        "{}: Use '{}' to automate",
         "Next".italic().dimmed(),
         format!("crablet rpa browser-exec --session {}", session_id).cyan()
     );
@@ -126,7 +128,8 @@ async fn close_browser_session(id: &str) -> Result<()> {
     println!("  {} Terminating browser process", "✓".green());
     println!();
 
-    println!("{} Browser session '{}' closed",
+    println!(
+        "{} Browser session '{}' closed",
         "✓".green().bold(),
         id.cyan()
     );
@@ -171,9 +174,7 @@ async fn exec_browser_automation(session_id: Option<&str>, workflow: &str) -> Re
     }
 
     println!();
-    println!("{} Automation completed successfully",
-        "✓".green().bold()
-    );
+    println!("{} Automation completed successfully", "✓".green().bold());
 
     Ok(())
 }
@@ -209,7 +210,8 @@ async fn take_screenshot(url: &str, output: &str, full_page: bool) -> Result<()>
     println!("  {} Saving to file", "✓".green());
     println!();
 
-    println!("{} Screenshot saved to: {}",
+    println!(
+        "{} Screenshot saved to: {}",
         "✓".green().bold(),
         output.cyan()
     );
@@ -228,7 +230,8 @@ async fn list_rpa_workflows() -> Result<()> {
     println!("{}", "🤖 RPA Workflows".bold().underline());
     println!();
 
-    println!("{:<30} {:<15} {:<20} {}",
+    println!(
+        "{:<30} {:<15} {:<20} {}",
         "Name".dimmed(),
         "Type".dimmed(),
         "Last Run".dimmed(),
@@ -261,7 +264,8 @@ async fn list_rpa_workflows() -> Result<()> {
             success_rate.red()
         };
 
-        println!("{:<30} {:<15} {:<20} {}",
+        println!(
+            "{:<30} {:<15} {:<20} {}",
             name.cyan(),
             type_colored,
             last_run,
@@ -270,7 +274,8 @@ async fn list_rpa_workflows() -> Result<()> {
     }
 
     println!();
-    println!("{}: Use '{}' to execute a workflow",
+    println!(
+        "{}: Use '{}' to execute a workflow",
         "Tip".italic().dimmed(),
         "crablet rpa browser-exec <workflow>".cyan()
     );
@@ -305,9 +310,7 @@ async fn exec_desktop_automation(workflow: &str) -> Result<()> {
     }
 
     println!();
-    println!("{} Desktop automation completed",
-        "✓".green().bold()
-    );
+    println!("{} Desktop automation completed", "✓".green().bold());
 
     Ok(())
 }
