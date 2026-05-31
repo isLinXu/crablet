@@ -1,14 +1,14 @@
-use std::sync::Arc;
-use std::net::IpAddr;
-use std::time::{Duration, Instant};
+use crate::error::{CrabletError, Result};
+use dashmap::DashMap;
 use governor::{
     clock::DefaultClock,
-    state::{keyed::DashMapStateStore, direct::NotKeyed},
+    state::{direct::NotKeyed, keyed::DashMapStateStore},
     Quota, RateLimiter,
 };
+use std::net::IpAddr;
 use std::num::NonZeroU32;
-use dashmap::DashMap;
-use crate::error::{CrabletError, Result};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 // Slow request tracking
 #[derive(Clone, Debug)]
@@ -24,11 +24,13 @@ pub struct MultiLayerRateLimiter {
     // IP limiter (Keyed by IpAddr)
     ip_limiter: RateLimiter<IpAddr, DashMapStateStore<IpAddr>, DefaultClock>,
     // User limiter (Keyed by String - UserID)
-    user_limiter: Arc<DashMap<String, RateLimiter<NotKeyed, governor::state::InMemoryState, DefaultClock>>>,
+    user_limiter:
+        Arc<DashMap<String, RateLimiter<NotKeyed, governor::state::InMemoryState, DefaultClock>>>,
     // Slow request tracker (IP-based)
     slow_request_tracker: Arc<DashMap<IpAddr, SlowRequestTracker>>,
     // API Key limiter (Keyed by API Key)
-    api_key_limiter: Arc<DashMap<String, RateLimiter<NotKeyed, governor::state::InMemoryState, DefaultClock>>>,
+    api_key_limiter:
+        Arc<DashMap<String, RateLimiter<NotKeyed, governor::state::InMemoryState, DefaultClock>>>,
     // Config
     user_quota: Quota,
     api_key_quota: Quota,
@@ -41,7 +43,8 @@ pub type GlobalRateLimiter = MultiLayerRateLimiter;
 
 pub fn create_limiter() -> Arc<GlobalRateLimiter> {
     // 1. Global Quota: 1000 req/s
-    let global_quota = Quota::per_second(NonZeroU32::new(1000).expect("Quota limit must be non-zero"));
+    let global_quota =
+        Quota::per_second(NonZeroU32::new(1000).expect("Quota limit must be non-zero"));
 
     // 2. IP Quota: 10 req/s (burst 20)
     let ip_quota = Quota::per_second(NonZeroU32::new(10).expect("Quota limit must be non-zero"))
@@ -52,8 +55,9 @@ pub fn create_limiter() -> Arc<GlobalRateLimiter> {
         .allow_burst(NonZeroU32::new(100).expect("Burst limit must be non-zero"));
 
     // 4. API Key Quota: 100 req/s (burst 200) - higher than user limit for API access
-    let api_key_quota = Quota::per_second(NonZeroU32::new(100).expect("Quota limit must be non-zero"))
-        .allow_burst(NonZeroU32::new(200).expect("Burst limit must be non-zero"));
+    let api_key_quota =
+        Quota::per_second(NonZeroU32::new(100).expect("Quota limit must be non-zero"))
+            .allow_burst(NonZeroU32::new(200).expect("Burst limit must be non-zero"));
 
     // Slow request threshold: 5 seconds
     let slow_request_threshold = 5000;
@@ -74,22 +78,30 @@ impl MultiLayerRateLimiter {
     pub fn check_key(&self, ip: &IpAddr) -> Result<()> {
         // 1. Global Check
         if self.global_limiter.check().is_err() {
-             return Err(CrabletError::Other(anyhow::anyhow!("Global rate limit exceeded")));
+            return Err(CrabletError::Other(anyhow::anyhow!(
+                "Global rate limit exceeded"
+            )));
         }
 
         // 2. Slow Request Check (mitigate slow DoS attacks)
         if let Some(tracker) = self.slow_request_tracker.get(ip) {
             // Check if too many slow requests in last minute
-            if tracker.request_count > 10 && tracker.total_duration_ms / tracker.request_count as u64 > self.slow_request_threshold {
-                if tracker.last_check.elapsed() < Duration::from_secs(60) {
-                    return Err(CrabletError::Other(anyhow::anyhow!("Too many slow requests. Please optimize your requests.")));
-                }
+            if tracker.request_count > 10
+                && tracker.total_duration_ms / tracker.request_count as u64
+                    > self.slow_request_threshold
+                && tracker.last_check.elapsed() < Duration::from_secs(60)
+            {
+                return Err(CrabletError::Other(anyhow::anyhow!(
+                    "Too many slow requests. Please optimize your requests."
+                )));
             }
         }
 
         // 3. IP Check
         if self.ip_limiter.check_key(ip).is_err() {
-             return Err(CrabletError::Other(anyhow::anyhow!("IP rate limit exceeded")));
+            return Err(CrabletError::Other(anyhow::anyhow!(
+                "IP rate limit exceeded"
+            )));
         }
 
         Ok(())
@@ -97,22 +109,30 @@ impl MultiLayerRateLimiter {
 
     pub fn check_user(&self, user_id: &str) -> Result<()> {
         // Get or create limiter for user
-        let limiter = self.user_limiter.entry(user_id.to_string())
+        let limiter = self
+            .user_limiter
+            .entry(user_id.to_string())
             .or_insert_with(|| RateLimiter::direct(self.user_quota));
 
         if limiter.check().is_err() {
-            return Err(CrabletError::Other(anyhow::anyhow!("User rate limit exceeded")));
+            return Err(CrabletError::Other(anyhow::anyhow!(
+                "User rate limit exceeded"
+            )));
         }
         Ok(())
     }
 
     pub fn check_api_key(&self, api_key: &str) -> Result<()> {
         // Get or create limiter for API key
-        let limiter = self.api_key_limiter.entry(api_key.to_string())
+        let limiter = self
+            .api_key_limiter
+            .entry(api_key.to_string())
             .or_insert_with(|| RateLimiter::direct(self.api_key_quota));
 
         if limiter.check().is_err() {
-            return Err(CrabletError::Other(anyhow::anyhow!("API key rate limit exceeded")));
+            return Err(CrabletError::Other(anyhow::anyhow!(
+                "API key rate limit exceeded"
+            )));
         }
         Ok(())
     }
@@ -123,12 +143,14 @@ impl MultiLayerRateLimiter {
             return; // Not a slow request
         }
 
-        let mut tracker = self.slow_request_tracker.entry(*ip)
-            .or_insert_with(|| SlowRequestTracker {
-                request_count: 0,
-                total_duration_ms: 0,
-                last_check: Instant::now(),
-            });
+        let mut tracker =
+            self.slow_request_tracker
+                .entry(*ip)
+                .or_insert_with(|| SlowRequestTracker {
+                    request_count: 0,
+                    total_duration_ms: 0,
+                    last_check: Instant::now(),
+                });
 
         tracker.request_count += 1;
         tracker.total_duration_ms += duration_ms;
@@ -205,7 +227,10 @@ mod tests {
                 break;
             }
         }
-        assert!(blocked, "IP rate limit should have been triggered after many requests");
+        assert!(
+            blocked,
+            "IP rate limit should have been triggered after many requests"
+        );
     }
 
     #[test]
@@ -230,7 +255,10 @@ mod tests {
 
         // Verify tracker was created
         assert!(limiter.slow_request_tracker.contains_key(&ip));
-        let tracker = limiter.slow_request_tracker.get(&ip).unwrap();
+        let tracker = limiter
+            .slow_request_tracker
+            .get(&ip)
+            .expect("slow request tracker should be created");
         assert_eq!(tracker.request_count, 1);
         assert_eq!(tracker.total_duration_ms, 6000);
     }
@@ -255,7 +283,10 @@ mod tests {
 
         // Manually set last_check to the past
         {
-            let mut tracker = limiter.slow_request_tracker.get_mut(&ip).unwrap();
+            let mut tracker = limiter
+                .slow_request_tracker
+                .get_mut(&ip)
+                .expect("slow request tracker should be mutable");
             tracker.last_check = std::time::Instant::now() - Duration::from_secs(600);
         }
 
@@ -288,4 +319,3 @@ mod tests {
         assert!(limiter.check_api_key("sk-key-fresh").is_ok());
     }
 }
-

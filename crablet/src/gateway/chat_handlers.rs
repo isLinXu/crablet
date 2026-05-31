@@ -2,30 +2,32 @@
 //!
 //! Handles chat, streaming, and image generation endpoints.
 
-use std::sync::Arc;
 use axum::{
-    extract::{State, Json},
+    extract::{Json, State},
     response::sse::{Event, Sse},
 };
-use futures::stream::StreamExt;
 use futures::stream::BoxStream;
-use std::collections::HashSet;
+use futures::stream::StreamExt;
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
+use std::sync::Arc;
 
-use crate::gateway::server::CrabletGateway;
 use crate::cognitive::llm::{LlmClient, OpenAiClient};
 use crate::cognitive::streaming_pipeline::{
-    EmptyDeltaFilterMiddleware, FinalizeSummaryMiddleware, MetricsMiddleware, StreamChunk, StreamingPipeline,
+    EmptyDeltaFilterMiddleware, FinalizeSummaryMiddleware, MetricsMiddleware, StreamChunk,
+    StreamingPipeline,
 };
-use crate::types::TraceStep;
+use crate::gateway::server::CrabletGateway;
 use crate::types::Message;
+use crate::types::TraceStep;
 
 #[cfg(feature = "knowledge")]
-use crate::knowledge::graph_rag::{GraphRAG, EntityExtractorMode};
+use crate::knowledge::graph_rag::{EntityExtractorMode, GraphRAG};
+#[cfg(feature = "knowledge")]
+use std::str::FromStr;
 
 use super::handlers_shared::{
-    env_value_from_file, with_identity_persona_input,
-    system_prompt_markdown, infer_cognitive_layer,
+    env_value_from_file, infer_cognitive_layer, system_prompt_markdown, with_identity_persona_input,
 };
 
 #[derive(Deserialize)]
@@ -102,11 +104,16 @@ fn llm_from_route(route: Option<&RouteSelection>) -> Option<Arc<Box<dyn LlmClien
     Some(Arc::new(Box::new(client)))
 }
 
-async fn prepare_stream_rag(gateway: &Arc<CrabletGateway>, input: &str) -> Option<StreamRagPreparation> {
+async fn prepare_stream_rag(
+    gateway: &Arc<CrabletGateway>,
+    input: &str,
+) -> Option<StreamRagPreparation> {
     let mut rag_context = String::new();
-    let refs: Vec<serde_json::Value> = Vec::new();
+    #[allow(unused_mut)]
+    let mut refs: Vec<serde_json::Value> = Vec::new();
     let mut graph_entities: Vec<String> = Vec::new();
-    let retrieval = "none".to_string();
+    #[allow(unused_mut)]
+    let mut retrieval = "none".to_string();
 
     if let Some(kg) = &gateway.router.sys2.kg {
         let keywords: Vec<String> = input
@@ -123,12 +130,15 @@ async fn prepare_stream_rag(gateway: &Arc<CrabletGateway>, input: &str) -> Optio
                     if let Ok(relations) = kg.find_related(&name).await {
                         if !relations.is_empty() {
                             graph_entities.push(name.clone());
-                            rag_context.push_str(&format!("\n[Knowledge Graph about '{}']:\n", name));
+                            rag_context
+                                .push_str(&format!("\n[Knowledge Graph about '{}']:\n", name));
                             for (dir, rel, target) in relations.iter().take(4) {
                                 if dir == "->" {
-                                    rag_context.push_str(&format!("- {} {} {}\n", name, rel, target));
+                                    rag_context
+                                        .push_str(&format!("- {} {} {}\n", name, rel, target));
                                 } else {
-                                    rag_context.push_str(&format!("- {} {} {}\n", target, rel, name));
+                                    rag_context
+                                        .push_str(&format!("- {} {} {}\n", target, rel, name));
                                 }
                             }
                         }
@@ -145,7 +155,8 @@ async fn prepare_stream_rag(gateway: &Arc<CrabletGateway>, input: &str) -> Optio
             if let Some(kg) = &gateway.router.sys2.kg {
                 let mode = {
                     let cfg = gateway.router.config.read().await;
-                    EntityExtractorMode::from_str(&cfg.graph_rag_entity_mode).unwrap_or(EntityExtractorMode::Hybrid)
+                    EntityExtractorMode::from_str(&cfg.graph_rag_entity_mode)
+                        .unwrap_or(EntityExtractorMode::Hybrid)
                 };
                 let graph_rag = GraphRAG::new_with_mode(Arc::clone(vs), Arc::clone(kg), mode);
                 if let Ok(results) = graph_rag.retrieve(input, 3).await {
@@ -153,7 +164,13 @@ async fn prepare_stream_rag(gateway: &Arc<CrabletGateway>, input: &str) -> Optio
                         retrieval = "graph_rag".to_string();
                         rag_context.push_str("\n[GraphRAG Results]:\n");
                         for (i, item) in results.iter().enumerate() {
-                            rag_context.push_str(&format!("- [Ref {}] [{} {:.2}] {}\n", i + 1, item.source, item.score, item.content));
+                            rag_context.push_str(&format!(
+                                "- [Ref {}] [{} {:.2}] {}\n",
+                                i + 1,
+                                item.source,
+                                item.score,
+                                item.content
+                            ));
                             refs.push(serde_json::json!({
                                 "source": item.source,
                                 "score": item.score,
@@ -170,7 +187,12 @@ async fn prepare_stream_rag(gateway: &Arc<CrabletGateway>, input: &str) -> Optio
                         retrieval = "semantic_search".to_string();
                         rag_context.push_str("\n[Semantic Search Results]:\n");
                         for (i, (content, score, metadata)) in results.iter().enumerate() {
-                            rag_context.push_str(&format!("- [Ref {}] (score: {:.2}) {}\n", i + 1, score, content));
+                            rag_context.push_str(&format!(
+                                "- [Ref {}] (score: {:.2}) {}\n",
+                                i + 1,
+                                score,
+                                content
+                            ));
                             refs.push(serde_json::json!({
                                 "source": metadata.get("source").and_then(|v| v.as_str()).unwrap_or("vector_store"),
                                 "score": score,
@@ -202,14 +224,24 @@ async fn prepare_stream_rag(gateway: &Arc<CrabletGateway>, input: &str) -> Optio
             .to_string(),
         ),
     };
-    Some(StreamRagPreparation { step, prompt_context: if rag_context.is_empty() { String::new() } else { prompt_context } })
+    Some(StreamRagPreparation {
+        step,
+        prompt_context: if rag_context.is_empty() {
+            String::new()
+        } else {
+            prompt_context
+        },
+    })
 }
 
 pub async fn chat_handler(
     State(gateway): State<Arc<CrabletGateway>>,
     Json(payload): Json<ChatRequest>,
 ) -> Json<serde_json::Value> {
-    let session_id = payload.session_id.clone().unwrap_or_else(|| "default".to_string());
+    let session_id = payload
+        .session_id
+        .clone()
+        .unwrap_or_else(|| "default".to_string());
     let input = with_identity_persona_input(&payload.message);
     if let Some(llm) = llm_from_route(payload.route.as_ref()) {
         let mut messages = Vec::new();
@@ -235,12 +267,12 @@ pub async fn chat_handler(
         Ok((response, traces)) => {
             let cognitive_layer = infer_cognitive_layer(&response, &traces);
             Json(serde_json::json!({
-            "response": response,
-            "traces": traces,
-            "cognitive_layer": cognitive_layer,
-            "session_id": session_id
-        }))
-        },
+                "response": response,
+                "traces": traces,
+                "cognitive_layer": cognitive_layer,
+                "session_id": session_id
+            }))
+        }
         Err(e) => Json(serde_json::json!({
             "error": e.to_string()
         })),
@@ -251,7 +283,10 @@ pub async fn chat_stream(
     State(gateway): State<Arc<CrabletGateway>>,
     Json(payload): Json<ChatRequest>,
 ) -> Sse<BoxStream<'static, Result<Event, axum::Error>>> {
-    let session_id = payload.session_id.clone().unwrap_or_else(|| "default".to_string());
+    let session_id = payload
+        .session_id
+        .clone()
+        .unwrap_or_else(|| "default".to_string());
     let session_id_for_event = session_id.clone();
     let message = payload.message.clone();
 
@@ -272,7 +307,10 @@ pub async fn chat_stream(
     if let Ok((response, traces)) = &router_result {
         let cognitive_layer = infer_cognitive_layer(response, traces);
         if cognitive_layer == "system1" {
-            tracing::info!("[chat_stream] System 1 快速响应: {}", response.chars().take(50).collect::<String>());
+            tracing::info!(
+                "[chat_stream] System 1 快速响应: {}",
+                response.chars().take(50).collect::<String>()
+            );
             let response = response.clone();
             let traces = traces.clone();
             let session_id_for_stream = session_id_for_event.clone();
@@ -296,7 +334,8 @@ pub async fn chat_stream(
                 Arc::new(MetricsMiddleware),
                 Arc::new(FinalizeSummaryMiddleware),
             ]);
-            let stream: BoxStream<'static, Result<Event, axum::Error>> = pipeline.process(source_stream)
+            let stream: BoxStream<'static, Result<Event, axum::Error>> = pipeline
+                .process(source_stream)
                 .map(move |chunk| {
                     let data = serde_json::json!({
                         "type": chunk.chunk_type,
@@ -312,11 +351,13 @@ pub async fn chat_stream(
     }
 
     // System 1 not matched or returned error, fallback to LLM streaming
-    let cognitive_layer = crate::gateway::handlers_shared::infer_cognitive_layer_from_input(&message);
+    let cognitive_layer =
+        crate::gateway::handlers_shared::infer_cognitive_layer_from_input(&message);
     tracing::info!("[chat_stream] 推断认知层: {}", cognitive_layer);
 
     let enhanced_input = with_identity_persona_input(&message);
-    let llm = llm_from_route(payload.route.as_ref()).unwrap_or_else(|| gateway.router.sys2.llm.clone());
+    let llm =
+        llm_from_route(payload.route.as_ref()).unwrap_or_else(|| gateway.router.sys2.llm.clone());
     let gateway_for_stream = gateway.clone();
     let pipeline = StreamingPipeline::new(vec![
         Arc::new(EmptyDeltaFilterMiddleware),
@@ -399,7 +440,8 @@ pub async fn chat_stream(
             }
         }
     };
-    let stream: BoxStream<'static, Result<Event, axum::Error>> = pipeline.process(source_stream)
+    let stream: BoxStream<'static, Result<Event, axum::Error>> = pipeline
+        .process(source_stream)
         .map(move |chunk| {
             let data = serde_json::json!({
                 "type": chunk.chunk_type,
@@ -413,9 +455,7 @@ pub async fn chat_stream(
     Sse::new(stream).keep_alive(axum::response::sse::KeepAlive::default())
 }
 
-pub async fn image_handler(
-    Json(payload): Json<ImageRequest>,
-) -> Json<serde_json::Value> {
+pub async fn image_handler(Json(payload): Json<ImageRequest>) -> Json<serde_json::Value> {
     let route = payload.route.unwrap_or_default();
     let model = route.model.unwrap_or_else(|| "qwen-image".to_string());
     let base_url = route

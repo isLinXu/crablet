@@ -1,15 +1,17 @@
 use axum::{
-    Json,
     extract::{Path, State},
     http::StatusCode,
     response::sse::{Event, Sse},
+    Json,
 };
 use futures::stream;
 use std::convert::Infallible;
 use std::sync::Arc;
 
 use super::server::CrabletGateway;
-use crate::workflow::types::{CreateWorkflowRequest, ExecuteWorkflowRequest, UpdateWorkflowRequest, ValidationResult};
+use crate::workflow::types::{
+    CreateWorkflowRequest, ExecuteWorkflowRequest, UpdateWorkflowRequest, ValidationResult,
+};
 
 pub async fn create_workflow(
     State(gateway): State<Arc<CrabletGateway>>,
@@ -29,7 +31,11 @@ pub async fn get_workflow(
     State(gateway): State<Arc<CrabletGateway>>,
     Path(id): Path<String>,
 ) -> Result<Json<crate::workflow::types::Workflow>, StatusCode> {
-    let workflow = gateway.workflow_registry.get(&id).await.ok_or(StatusCode::NOT_FOUND)?;
+    let workflow = gateway
+        .workflow_registry
+        .get(&id)
+        .await
+        .ok_or(StatusCode::NOT_FOUND)?;
     Ok(Json(workflow))
 }
 
@@ -38,7 +44,11 @@ pub async fn update_workflow(
     Path(id): Path<String>,
     Json(payload): Json<UpdateWorkflowRequest>,
 ) -> Result<Json<crate::workflow::types::Workflow>, StatusCode> {
-    let workflow = gateway.workflow_registry.update(&id, payload).await.ok_or(StatusCode::NOT_FOUND)?;
+    let workflow = gateway
+        .workflow_registry
+        .update(&id, payload)
+        .await
+        .ok_or(StatusCode::NOT_FOUND)?;
     Ok(Json(workflow))
 }
 
@@ -84,14 +94,20 @@ pub async fn list_executions(
     State(gateway): State<Arc<CrabletGateway>>,
     Path(workflow_id): Path<String>,
 ) -> Result<Json<Vec<crate::workflow::types::WorkflowExecution>>, StatusCode> {
-    Ok(Json(gateway.workflow_engine.list_executions(&workflow_id).await))
+    Ok(Json(
+        gateway.workflow_engine.list_executions(&workflow_id).await,
+    ))
 }
 
 pub async fn get_execution(
     State(gateway): State<Arc<CrabletGateway>>,
     Path(id): Path<String>,
 ) -> Result<Json<crate::workflow::types::WorkflowExecution>, StatusCode> {
-    let execution = gateway.workflow_engine.get_execution(&id).await.ok_or(StatusCode::NOT_FOUND)?;
+    let execution = gateway
+        .workflow_engine
+        .get_execution(&id)
+        .await
+        .ok_or(StatusCode::NOT_FOUND)?;
     Ok(Json(execution))
 }
 
@@ -108,9 +124,14 @@ pub async fn cancel_execution(
 pub async fn validate_workflow(
     Json(payload): Json<CreateWorkflowRequest>,
 ) -> Result<Json<ValidationResult>, StatusCode> {
-    Ok(Json(crate::workflow::registry::WorkflowRegistry::validate(&payload)))
+    Ok(Json(crate::workflow::registry::WorkflowRegistry::validate(
+        &payload,
+    )))
 }
 
-pub async fn get_node_types() -> Result<Json<Vec<crate::workflow::types::NodeTypeDefinition>>, StatusCode> {
-    Ok(Json(crate::workflow::registry::WorkflowRegistry::node_types()))
+pub async fn get_node_types(
+) -> Result<Json<Vec<crate::workflow::types::NodeTypeDefinition>>, StatusCode> {
+    Ok(Json(
+        crate::workflow::registry::WorkflowRegistry::node_types(),
+    ))
 }

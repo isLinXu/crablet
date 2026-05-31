@@ -2,14 +2,12 @@
 //!
 //! Handles Swarm orchestration, agent management, and HITL (Human-in-the-Loop).
 
-use std::sync::Arc;
-use axum::{
-    extract::{State, Json, Path},
-};
+use axum::extract::{Json, Path, State};
 use serde::Deserialize;
+use std::sync::Arc;
 
-use crate::gateway::server::CrabletGateway;
 use crate::agent::hitl::HumanDecision;
+use crate::gateway::server::CrabletGateway;
 
 #[derive(Deserialize)]
 pub struct HitlDecisionPayload {
@@ -21,7 +19,7 @@ pub struct HitlDecisionPayload {
 pub async fn get_swarm_stats(
     State(_gateway): State<Arc<CrabletGateway>>,
 ) -> Json<serde_json::Value> {
-     Json(serde_json::json!({
+    Json(serde_json::json!({
         "stats": {
             "total_tasks": 12,
             "active": 3,
@@ -78,7 +76,7 @@ pub async fn get_swarm_tasks(
                     "result": "Draft ready."
                 }
             }
-        })
+        }),
     ];
 
     Json(serde_json::json!({
@@ -102,9 +100,7 @@ pub async fn get_swarm_state(
     }))
 }
 
-pub async fn list_agents(
-    State(_gateway): State<Arc<CrabletGateway>>,
-) -> Json<serde_json::Value> {
+pub async fn list_agents(State(_gateway): State<Arc<CrabletGateway>>) -> Json<serde_json::Value> {
     Json(serde_json::json!([
         {"role": "manager", "description": "Task coordinator"},
         {"role": "coder", "description": "Software engineer"},
@@ -150,7 +146,11 @@ pub async fn decide_swarm_review(
     if let Some(orch) = orchestrator {
         let decision = match payload.decision.to_lowercase().as_str() {
             "approved" | "approve" => HumanDecision::Approved,
-            "rejected" | "reject" => HumanDecision::Rejected(payload.value.unwrap_or_else(|| "Rejected by user".to_string())),
+            "rejected" | "reject" => HumanDecision::Rejected(
+                payload
+                    .value
+                    .unwrap_or_else(|| "Rejected by user".to_string()),
+            ),
             "edited" | "edit" => HumanDecision::Edited(payload.value.unwrap_or_default()),
             "selected" | "select" => HumanDecision::Selected(payload.selected_index.unwrap_or(0)),
             "feedback" => HumanDecision::Feedback(payload.value.unwrap_or_default()),
@@ -161,7 +161,12 @@ pub async fn decide_swarm_review(
                 }));
             }
         };
-        if orch.coordinator.executor.hitl.submit_decision(&task_id, decision) {
+        if orch
+            .coordinator
+            .executor
+            .hitl
+            .submit_decision(&task_id, decision)
+        {
             return Json(serde_json::json!({ "status": "success" }));
         }
         return Json(serde_json::json!({

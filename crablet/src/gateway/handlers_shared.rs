@@ -2,11 +2,11 @@
 //!
 //! Common helper functions used across multiple handler modules.
 
+use crate::types::TraceStep;
+use std::collections::HashSet;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::OnceLock;
-use std::collections::HashSet;
-use crate::types::TraceStep;
 
 /// Resolve the path to the .env file
 pub fn resolve_env_file_path() -> PathBuf {
@@ -116,13 +116,26 @@ pub fn infer_cognitive_layer(response: &str, traces: &[TraceStep]) -> &'static s
             text.push_str(&o.to_lowercase());
         }
     }
-    if text.contains("system 1") || text.contains("system1") || text.contains("trie hit") || text.contains("fastrespond") {
+    if text.contains("system 1")
+        || text.contains("system1")
+        || text.contains("trie hit")
+        || text.contains("fastrespond")
+    {
         return "system1";
     }
-    if text.contains("system 3") || text.contains("system3") || text.contains("plan") || text.contains("planner") || text.contains("verify") {
+    if text.contains("system 3")
+        || text.contains("system3")
+        || text.contains("plan")
+        || text.contains("planner")
+        || text.contains("verify")
+    {
         return "system3";
     }
-    if text.contains("system 2") || text.contains("system2") || text.contains("reason") || text.contains("deliberate") {
+    if text.contains("system 2")
+        || text.contains("system2")
+        || text.contains("reason")
+        || text.contains("deliberate")
+    {
         return "system2";
     }
     if !traces.is_empty() {
@@ -137,8 +150,21 @@ pub fn infer_cognitive_layer_from_input(input: &str) -> &'static str {
 
     // Greeting patterns -> System 1
     let greeting_patterns = [
-        "hi", "hello", "hey", "greetings", "good morning", "good afternoon", "good evening",
-        "你好", "嗨", "您好", "早上好", "下午好", "晚上好", "在吗", "在么",
+        "hi",
+        "hello",
+        "hey",
+        "greetings",
+        "good morning",
+        "good afternoon",
+        "good evening",
+        "你好",
+        "嗨",
+        "您好",
+        "早上好",
+        "下午好",
+        "晚上好",
+        "在吗",
+        "在么",
     ];
     for pattern in &greeting_patterns {
         if input_lower.trim() == *pattern || input_lower.starts_with(pattern) {
@@ -148,9 +174,22 @@ pub fn infer_cognitive_layer_from_input(input: &str) -> &'static str {
 
     // Persona patterns -> System 1
     let persona_patterns = [
-        "who are you", "what are you", "your name", "introduce yourself", "tell me about yourself",
-        "你是谁", "你是什么", "你叫什么", "介绍一下", "你是干嘛的", "你是做什么的",
-        "你的身份", "你的角色", "你是ai吗", "你是人工智能吗", "你是机器人吗",
+        "who are you",
+        "what are you",
+        "your name",
+        "introduce yourself",
+        "tell me about yourself",
+        "你是谁",
+        "你是什么",
+        "你叫什么",
+        "介绍一下",
+        "你是干嘛的",
+        "你是做什么的",
+        "你的身份",
+        "你的角色",
+        "你是ai吗",
+        "你是人工智能吗",
+        "你是机器人吗",
     ];
     for pattern in &persona_patterns {
         if input_lower.contains(pattern) {
@@ -160,9 +199,29 @@ pub fn infer_cognitive_layer_from_input(input: &str) -> &'static str {
 
     // Chat patterns -> System 1
     let chat_patterns = [
-        "how are you", "what's up", "how's it going", "nice to meet you", "thank you", "thanks",
-        "你好吗", "最近怎么样", "很高兴认识你", "谢谢", "多谢", "哈哈", "呵呵", "嘿嘿",
-        "好的", "ok", "okay", "嗯", "哦", "啊", "呢", "吧", "吗",
+        "how are you",
+        "what's up",
+        "how's it going",
+        "nice to meet you",
+        "thank you",
+        "thanks",
+        "你好吗",
+        "最近怎么样",
+        "很高兴认识你",
+        "谢谢",
+        "多谢",
+        "哈哈",
+        "呵呵",
+        "嘿嘿",
+        "好的",
+        "ok",
+        "okay",
+        "嗯",
+        "哦",
+        "啊",
+        "呢",
+        "吧",
+        "吗",
     ];
     for pattern in &chat_patterns {
         if input_lower.trim() == *pattern || input_lower.starts_with(pattern) {
@@ -172,8 +231,16 @@ pub fn infer_cognitive_layer_from_input(input: &str) -> &'static str {
 
     // Simple personal questions -> System 1
     let personal_patterns = [
-        "how old are you", "where are you from", "what do you like", "your favorite",
-        "你多大了", "你几岁了", "你喜欢什么", "你的爱好", "你喜欢", "你的",
+        "how old are you",
+        "where are you from",
+        "what do you like",
+        "your favorite",
+        "你多大了",
+        "你几岁了",
+        "你喜欢什么",
+        "你的爱好",
+        "你喜欢",
+        "你的",
     ];
     for pattern in &personal_patterns {
         if input_lower.contains(pattern) {
@@ -183,8 +250,16 @@ pub fn infer_cognitive_layer_from_input(input: &str) -> &'static str {
 
     // Help patterns -> System 1
     let help_patterns = [
-        "help", "assist", "support", "how to", "what can you do",
-        "帮助", "怎么用", "如何使用", "你能做什么", "有什么功能",
+        "help",
+        "assist",
+        "support",
+        "how to",
+        "what can you do",
+        "帮助",
+        "怎么用",
+        "如何使用",
+        "你能做什么",
+        "有什么功能",
     ];
     for pattern in &help_patterns {
         if input_lower.contains(pattern) {
@@ -194,8 +269,15 @@ pub fn infer_cognitive_layer_from_input(input: &str) -> &'static str {
 
     // Status patterns -> System 1
     let status_patterns = [
-        "status", "system info", "health", "check", "diagnostics",
-        "状态", "系统信息", "健康检查", "诊断",
+        "status",
+        "system info",
+        "health",
+        "check",
+        "diagnostics",
+        "状态",
+        "系统信息",
+        "健康检查",
+        "诊断",
     ];
     for pattern in &status_patterns {
         if input_lower.contains(pattern) {
@@ -205,8 +287,16 @@ pub fn infer_cognitive_layer_from_input(input: &str) -> &'static str {
 
     // Deep research patterns -> System 3
     let research_patterns = [
-        "research", "deep research", "investigate", "explore in depth", "comprehensive analysis",
-        "研究", "深度研究", "深入分析", "全面调查", "详细探讨",
+        "research",
+        "deep research",
+        "investigate",
+        "explore in depth",
+        "comprehensive analysis",
+        "研究",
+        "深度研究",
+        "深入分析",
+        "全面调查",
+        "详细探讨",
     ];
     for pattern in &research_patterns {
         if input_lower.contains(pattern) {
@@ -216,20 +306,54 @@ pub fn infer_cognitive_layer_from_input(input: &str) -> &'static str {
 
     // Multi-step task patterns -> System 3
     let multistep_patterns = [
-        "first", "then", "next", "after", "finally", "step by step",
-        "首先", "然后", "接着", "最后", "一步步", "步骤",
+        "first",
+        "then",
+        "next",
+        "after",
+        "finally",
+        "step by step",
+        "首先",
+        "然后",
+        "接着",
+        "最后",
+        "一步步",
+        "步骤",
     ];
-    let multistep_count = multistep_patterns.iter().filter(|p| input_lower.contains(*p)).count();
+    let multistep_count = multistep_patterns
+        .iter()
+        .filter(|p| input_lower.contains(*p))
+        .count();
     if multistep_count >= 2 {
         return "system3";
     }
 
     // Code/analysis patterns -> System 2
     let code_patterns = [
-        "code", "function", "implement", "program", "debug", "refactor", "algorithm",
-        "代码", "编写", "实现", "函数", "调试", "程序", "算法",
-        "analyze", "compare", "evaluate", "assess", "review", "examine",
-        "分析", "比较", "评估", "评价", "优缺点",
+        "code",
+        "function",
+        "implement",
+        "program",
+        "debug",
+        "refactor",
+        "algorithm",
+        "代码",
+        "编写",
+        "实现",
+        "函数",
+        "调试",
+        "程序",
+        "算法",
+        "analyze",
+        "compare",
+        "evaluate",
+        "assess",
+        "review",
+        "examine",
+        "分析",
+        "比较",
+        "评估",
+        "评价",
+        "优缺点",
     ];
     for pattern in &code_patterns {
         if input_lower.contains(pattern) {
@@ -268,7 +392,10 @@ mod tests {
         assert_eq!(infer_cognitive_layer_from_input("你是谁"), "system1");
         assert_eq!(infer_cognitive_layer_from_input("what are you"), "system1");
         assert_eq!(infer_cognitive_layer_from_input("你叫什么名字"), "system1");
-        assert_eq!(infer_cognitive_layer_from_input("你是人工智能吗"), "system1");
+        assert_eq!(
+            infer_cognitive_layer_from_input("你是人工智能吗"),
+            "system1"
+        );
     }
 
     #[test]
@@ -289,12 +416,18 @@ mod tests {
     fn test_research_patterns_system3() {
         assert_eq!(infer_cognitive_layer_from_input("研究这个问题"), "system3");
         assert_eq!(infer_cognitive_layer_from_input("深度研究"), "system3");
-        assert_eq!(infer_cognitive_layer_from_input("comprehensive analysis"), "system3");
+        assert_eq!(
+            infer_cognitive_layer_from_input("comprehensive analysis"),
+            "system3"
+        );
     }
 
     #[test]
     fn test_multistep_patterns_system3() {
-        assert_eq!(infer_cognitive_layer_from_input("首先分析，然后总结，最后给出建议"), "system3");
+        assert_eq!(
+            infer_cognitive_layer_from_input("首先分析，然后总结，最后给出建议"),
+            "system3"
+        );
         // Single step keyword should not trigger system3
         assert_ne!(infer_cognitive_layer_from_input("首先我们开始"), "system3");
     }
@@ -302,15 +435,27 @@ mod tests {
     #[test]
     fn test_code_patterns_system2() {
         assert_eq!(infer_cognitive_layer_from_input("写一个函数"), "system2");
-        assert_eq!(infer_cognitive_layer_from_input("analyze the data"), "system2");
+        assert_eq!(
+            infer_cognitive_layer_from_input("analyze the data"),
+            "system2"
+        );
         assert_eq!(infer_cognitive_layer_from_input("实现算法"), "system2");
-        assert_eq!(infer_cognitive_layer_from_input("evaluate this approach"), "system2");
+        assert_eq!(
+            infer_cognitive_layer_from_input("evaluate this approach"),
+            "system2"
+        );
     }
 
     #[test]
     fn test_default_system2() {
-        assert_eq!(infer_cognitive_layer_from_input("some random text"), "system2");
-        assert_eq!(infer_cognitive_layer_from_input("tell me about the weather tomorrow"), "system2");
+        assert_eq!(
+            infer_cognitive_layer_from_input("some random text"),
+            "system2"
+        );
+        assert_eq!(
+            infer_cognitive_layer_from_input("tell me about the weather tomorrow"),
+            "system2"
+        );
     }
 
     // ── infer_cognitive_layer (response + traces) ──

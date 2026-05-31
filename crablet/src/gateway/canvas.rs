@@ -1,13 +1,11 @@
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", content = "data")]
 pub enum CanvasComponent {
     #[serde(rename = "markdown")]
-    Markdown {
-        content: String,
-    },
+    Markdown { content: String },
     #[serde(rename = "code")]
     Code {
         language: String,
@@ -15,9 +13,7 @@ pub enum CanvasComponent {
         filename: Option<String>,
     },
     #[serde(rename = "mermaid")]
-    Mermaid {
-        chart: String,
-    },
+    Mermaid { chart: String },
     #[serde(rename = "datatable")]
     DataTable {
         headers: Vec<String>,
@@ -25,9 +21,7 @@ pub enum CanvasComponent {
         title: Option<String>,
     },
     #[serde(rename = "html")]
-    Html {
-        content: String,
-    },
+    Html { content: String },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -72,7 +66,7 @@ impl CanvasState {
             section.components.push(component);
         }
     }
-    
+
     pub fn update_component(&mut self, section_id: &str, index: usize, component: CanvasComponent) {
         if let Some(section) = self.sections.get_mut(section_id) {
             if index < section.components.len() {
@@ -80,7 +74,7 @@ impl CanvasState {
             }
         }
     }
-    
+
     pub fn remove_component(&mut self, section_id: &str, index: usize) {
         if let Some(section) = self.sections.get_mut(section_id) {
             if index < section.components.len() {

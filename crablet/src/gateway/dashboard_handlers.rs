@@ -2,11 +2,8 @@
 //!
 //! Handles dashboard statistics and system health metrics.
 
+use axum::{extract::State, Json};
 use std::sync::Arc;
-use axum::{
-    extract::State,
-    Json,
-};
 
 use crate::gateway::server::CrabletGateway;
 
@@ -31,6 +28,26 @@ pub async fn get_dashboard_stats(
         0
     };
 
+    let distributed_harness = if let Some(manager) = &gateway.distributed_harness {
+        match manager.get_cluster_stats().await {
+            Ok(cluster) => serde_json::json!({
+                "enabled": true,
+                "node_id": manager.node_id(),
+                "node_address": manager.node_address(),
+                "node_port": manager.node_port(),
+                "cluster": cluster,
+            }),
+            Err(error) => serde_json::json!({
+                "enabled": true,
+                "error": error.to_string(),
+            }),
+        }
+    } else {
+        serde_json::json!({
+            "enabled": false,
+        })
+    };
+
     let stats = serde_json::json!({
         "status": "healthy",
         "skills_count": skills_count,
@@ -41,7 +58,8 @@ pub async fn get_dashboard_stats(
         "knowledge_nodes": knowledge_nodes,
         "skills_loaded": skills_count,
         "system_status": "healthy",
-        "uptime": gateway.started_at.elapsed().as_secs()
+        "uptime": gateway.started_at.elapsed().as_secs(),
+        "distributed_harness": distributed_harness,
     });
 
     tracing::info!("Dashboard stats: Completed in {:?}", start.elapsed());

@@ -1,14 +1,17 @@
+use crate::events::AgentEvent;
+use crate::gateway::types::RpcRequest;
+use crate::gateway::CrabletGateway;
 use axum::{
-    extract::{ws::{Message, WebSocket, WebSocketUpgrade}, State},
+    extract::{
+        ws::{Message, WebSocket, WebSocketUpgrade},
+        State,
+    },
     response::IntoResponse,
 };
-use crate::gateway::CrabletGateway;
 use futures::{SinkExt, StreamExt};
-use crate::gateway::types::RpcRequest;
-use tokio::sync::mpsc;
-use std::sync::Arc;
-use crate::events::AgentEvent;
 use serde_json::json;
+use std::sync::Arc;
+use tokio::sync::mpsc;
 
 fn event_to_ws_json(event: &AgentEvent) -> serde_json::Value {
     match event {
@@ -20,7 +23,14 @@ fn event_to_ws_json(event: &AgentEvent) -> serde_json::Value {
         AgentEvent::ToolExecutionFinished { output, .. } => {
             json!({ "ToolExecutionFinished": { "output": output } })
         }
-        AgentEvent::SwarmActivity { task_id, from, to, message_type, content, .. } => json!({
+        AgentEvent::SwarmActivity {
+            task_id,
+            from,
+            to,
+            message_type,
+            content,
+            ..
+        } => json!({
             "SwarmActivity": {
                 "task_id": task_id,
                 "from": from,
@@ -35,9 +45,13 @@ fn event_to_ws_json(event: &AgentEvent) -> serde_json::Value {
                 "to_mode": to_mode
             }
         }),
-        AgentEvent::ResponseGenerated(content) => json!({ "ResponseGenerated": { "content": content } }),
+        AgentEvent::ResponseGenerated(content) => {
+            json!({ "ResponseGenerated": { "content": content } })
+        }
         AgentEvent::Error(message) => json!({ "Error": { "message": message } }),
-        AgentEvent::CognitiveLayerChanged { layer } => json!({ "CognitiveLayer": { "layer": layer } }),
+        AgentEvent::CognitiveLayerChanged { layer } => {
+            json!({ "CognitiveLayer": { "layer": layer } })
+        }
         _ => json!({ "type": "noop" }),
     }
 }
@@ -51,16 +65,16 @@ pub async fn ws_handler(
 
 async fn handle_socket(socket: WebSocket, gateway: Arc<CrabletGateway>) {
     let (mut sender, mut receiver) = socket.split();
-    
+
     // Create channel for sending responses to this client
     // Use bounded channel to prevent DoS (backpressure)
     let (tx, mut rx) = mpsc::channel(1024);
     let mut event_rx = gateway.event_bus.subscribe();
-    
+
     // Create session
     let session_id = gateway.session.create_session("anonymous".to_string(), tx);
     tracing::info!("New session: {}", session_id);
-    
+
     // Spawn task to forward messages from channel to websocket
     let mut send_task = tokio::spawn(async move {
         loop {
@@ -105,7 +119,10 @@ async fn handle_socket(socket: WebSocket, gateway: Arc<CrabletGateway>) {
                 if let Ok(req) = serde_json::from_str::<RpcRequest>(&text) {
                     let res = gateway_clone.rpc.dispatch(req).await;
                     // Now async
-                    let _ = gateway_clone.session.send_to_session(&session_id_clone, res).await;
+                    let _ = gateway_clone
+                        .session
+                        .send_to_session(&session_id_clone, res)
+                        .await;
                 }
             }
         }

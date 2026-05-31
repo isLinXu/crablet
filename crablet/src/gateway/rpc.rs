@@ -96,7 +96,12 @@ mod tests {
         let resp = dispatcher.dispatch(req).await;
         assert!(resp.result.is_none());
         assert!(resp.error.is_some());
-        assert_eq!(resp.error.unwrap().code, -32601);
+        assert_eq!(
+            resp.error
+                .expect("unknown method should return an RPC error")
+                .code,
+            -32601
+        );
     }
 
     #[tokio::test]
@@ -116,7 +121,12 @@ mod tests {
         };
         let resp = dispatcher.dispatch(req).await;
         assert!(resp.result.is_none());
-        assert_eq!(resp.error.unwrap().code, -32000);
+        assert_eq!(
+            resp.error
+                .expect("handler failure should return an RPC error")
+                .code,
+            -32000
+        );
     }
 
     #[tokio::test]

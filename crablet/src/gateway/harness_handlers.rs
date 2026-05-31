@@ -647,7 +647,7 @@ mod tests {
             tokio_util::sync::CancellationToken::new(),
         )
         .await
-        .unwrap();
+        .expect("test gateway should initialize");
 
         Arc::new(gateway)
     }
@@ -681,8 +681,14 @@ mod tests {
     #[tokio::test]
     async fn test_harness_endpoints_when_enabled() {
         let manager = test_manager();
-        manager.register_local_node().await.unwrap();
-        let harness_id = manager.create_harness(None).await.unwrap();
+        manager
+            .register_local_node()
+            .await
+            .expect("local harness node should register");
+        let harness_id = manager
+            .create_harness(None)
+            .await
+            .expect("test harness should be created");
 
         let gateway = test_gateway().await;
         let gateway = Arc::new((*gateway).clone().with_distributed_harness(manager));
@@ -700,7 +706,7 @@ mod tests {
 
         let detail = get_harness(State(gateway.clone()), Path(harness_id.clone()))
             .await
-            .unwrap()
+            .expect("existing harness should be returned")
             .0;
         assert_eq!(detail["status"], "success");
         assert_eq!(detail["harness"]["id"], harness_id);
@@ -714,7 +720,10 @@ mod tests {
     #[tokio::test]
     async fn test_create_harness_endpoint_creates_harness() {
         let manager = test_manager();
-        manager.register_local_node().await.unwrap();
+        manager
+            .register_local_node()
+            .await
+            .expect("local harness node should register");
 
         let gateway = test_gateway().await;
         let gateway = Arc::new((*gateway).clone().with_distributed_harness(manager.clone()));
@@ -730,15 +739,18 @@ mod tests {
             }),
         )
         .await
-        .unwrap()
+        .expect("create harness endpoint should succeed")
         .0;
 
-        let harness_id = response["harness_id"].as_str().unwrap().to_string();
+        let harness_id = response["harness_id"]
+            .as_str()
+            .expect("create harness response should include a harness_id")
+            .to_string();
         let info = manager
             .get_harness_info(&harness_id)
             .await
-            .unwrap()
-            .unwrap();
+            .expect("harness lookup should succeed")
+            .expect("created harness should exist");
 
         assert_eq!(response["status"], "success");
         assert_eq!(response["target_node_id"], "node-test");
@@ -748,7 +760,10 @@ mod tests {
     #[tokio::test]
     async fn test_execute_harness_runs_generic_agent() {
         let manager = test_manager();
-        manager.register_local_node().await.unwrap();
+        manager
+            .register_local_node()
+            .await
+            .expect("local harness node should register");
 
         let gateway = test_gateway().await;
         let gateway = Arc::new((*gateway).clone().with_distributed_harness(manager.clone()));
@@ -769,7 +784,8 @@ mod tests {
             ),
         };
 
-        let built_agent = build_agent(&gateway.router, &agent).unwrap();
+        let built_agent =
+            build_agent(&gateway.router, &agent).expect("generic harness agent should build");
         assert_eq!(built_agent.name(), "Custom Runner");
         assert_eq!(built_agent.description(), "custom harness agent");
 
@@ -787,15 +803,18 @@ mod tests {
             }),
         )
         .await
-        .unwrap()
+        .expect("execute harness endpoint should succeed")
         .0;
 
-        let harness_id = response["harness_id"].as_str().unwrap().to_string();
+        let harness_id = response["harness_id"]
+            .as_str()
+            .expect("execute harness response should include a harness_id")
+            .to_string();
         let info = manager
             .get_harness_info(&harness_id)
             .await
-            .unwrap()
-            .unwrap();
+            .expect("harness lookup should succeed")
+            .expect("executed harness should exist");
 
         assert_eq!(response["status"], "success");
         assert_eq!(response["result"]["success"], true);
@@ -815,7 +834,8 @@ mod tests {
             Some("You are a custom harness agent.")
         );
         assert_eq!(
-            GenericHarnessAgentSpec::from_metadata(&info.config.metadata).unwrap(),
+            GenericHarnessAgentSpec::from_metadata(&info.config.metadata)
+                .expect("generic harness agent spec should round-trip from metadata"),
             GenericHarnessAgentSpec {
                 role: "custom-runner".to_string(),
                 name: Some("Custom Runner".to_string()),
@@ -839,7 +859,10 @@ mod tests {
     #[tokio::test]
     async fn test_resume_harness_runs_from_saved_state() {
         let manager = test_manager();
-        manager.register_local_node().await.unwrap();
+        manager
+            .register_local_node()
+            .await
+            .expect("local harness node should register");
         let mut harness_config = HarnessConfig::default();
         let persisted_agent = GenericHarnessAgentSpec {
             role: "custom-runner".to_string(),
@@ -859,8 +882,11 @@ mod tests {
         };
         persisted_agent
             .persist_into_metadata(&mut harness_config.metadata)
-            .unwrap();
-        let harness_id = manager.create_harness(Some(harness_config)).await.unwrap();
+            .expect("generic harness agent spec should persist into metadata");
+        let harness_id = manager
+            .create_harness(Some(harness_config))
+            .await
+            .expect("paused harness should be created");
         manager
             .local_manager()
             .set_execution_state(
@@ -868,7 +894,7 @@ mod tests {
                 HarnessExecutionState::new("resume task", &[], None),
             )
             .await
-            .unwrap();
+            .expect("execution state should be stored");
         manager
             .local_manager()
             .update_status(&harness_id, HarnessStatus::Paused)
@@ -886,14 +912,14 @@ mod tests {
             }),
         )
         .await
-        .unwrap()
+        .expect("resume harness endpoint should succeed")
         .0;
 
         let info = manager
             .get_harness_info(&harness_id)
             .await
-            .unwrap()
-            .unwrap();
+            .expect("harness lookup should succeed")
+            .expect("resumed harness should exist");
 
         assert_eq!(response["status"], "success");
         assert_eq!(response["result"]["success"], true);
@@ -911,7 +937,8 @@ mod tests {
             Some("You are a resume harness agent.")
         );
         assert_eq!(
-            GenericHarnessAgentSpec::from_metadata(&info.config.metadata).unwrap(),
+            GenericHarnessAgentSpec::from_metadata(&info.config.metadata)
+                .expect("generic harness agent spec should round-trip from metadata"),
             persisted_agent
         );
         assert!(matches!(info.status, HarnessStatus::Completed));
@@ -920,13 +947,16 @@ mod tests {
     #[tokio::test]
     async fn test_register_execution_rpc_handlers_dispatches_run() {
         let manager = test_manager();
-        manager.register_local_node().await.unwrap();
+        manager
+            .register_local_node()
+            .await
+            .expect("local harness node should register");
         let gateway = test_gateway().await;
         let rpc = RpcDispatcher::new();
 
         register_execution_rpc_handlers(&rpc, manager, gateway.router.clone())
             .await
-            .unwrap();
+            .expect("distributed harness RPC handlers should register");
 
         let response = rpc
             .dispatch(RpcRequest {
@@ -943,16 +973,20 @@ mod tests {
                         harness_config: None,
                         target_node_id: None,
                     })
-                    .unwrap(),
+                    .expect("generic harness run request should serialize"),
                 ),
                 id: Some("rpc-run".to_string()),
             })
             .await;
 
         assert!(response.error.is_none());
-        assert_eq!(response.result.as_ref().unwrap()["result"]["success"], true);
+        let result = response
+            .result
+            .as_ref()
+            .expect("successful RPC response should include a result");
+        assert_eq!(result["result"]["success"], true);
         assert_eq!(
-            response.result.as_ref().unwrap()["result"]["output"],
+            result["result"]["output"],
             "Step 1: (Mock LLM) Processed: rpc task"
         );
     }
@@ -960,8 +994,14 @@ mod tests {
     #[tokio::test]
     async fn test_send_harness_signal_updates_status() {
         let manager = test_manager();
-        manager.register_local_node().await.unwrap();
-        let harness_id = manager.create_harness(None).await.unwrap();
+        manager
+            .register_local_node()
+            .await
+            .expect("local harness node should register");
+        let harness_id = manager
+            .create_harness(None)
+            .await
+            .expect("test harness should be created");
 
         let gateway = test_gateway().await;
         let gateway = Arc::new((*gateway).clone().with_distributed_harness(manager));
@@ -974,7 +1014,7 @@ mod tests {
             }),
         )
         .await
-        .unwrap()
+        .expect("pause signal should succeed")
         .0;
 
         assert_eq!(response["status"], "success");
@@ -985,8 +1025,14 @@ mod tests {
     #[tokio::test]
     async fn test_send_harness_signal_rejects_invalid_signal() {
         let manager = test_manager();
-        manager.register_local_node().await.unwrap();
-        let harness_id = manager.create_harness(None).await.unwrap();
+        manager
+            .register_local_node()
+            .await
+            .expect("local harness node should register");
+        let harness_id = manager
+            .create_harness(None)
+            .await
+            .expect("test harness should be created");
 
         let gateway = test_gateway().await;
         let gateway = Arc::new((*gateway).clone().with_distributed_harness(manager));
@@ -999,7 +1045,7 @@ mod tests {
             }),
         )
         .await
-        .unwrap_err();
+        .expect_err("invalid signal should be rejected");
 
         assert_eq!(err, StatusCode::BAD_REQUEST);
     }
@@ -1007,8 +1053,14 @@ mod tests {
     #[tokio::test]
     async fn test_delete_terminal_harness() {
         let manager = test_manager();
-        manager.register_local_node().await.unwrap();
-        let harness_id = manager.create_harness(None).await.unwrap();
+        manager
+            .register_local_node()
+            .await
+            .expect("local harness node should register");
+        let harness_id = manager
+            .create_harness(None)
+            .await
+            .expect("test harness should be created");
         manager
             .local_manager()
             .update_status(&harness_id, HarnessStatus::Completed)
@@ -1019,7 +1071,7 @@ mod tests {
 
         let response = delete_harness(State(gateway), Path(harness_id.clone()))
             .await
-            .unwrap()
+            .expect("completed harness should be deleted")
             .0;
 
         assert_eq!(response["status"], "success");
@@ -1027,15 +1079,21 @@ mod tests {
         assert!(manager
             .get_harness_info(&harness_id)
             .await
-            .unwrap()
+            .expect("harness lookup should succeed")
             .is_none());
     }
 
     #[tokio::test]
     async fn test_delete_running_harness_conflicts() {
         let manager = test_manager();
-        manager.register_local_node().await.unwrap();
-        let harness_id = manager.create_harness(None).await.unwrap();
+        manager
+            .register_local_node()
+            .await
+            .expect("local harness node should register");
+        let harness_id = manager
+            .create_harness(None)
+            .await
+            .expect("test harness should be created");
         manager
             .local_manager()
             .update_status(&harness_id, HarnessStatus::Running)
@@ -1046,7 +1104,7 @@ mod tests {
 
         let err = delete_harness(State(gateway), Path(harness_id))
             .await
-            .unwrap_err();
+            .expect_err("running harness deletion should conflict");
 
         assert_eq!(err, StatusCode::CONFLICT);
     }

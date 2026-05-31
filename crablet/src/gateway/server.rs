@@ -37,6 +37,7 @@ use crate::gateway::workflow_handlers;
 use crate::knowledge::ingestion::IngestionService;
 use crate::storage::{HybridStorage, StorageConfig};
 use axum::extract::ConnectInfo;
+use axum::Json;
 use axum::{
     extract::{Request, State},
     http::{header, HeaderValue, Method, StatusCode},
@@ -49,15 +50,36 @@ use axum::{
     BoxError, Router,
 };
 use futures::stream::Stream;
+use std::net::IpAddr;
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::StreamExt as _;
 use tower_http::cors::{Any, CorsLayer};
-use tower_http::services::ServeDir;
+use tower_http::services::{ServeDir, ServeFile};
 use tower_http::set_header::SetResponseHeaderLayer;
 use tower_http::trace::TraceLayer;
+
+fn env_flag_enabled(name: &str) -> bool {
+    std::env::var(name)
+        .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
+        .unwrap_or(false)
+}
+
+fn is_loopback_host(host: &str) -> bool {
+    let normalized = host.trim().trim_matches(['[', ']']).to_ascii_lowercase();
+    normalized == "localhost"
+        || normalized
+            .parse::<IpAddr>()
+            .map(|ip| ip.is_loopback())
+            .unwrap_or(false)
+}
+
+fn auth_off_allowed_for_host(host: &str) -> bool {
+    is_loopback_host(host) || env_flag_enabled("CRABLET_ALLOW_INSECURE_AUTH_OFF")
+}
 
 async fn rate_limit_middleware(
     State(gateway): State<Arc<CrabletGateway>>,
@@ -110,6 +132,21 @@ async fn sse_handler(
     Sse::new(stream).keep_alive(KeepAlive::default())
 }
 
+#[derive(serde::Serialize)]
+struct GatewayHealthResponse {
+    status: &'static str,
+    fusion_memory_active: bool,
+    legacy_gateway_api_enabled: bool,
+}
+
+async fn health_handler(State(gateway): State<Arc<CrabletGateway>>) -> Json<GatewayHealthResponse> {
+    Json(GatewayHealthResponse {
+        status: "ok",
+        fusion_memory_active: gateway.router.fusion_memory.is_some(),
+        legacy_gateway_api_enabled: env_flag_enabled("CRABLET_ENABLE_GATEWAY_LEGACY_API"),
+    })
+}
+
 use crate::cognitive::router::CognitiveRouter;
 use crate::heartbeat::HeartbeatEngine;
 use crate::workflow::engine::WorkflowEngine;
@@ -138,6 +175,19 @@ pub struct CrabletGateway {
 }
 
 impl CrabletGateway {
+    fn resolve_static_dir() -> PathBuf {
+        let candidates = [
+            PathBuf::from("frontend/dist"),
+            PathBuf::from("../frontend/dist"),
+            PathBuf::from("static"),
+        ];
+
+        candidates
+            .into_iter()
+            .find(|dir| dir.join("index.html").exists())
+            .unwrap_or_else(|| PathBuf::from("static"))
+    }
+
     pub async fn new(
         config: GatewayConfig,
         router: Arc<CognitiveRouter>,
@@ -155,6 +205,13 @@ impl CrabletGateway {
             "jwt" => AuthMode::JWT,
             _ => AuthMode::Token, // Default to Token
         };
+
+        if matches!(auth_mode, AuthMode::Off) && !auth_off_allowed_for_host(&config.host) {
+            return Err(anyhow::anyhow!(
+                "Refusing to start gateway with auth_mode=off on non-loopback host '{}'. Use token/jwt/apikey auth or set CRABLET_ALLOW_INSECURE_AUTH_OFF=true for trusted development only.",
+                config.host
+            ));
+        }
 
         // Extract pool from MemoryManager
         let pool = router.memory_mgr.episodic.as_ref().map(|m| m.pool.clone());
@@ -266,169 +323,157 @@ impl CrabletGateway {
         self
     }
 
-    pub async fn start(
-        self,
-        cancel_token: tokio_util::sync::CancellationToken,
-    ) -> Result<(), axum::BoxError> {
-        let gateway = Arc::new(self);
-        let port = gateway.config.port;
-
+    fn build_router(gateway: Arc<Self>) -> Router {
         // Separate routes for public and protected endpoints
-        let public_routes = Router::new().route("/health", get(|| async { "ok" }));
+        let public_routes = Router::new().route("/health", get(health_handler));
 
-        let protected_routes = Router::new()
-            .nest(
-                "/api/v1",
-                Router::new()
-                    .route("/chat", post(chat_handler))
-                    .route("/images", post(image_handler))
-                    .route("/chat/stream", post(chat_stream))
-                    .route("/sessions", get(list_chat_sessions))
-                    .route("/sessions/:id", delete(delete_chat_session))
-                    .route("/sessions/:id/history", get(get_chat_session_history))
-                    .route("/chat/sessions/:id/token-usage", get(get_token_usage))
-                    .route("/chat/sessions/:id/compress", post(compress_session))
-                    .route(
-                        "/chat/sessions/:id/stars",
-                        get(list_stars).post(star_message),
-                    )
-                    .route(
-                        "/chat/sessions/:id/stars/:message_id",
-                        get(is_starred).delete(unstar_message),
-                    )
-                    .route("/chat/sessions/:id/star-count", get(get_star_count))
-                    .route("/rag/topk-recommend", get(topk_recommend))
-                    .route("/rag/search", get(dual_search))
-                    .route("/dashboard", get(get_dashboard_stats))
-                    .route(
-                        "/harnesses/cluster",
-                        get(crate::gateway::harness_handlers::get_cluster_status),
-                    )
-                    .route(
-                        "/harnesses",
-                        get(crate::gateway::harness_handlers::list_harnesses)
-                            .post(crate::gateway::harness_handlers::create_harness),
-                    )
-                    .route(
-                        "/harnesses/execute",
-                        post(crate::gateway::harness_handlers::execute_harness),
-                    )
-                    .route(
-                        "/harnesses/nodes",
-                        get(crate::gateway::harness_handlers::list_nodes),
-                    )
-                    .route(
-                        "/harnesses/:id",
-                        get(crate::gateway::harness_handlers::get_harness)
-                            .delete(crate::gateway::harness_handlers::delete_harness),
-                    )
-                    .route(
-                        "/harnesses/:id/resume",
-                        post(crate::gateway::harness_handlers::resume_harness),
-                    )
-                    .route(
-                        "/harnesses/:id/signal",
-                        post(crate::gateway::harness_handlers::send_harness_signal),
-                    )
-                    .route("/swarm/stats", get(get_swarm_stats))
-                    .route("/swarm/tasks", get(get_swarm_tasks))
-                    .route("/swarm/state", get(get_swarm_state))
-                    .route("/swarm/agents", get(list_agents))
-                    .route("/swarm/tasks/:id", delete(cancel_task))
-                    .route("/swarm/reviews", get(list_swarm_reviews))
-                    .route(
-                        "/swarm/reviews/:task_id/decision",
-                        post(decide_swarm_review),
-                    )
-                    .route("/skills", get(list_skills))
-                    .route("/skills/:name/toggle", post(toggle_skill))
-                    .route("/skills/:name/run", post(run_skill))
-                    .route("/skills/:name/logs", get(get_skill_logs))
-                    .route("/skills/logs", get(get_all_skill_logs))
-                    .route("/skills/registry/search", get(search_registry_skills))
-                    .route("/skills/semantic-search", post(semantic_search_skills))
-                    .route("/skills/top", get(get_skills_sh_top))
-                    .route("/skills/install", post(install_skill))
-                    .route("/skills/test/batch", post(batch_test_skills))
-                    .route("/mcp/overview", get(get_mcp_overview))
-                    .route("/knowledge/upload", post(upload_knowledge))
-                    .route("/knowledge/documents", get(list_documents))
-                    .route("/knowledge/chunks", get(get_document_chunks))
-                    .route("/knowledge/search", get(search_knowledge))
-                    .route("/settings/keys", get(list_api_keys).post(create_api_key))
-                    .route("/settings/keys/:id", delete(revoke_api_key))
-                    .route(
-                        "/settings/routing",
-                        get(get_routing_settings).put(update_routing_settings),
-                    )
-                    .route("/settings/routing/report", get(get_routing_report))
-                    .route(
-                        "/settings/system/config",
-                        get(get_system_config).post(update_system_config),
-                    )
-                    .route("/logs", get(list_audit_logs))
-                    // Workflow routes
-                    .route(
-                        "/workflows",
-                        get(workflow_handlers::list_workflows)
-                            .post(workflow_handlers::create_workflow),
-                    )
-                    .route(
-                        "/workflows/:id",
-                        get(workflow_handlers::get_workflow)
-                            .put(workflow_handlers::update_workflow)
-                            .delete(workflow_handlers::delete_workflow),
-                    )
-                    .route(
-                        "/workflows/:id/execute",
-                        post(workflow_handlers::execute_workflow),
-                    )
-                    .route(
-                        "/workflows/:id/run",
-                        post(workflow_handlers::run_workflow_stream),
-                    )
-                    .route(
-                        "/workflows/:id/executions",
-                        get(workflow_handlers::list_executions),
-                    )
-                    .route(
-                        "/workflows/validate",
-                        post(workflow_handlers::validate_workflow),
-                    )
-                    .route(
-                        "/workflows/node-types",
-                        get(workflow_handlers::get_node_types),
-                    )
-                    .route(
-                        "/executions/:id",
-                        get(workflow_handlers::get_execution)
-                            .delete(workflow_handlers::cancel_execution),
-                    )
-                    // Observability routes
-                    .route("/observability/sessions", get(obs::list_sessions))
-                    .route(
-                        "/observability/sessions/:id",
-                        get(obs::get_session).delete(obs::delete_session),
-                    )
-                    .route(
-                        "/observability/sessions/:id/events",
-                        get(obs::stream_session_events),
-                    )
-                    .route("/observability/sessions/:id/metrics", get(obs::get_metrics))
-                    .route(
-                        "/observability/breakpoints",
-                        get(obs::list_breakpoints).post(obs::create_breakpoint),
-                    )
-                    .route(
-                        "/observability/breakpoints/:id",
-                        delete(obs::delete_breakpoint),
-                    )
-                    .route("/observability/paused", get(obs::get_paused_sessions))
-                    .route("/observability/intervene/:id", post(obs::intervene))
-                    .route("/observability/events", get(obs::stream_events)),
-            )
+        let api_v1_routes = Router::new()
+            .route("/chat", post(chat_handler))
+            .route("/images", post(image_handler))
+            .route("/chat/stream", post(chat_stream))
             .route("/rpc", post(rpc_handler))
-            .route("/api/v1/rpc", post(rpc_handler))
+            .route("/sessions", get(list_chat_sessions))
+            .route("/sessions/:id", delete(delete_chat_session))
+            .route("/sessions/:id/history", get(get_chat_session_history))
+            .route("/chat/sessions/:id/token-usage", get(get_token_usage))
+            .route("/chat/sessions/:id/compress", post(compress_session))
+            .route(
+                "/chat/sessions/:id/stars",
+                get(list_stars).post(star_message),
+            )
+            .route(
+                "/chat/sessions/:id/stars/:message_id",
+                get(is_starred).delete(unstar_message),
+            )
+            .route("/chat/sessions/:id/star-count", get(get_star_count))
+            .route("/rag/topk-recommend", get(topk_recommend))
+            .route("/rag/search", get(dual_search))
+            .route("/dashboard", get(get_dashboard_stats))
+            .route(
+                "/harnesses/cluster",
+                get(crate::gateway::harness_handlers::get_cluster_status),
+            )
+            .route(
+                "/harnesses",
+                get(crate::gateway::harness_handlers::list_harnesses)
+                    .post(crate::gateway::harness_handlers::create_harness),
+            )
+            .route(
+                "/harnesses/execute",
+                post(crate::gateway::harness_handlers::execute_harness),
+            )
+            .route(
+                "/harnesses/nodes",
+                get(crate::gateway::harness_handlers::list_nodes),
+            )
+            .route(
+                "/harnesses/:id",
+                get(crate::gateway::harness_handlers::get_harness)
+                    .delete(crate::gateway::harness_handlers::delete_harness),
+            )
+            .route(
+                "/harnesses/:id/resume",
+                post(crate::gateway::harness_handlers::resume_harness),
+            )
+            .route(
+                "/harnesses/:id/signal",
+                post(crate::gateway::harness_handlers::send_harness_signal),
+            )
+            .route("/swarm/stats", get(get_swarm_stats))
+            .route("/swarm/tasks", get(get_swarm_tasks))
+            .route("/swarm/state", get(get_swarm_state))
+            .route("/swarm/agents", get(list_agents))
+            .route("/swarm/tasks/:id", delete(cancel_task))
+            .route("/swarm/reviews", get(list_swarm_reviews))
+            .route(
+                "/swarm/reviews/:task_id/decision",
+                post(decide_swarm_review),
+            )
+            .route("/skills", get(list_skills))
+            .route("/skills/:name/toggle", post(toggle_skill))
+            .route("/skills/:name/run", post(run_skill))
+            .route("/skills/:name/logs", get(get_skill_logs))
+            .route("/skills/logs", get(get_all_skill_logs))
+            .route("/skills/registry/search", get(search_registry_skills))
+            .route("/skills/semantic-search", post(semantic_search_skills))
+            .route("/skills/top", get(get_skills_sh_top))
+            .route("/skills/install", post(install_skill))
+            .route("/skills/test/batch", post(batch_test_skills))
+            .route("/mcp/overview", get(get_mcp_overview))
+            .route("/knowledge/upload", post(upload_knowledge))
+            .route("/knowledge/documents", get(list_documents))
+            .route("/knowledge/chunks", get(get_document_chunks))
+            .route("/knowledge/search", get(search_knowledge))
+            .route("/settings/keys", get(list_api_keys).post(create_api_key))
+            .route("/settings/keys/:id", delete(revoke_api_key))
+            .route(
+                "/settings/routing",
+                get(get_routing_settings).put(update_routing_settings),
+            )
+            .route("/settings/routing/report", get(get_routing_report))
+            .route(
+                "/settings/system/config",
+                get(get_system_config).post(update_system_config),
+            )
+            .route("/logs", get(list_audit_logs))
+            .route(
+                "/workflows",
+                get(workflow_handlers::list_workflows).post(workflow_handlers::create_workflow),
+            )
+            .route(
+                "/workflows/:id",
+                get(workflow_handlers::get_workflow)
+                    .put(workflow_handlers::update_workflow)
+                    .delete(workflow_handlers::delete_workflow),
+            )
+            .route(
+                "/workflows/:id/execute",
+                post(workflow_handlers::execute_workflow),
+            )
+            .route(
+                "/workflows/:id/run",
+                post(workflow_handlers::run_workflow_stream),
+            )
+            .route(
+                "/workflows/:id/executions",
+                get(workflow_handlers::list_executions),
+            )
+            .route(
+                "/workflows/validate",
+                post(workflow_handlers::validate_workflow),
+            )
+            .route(
+                "/workflows/node-types",
+                get(workflow_handlers::get_node_types),
+            )
+            .route(
+                "/executions/:id",
+                get(workflow_handlers::get_execution).delete(workflow_handlers::cancel_execution),
+            )
+            .route("/observability/sessions", get(obs::list_sessions))
+            .route(
+                "/observability/sessions/:id",
+                get(obs::get_session).delete(obs::delete_session),
+            )
+            .route(
+                "/observability/sessions/:id/events",
+                get(obs::stream_session_events),
+            )
+            .route("/observability/sessions/:id/metrics", get(obs::get_metrics))
+            .route(
+                "/observability/breakpoints",
+                get(obs::list_breakpoints).post(obs::create_breakpoint),
+            )
+            .route(
+                "/observability/breakpoints/:id",
+                delete(obs::delete_breakpoint),
+            )
+            .route("/observability/paused", get(obs::get_paused_sessions))
+            .route("/observability/intervene/:id", post(obs::intervene))
+            .route("/observability/events", get(obs::stream_events));
+
+        let legacy_api_routes = Router::new()
+            .route("/rpc", post(rpc_handler))
             .route("/api/sessions", get(list_chat_sessions))
             .route("/api/sessions/:id", delete(delete_chat_session))
             .route("/api/sessions/:id/history", get(get_chat_session_history))
@@ -474,18 +519,28 @@ impl CrabletGateway {
             )
             .route("/api/chat", post(chat_handler)) // Keep legacy for compatibility
             .route("/api/images", post(image_handler))
-            // .route("/api/swarm/message", post(swarm_handler))
-            .route("/ws", get(ws_handler))
-            .route("/events", get(sse_handler))
-            .layer(middleware::from_fn_with_state(
-                gateway.clone(),
-                auth_middleware,
-            ))
-            // Rate Limiting (Applied to protected routes + expensive ones)
-            .layer(middleware::from_fn_with_state(
-                gateway.clone(),
-                rate_limit_middleware,
-            ));
+            .route("/ws", get(ws_handler));
+
+        let base_protected_routes = Router::new()
+            .nest("/api/v1", api_v1_routes)
+            .route("/events", get(sse_handler));
+
+        let protected_routes = if env_flag_enabled("CRABLET_ENABLE_GATEWAY_LEGACY_API") {
+            base_protected_routes.merge(legacy_api_routes)
+        } else {
+            base_protected_routes
+        }
+        .layer(middleware::from_fn_with_state(
+            gateway.clone(),
+            auth_middleware,
+        ))
+        .layer(middleware::from_fn_with_state(
+            gateway.clone(),
+            rate_limit_middleware,
+        ));
+
+        let static_dir = Self::resolve_static_dir();
+        let index_file = static_dir.join("index.html");
 
         let allow_any_origin = std::env::var("CRABLET_ALLOW_ANY_ORIGIN")
             .map(|v| matches!(v.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
@@ -518,9 +573,13 @@ impl CrabletGateway {
                 .allow_headers([header::AUTHORIZATION, header::CONTENT_TYPE])
         };
 
-        let app = public_routes
+        public_routes
             .merge(protected_routes)
-            .fallback_service(ServeDir::new("static"))
+            .fallback_service(
+                ServeDir::new(static_dir)
+                    .append_index_html_on_directories(true)
+                    .not_found_service(ServeFile::new(index_file)),
+            )
             // Security response headers
             .layer(SetResponseHeaderLayer::overriding(
                 header::X_CONTENT_TYPE_OPTIONS,
@@ -550,10 +609,23 @@ impl CrabletGateway {
             ))
             .layer(cors) // Cors first (outermost)
             .layer(TraceLayer::new_for_http())
-            .with_state(gateway);
+            .with_state(gateway)
+    }
 
-        tracing::info!("Gateway listening on 0.0.0.0:{}", port);
-        let listener = TcpListener::bind(format!("0.0.0.0:{}", port)).await?;
+    pub fn into_router(self) -> Router {
+        Self::build_router(Arc::new(self))
+    }
+
+    pub async fn start(
+        self,
+        cancel_token: tokio_util::sync::CancellationToken,
+    ) -> Result<(), axum::BoxError> {
+        let host = self.config.host.clone();
+        let port = self.config.port;
+        let app = Self::build_router(Arc::new(self));
+
+        tracing::info!("Gateway listening on {}:{}", host, port);
+        let listener = TcpListener::bind((host.as_str(), port)).await?;
 
         // Use into_make_service_with_connect_info to provide IP for rate limiter
         axum::serve(
@@ -567,5 +639,23 @@ impl CrabletGateway {
         .await?;
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn loopback_hosts_allow_auth_off() {
+        assert!(auth_off_allowed_for_host("127.0.0.1"));
+        assert!(auth_off_allowed_for_host("localhost"));
+        assert!(auth_off_allowed_for_host("[::1]"));
+    }
+
+    #[test]
+    fn wildcard_hosts_do_not_allow_auth_off_by_default() {
+        assert!(!is_loopback_host("0.0.0.0"));
+        assert!(!is_loopback_host("::"));
     }
 }
