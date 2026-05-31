@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
 import { useChatStore } from '../store/chatStore';
 import type { CitationItem } from '../store/chatStore';
-import { LOCAL_STORAGE_KEYS, getApiBaseUrl } from '../utils/constants';
+import { LOCAL_STORAGE_KEYS, resolveApiUrl } from '../utils/constants';
 import { useModelStore } from '@/store/modelStore';
 
 type StreamEvent = {
@@ -144,52 +144,21 @@ export function useStreamingChat() {
           model_type: effective.modelType,
         },
       };
-      const baseUrl = getApiBaseUrl().replace(/\/+$/, '');
-      const candidates = [
-        `http://localhost:18789/api/v1/chat/stream`,
-        `http://127.0.0.1:18789/api/v1/chat/stream`
-      ]; // Force Gateway
-      if (baseUrl !== 'http://127.0.0.1:18789/api' && baseUrl !== 'http://localhost:18789/api') {
-        candidates.push(`${baseUrl}/v1/chat/stream`);
+      const streamUrl = resolveApiUrl('/v1/chat/stream');
+      if (import.meta.env.DEV) {
+        console.debug(`[Chat] Using stream URL: ${streamUrl}`);
       }
-      
       let response: Response | null = null;
       let lastError: Error | null = null;
-      const candidatesList = [...new Set(candidates)];
-      
-      for (const url of candidatesList) {
-        try {
-          if (import.meta.env.DEV) {
-            console.debug(`[Chat] Trying stream URL: ${url}`);
-          }
-          const res = await fetch(url, {
-            method: 'POST',
-            headers: buildHeaders(),
-            body: JSON.stringify(payload),
-          });
-
-          // If OK, use this response
-          if (res.ok) {
-            response = res;
-            break;
-          }
-          
-          // If not OK, but it's a "soft" error (404/405/401/5xx), try next candidate
-          // Note: 401 might need re-auth, but we treat it as "try next" here
-          if ([404, 405, 401, 502, 503].includes(res.status)) {
-            console.warn(`[Chat] Request to ${url} failed with ${res.status}, trying next...`);
-            lastError = new Error(`HTTP ${res.status}`);
-            continue;
-          }
-          
-          // Other errors (e.g. 400 Bad Request) -> stop trying
-          response = res;
-          break;
-        } catch (e) {
-          console.warn(`[Chat] Request to ${url} failed with network error`, e);
-          lastError = e instanceof Error ? e : new Error('Network Error');
-          // Continue to next candidate on network error (e.g. CORS failure)
-        }
+      try {
+        response = await fetch(streamUrl, {
+          method: 'POST',
+          headers: buildHeaders(),
+          body: JSON.stringify(payload),
+        });
+      } catch (e) {
+        console.warn(`[Chat] Request to ${streamUrl} failed with network error`, e);
+        lastError = e instanceof Error ? e : new Error('Network Error');
       }
 
       if (!response || !response.ok || !response.body) {

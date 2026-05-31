@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach } from 'vitest';
-import { getApiBaseUrl, LOCAL_STORAGE_KEYS } from '../constants';
+import { getApiBaseUrl, isGatewayApiBaseUrl, LOCAL_STORAGE_KEYS, normalizeApiRequestPath, resolveApiUrl } from '../constants';
 
 describe('getApiBaseUrl', () => {
   const getExpectedFallback = () => {
@@ -40,5 +40,23 @@ describe('getApiBaseUrl', () => {
   it('migrates stale 18789 gateway url to the current default gateway', () => {
     localStorage.setItem(LOCAL_STORAGE_KEYS.API_BASE_URL, 'http://localhost:18789/api');
     expect(getApiBaseUrl()).toBe(getExpectedFallback());
+  });
+
+  it('detects gateway base urls by api prefix instead of hard-coded legacy port checks', () => {
+    expect(isGatewayApiBaseUrl('/api')).toBe(true);
+    expect(isGatewayApiBaseUrl('http://localhost:18790/api')).toBe(true);
+    expect(isGatewayApiBaseUrl('https://gateway.example.com/api')).toBe(true);
+    expect(isGatewayApiBaseUrl('https://api.openai.com/v1')).toBe(false);
+  });
+
+  it('normalizes legacy api-prefixed request paths without duplicating the api segment', () => {
+    expect(normalizeApiRequestPath('/api/v1/chat')).toBe('/v1/chat');
+    expect(normalizeApiRequestPath('/v1/chat')).toBe('/v1/chat');
+  });
+
+  it('resolves streaming and swarm endpoints through the configured api base url', () => {
+    localStorage.setItem(LOCAL_STORAGE_KEYS.API_BASE_URL, 'https://gateway.example.com/api');
+    expect(resolveApiUrl('/v1/chat/stream')).toBe('https://gateway.example.com/api/v1/chat/stream');
+    expect(resolveApiUrl('/api/v1/swarm/stats')).toBe('https://gateway.example.com/api/v1/swarm/stats');
   });
 });
