@@ -1,9 +1,9 @@
-use async_trait::async_trait;
 use crate::agent::{Agent, AgentRole};
 use crate::cognitive::llm::LlmClient;
 use crate::types::Message;
-use std::sync::Arc;
 use anyhow::Result;
+use async_trait::async_trait;
+use std::sync::Arc;
 
 pub struct GenericAgent {
     role: AgentRole,
@@ -50,7 +50,7 @@ impl Agent for GenericAgent {
         let mut messages = vec![Message::new("system", &self.system_prompt)];
         messages.extend_from_slice(context);
         messages.push(Message::new("user", task));
-        
+
         self.llm.chat_complete(&messages).await
     }
 }

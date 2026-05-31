@@ -1,13 +1,13 @@
+use crate::agent::swarm::{AgentId, SwarmAgent, SwarmMessage};
+use crate::cognitive::llm::LlmClient;
+use crate::sandbox::docker::DockerExecutor;
+use crate::types::Message;
+use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use async_trait::async_trait;
-use tracing::{info, error, warn};
-use serde::{Serialize, Deserialize};
-use crate::agent::swarm::{SwarmAgent, SwarmMessage, AgentId};
-use crate::cognitive::llm::LlmClient;
-use crate::types::Message;
-use crate::sandbox::docker::DockerExecutor;
 use tokio::fs;
+use tracing::{error, info, warn};
 
 #[derive(Clone)]
 pub struct DataAnalystAgent {
@@ -38,7 +38,12 @@ impl DataAnalystAgent {
         }
     }
 
-    async fn generate_python_code(&self, file_path: &str, goal: &str, head: &str) -> Option<String> {
+    async fn generate_python_code(
+        &self,
+        file_path: &str,
+        goal: &str,
+        head: &str,
+    ) -> Option<String> {
         let prompt = format!(
             "You are a Data Analyst. Write a Python script to analyze the file '{}'.\n\
             Goal: {}\n\
@@ -64,7 +69,7 @@ impl DataAnalystAgent {
                     Some(caps[1].to_string())
                 } else {
                     // Fallback: assume the whole response is code if no blocks
-                    Some(response) 
+                    Some(response)
                 }
             }
             Err(e) => {
@@ -77,7 +82,7 @@ impl DataAnalystAgent {
     async fn execute_python(&self, code: &str) -> Result<String, String> {
         let script_name = format!("analysis_{}.py", uuid::Uuid::new_v4());
         let script_path = self.work_dir.join(&script_name);
-        
+
         if let Err(e) = fs::write(&script_path, code).await {
             return Err(format!("Failed to write script: {}", e));
         }
@@ -87,9 +92,14 @@ impl DataAnalystAgent {
             .with_work_dir(self.work_dir.to_string_lossy().to_string())
             .with_timeout(60);
 
-        info!("Executing analysis script in Docker sandbox: {}", script_name);
+        info!(
+            "Executing analysis script in Docker sandbox: {}",
+            script_name
+        );
 
-        let result = executor.execute("python:3.11-slim", &["python", &script_name]).await;
+        let result = executor
+            .execute("python:3.11-slim", &["python", &script_name])
+            .await;
 
         // Clean up
         let _ = fs::remove_file(&script_path).await;
@@ -99,8 +109,14 @@ impl DataAnalystAgent {
                 if res.success {
                     Ok(res.stdout)
                 } else {
-                    warn!("Analysis script failed in sandbox (exit code {}): {}", res.exit_code, res.stderr);
-                    Err(format!("Script failed:\nSTDOUT: {}\nSTDERR: {}", res.stdout, res.stderr))
+                    warn!(
+                        "Analysis script failed in sandbox (exit code {}): {}",
+                        res.exit_code, res.stderr
+                    );
+                    Err(format!(
+                        "Script failed:\nSTDOUT: {}\nSTDERR: {}",
+                        res.stdout, res.stderr
+                    ))
                 }
             }
             Err(e) => {
@@ -131,19 +147,33 @@ impl SwarmAgent for DataAnalystAgent {
 
     async fn receive(&mut self, message: SwarmMessage, _sender: AgentId) -> Option<SwarmMessage> {
         match message {
-            SwarmMessage::Task { task_id, description, payload, .. } => {
+            SwarmMessage::Task {
+                task_id,
+                description,
+                payload,
+                ..
+            } => {
                 info!("DataAnalystAgent received task: {}", description);
-                
+
                 // Parse payload or extract from description
                 let (file_path, goal) = if let Some(p) = payload {
-                    let path = p.get("file_path").and_then(|v| v.as_str()).map(|s| s.to_string());
-                    let goal = p.get("goal").and_then(|v| v.as_str()).map(|s| s.to_string());
+                    let path = p
+                        .get("file_path")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+                    let goal = p
+                        .get("goal")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
                     (path, goal.unwrap_or(description.clone()))
                 } else {
                     // Naive parsing: assume description is "Analyze <file>"
                     let parts: Vec<&str> = description.split_whitespace().collect();
                     if parts.len() >= 2 {
-                        (Some(parts.last().unwrap().to_string()), description.clone())
+                        (
+                            parts.last().map(|part| (*part).to_string()),
+                            description.clone(),
+                        )
                     } else {
                         (None, description.clone())
                     }
@@ -151,16 +181,18 @@ impl SwarmAgent for DataAnalystAgent {
 
                 let file_path = match file_path {
                     Some(p) => p,
-                    None => return Some(SwarmMessage::Error {
-                        task_id,
-                        error: "No file path provided in payload or description".to_string(),
-                    })
+                    None => {
+                        return Some(SwarmMessage::Error {
+                            task_id,
+                            error: "No file path provided in payload or description".to_string(),
+                        })
+                    }
                 };
 
                 // Check file existence
                 let path = Path::new(&file_path);
                 if !path.exists() {
-                     return Some(SwarmMessage::Error {
+                    return Some(SwarmMessage::Error {
                         task_id,
                         error: format!("File not found: {}", file_path),
                     });
@@ -169,19 +201,23 @@ impl SwarmAgent for DataAnalystAgent {
                 // Read head
                 let head = match fs::read_to_string(&path).await {
                     Ok(c) => c.lines().take(5).collect::<Vec<_>>().join("\n"),
-                    Err(e) => return Some(SwarmMessage::Error {
-                        task_id,
-                        error: format!("Failed to read file: {}", e),
-                    })
+                    Err(e) => {
+                        return Some(SwarmMessage::Error {
+                            task_id,
+                            error: format!("Failed to read file: {}", e),
+                        })
+                    }
                 };
 
                 // Generate Code
                 let code = match self.generate_python_code(&file_path, &goal, &head).await {
                     Some(c) => c,
-                    None => return Some(SwarmMessage::Error {
-                        task_id,
-                        error: "Failed to generate analysis code".to_string(),
-                    })
+                    None => {
+                        return Some(SwarmMessage::Error {
+                            task_id,
+                            error: "Failed to generate analysis code".to_string(),
+                        })
+                    }
                 };
 
                 // Execute Code
@@ -191,7 +227,11 @@ impl SwarmAgent for DataAnalystAgent {
                 };
 
                 let result = AnalysisResult {
-                    summary: if success { "Analysis completed successfully.".to_string() } else { "Analysis failed.".to_string() },
+                    summary: if success {
+                        "Analysis completed successfully.".to_string()
+                    } else {
+                        "Analysis failed.".to_string()
+                    },
                     code_executed: code,
                     output: output.clone(),
                 };

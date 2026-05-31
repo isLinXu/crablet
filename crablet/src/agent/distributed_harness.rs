@@ -1069,14 +1069,16 @@ impl DistributedHarnessManager {
                 .await
                 .map_err(|error| DistributedError::ClusterError(error.to_string()))?,
             HarnessSignal::Checkpoint => {
-                self.local
+                let harness = self
+                    .local
                     .get_harness(id)
                     .await
-                    .ok_or_else(|| DistributedError::HarnessNotFound(id.to_string()))?
-                    .write()
-                    .await
-                    .save_checkpoint()
-                    .await;
+                    .ok_or_else(|| DistributedError::HarnessNotFound(id.to_string()))?;
+                let (checkpoint, path) = {
+                    let harness = harness.read().await;
+                    harness.checkpoint_artifact()
+                };
+                AgentHarnessContext::persist_checkpoint_artifact(&checkpoint, path).await;
             }
         }
 
@@ -1534,10 +1536,11 @@ impl DistributedHarnessManager {
         for harness in harnesses {
             let owned_by_failed_node =
                 harness.config.metadata.get("node_id") == Some(&failed_node_id.to_string());
-            if owned_by_failed_node && !Self::is_terminal_status(&harness.status) {
-                if self.claim_remote_harness(harness.clone()).await?.is_some() {
-                    claimed.push(harness.id);
-                }
+            if owned_by_failed_node
+                && !Self::is_terminal_status(&harness.status)
+                && self.claim_remote_harness(harness.clone()).await?.is_some()
+            {
+                claimed.push(harness.id);
             }
         }
 
@@ -1660,11 +1663,15 @@ pub struct ClusterStats {
 // In-Memory Backend for Testing
 // ============================================
 
+type InMemoryHarnessMap = HashMap<String, HarnessInfo>;
+type InMemoryLockMap = HashMap<String, (NodeId, DateTime<Utc>)>;
+type InMemoryNodeMap = HashMap<NodeId, NodeInfo>;
+
 /// In-memory backend for single-node testing
 pub struct InMemoryBackend {
-    harnesses: Arc<RwLock<HashMap<String, HarnessInfo>>>,
-    locks: Arc<RwLock<HashMap<String, (NodeId, DateTime<Utc>)>>>,
-    nodes: Arc<RwLock<HashMap<NodeId, NodeInfo>>>,
+    harnesses: Arc<RwLock<InMemoryHarnessMap>>,
+    locks: Arc<RwLock<InMemoryLockMap>>,
+    nodes: Arc<RwLock<InMemoryNodeMap>>,
 }
 
 impl InMemoryBackend {

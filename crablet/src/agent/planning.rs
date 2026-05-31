@@ -1,10 +1,10 @@
-use anyhow::Result;
-use std::sync::Arc;
+use crate::agent::{Agent, AgentRole};
 use crate::cognitive::llm::LlmClient;
 use crate::types::Message;
-use serde::{Deserialize, Serialize};
+use anyhow::Result;
 use async_trait::async_trait;
-use crate::agent::{Agent, AgentRole};
+use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SubTaskPlan {
@@ -70,16 +70,29 @@ Return ONLY the JSON."#,
             task_description
         );
 
-        let messages = vec![Message::system("You are a task planning engine. Output valid JSON only."), Message::user(prompt)];
-        
+        let messages = vec![
+            Message::system("You are a task planning engine. Output valid JSON only."),
+            Message::user(prompt),
+        ];
+
         let response = self.llm.chat_complete(&messages).await?;
-        
+
         // Clean up markdown code blocks if present
         let json_str = response.trim();
         let json_str = if json_str.starts_with("```json") {
-            json_str.strip_prefix("```json").unwrap_or(json_str).strip_suffix("```").unwrap_or(json_str).trim()
+            json_str
+                .strip_prefix("```json")
+                .unwrap_or(json_str)
+                .strip_suffix("```")
+                .unwrap_or(json_str)
+                .trim()
         } else if json_str.starts_with("```") {
-            json_str.strip_prefix("```").unwrap_or(json_str).strip_suffix("```").unwrap_or(json_str).trim()
+            json_str
+                .strip_prefix("```")
+                .unwrap_or(json_str)
+                .strip_suffix("```")
+                .unwrap_or(json_str)
+                .trim()
         } else {
             json_str
         };

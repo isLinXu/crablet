@@ -739,7 +739,7 @@ impl AgentHarnessContext {
         format!("harness-{}-", metadata.started_at.timestamp_millis())
     }
 
-    pub async fn save_checkpoint(&self) -> HarnessCheckpoint {
+    pub fn checkpoint_artifact(&self) -> (HarnessCheckpoint, PathBuf) {
         let checkpoint = HarnessCheckpoint {
             step_number: self.metadata().step_count,
             error_history: lock_guard(&self.errors).iter().cloned().collect(),
@@ -754,11 +754,22 @@ impl AgentHarnessContext {
             checkpoint.step_number
         );
 
-        if tokio::fs::create_dir_all(&checkpoint_dir).await.is_ok() {
-            if let Ok(data) = serde_json::to_vec_pretty(&checkpoint) {
-                let _ = tokio::fs::write(checkpoint_dir.join(checkpoint_name), data).await;
+        (checkpoint, checkpoint_dir.join(checkpoint_name))
+    }
+
+    pub async fn persist_checkpoint_artifact(checkpoint: &HarnessCheckpoint, path: PathBuf) {
+        if let Some(checkpoint_dir) = path.parent() {
+            if tokio::fs::create_dir_all(checkpoint_dir).await.is_ok() {
+                if let Ok(data) = serde_json::to_vec_pretty(checkpoint) {
+                    let _ = tokio::fs::write(path, data).await;
+                }
             }
         }
+    }
+
+    pub async fn save_checkpoint(&self) -> HarnessCheckpoint {
+        let (checkpoint, path) = self.checkpoint_artifact();
+        Self::persist_checkpoint_artifact(&checkpoint, path).await;
 
         checkpoint
     }

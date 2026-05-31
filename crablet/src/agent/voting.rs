@@ -1,9 +1,9 @@
-use crate::agent::swarm::{Swarm, SwarmAgent, AgentId, SwarmMessage};
+use crate::agent::swarm::{AgentId, Swarm, SwarmAgent, SwarmMessage};
 use crate::cognitive::llm::LlmClient;
 use async_trait::async_trait;
+use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::{info, warn};
-use std::collections::HashMap;
 
 pub struct VotingAgent {
     id: AgentId,
@@ -11,7 +11,7 @@ pub struct VotingAgent {
     #[allow(dead_code)]
     llm: Arc<Box<dyn LlmClient>>,
     voters: Vec<AgentId>,
-    
+
     // State
     requester_id: Option<AgentId>,
     active_task_id: Option<String>,
@@ -22,10 +22,10 @@ pub struct VotingAgent {
 
 impl VotingAgent {
     pub fn new(
-        name: &str, 
-        swarm: Arc<Swarm>, 
-        llm: Arc<Box<dyn LlmClient>>, 
-        voters: Vec<AgentId>
+        name: &str,
+        swarm: Arc<Swarm>,
+        llm: Arc<Box<dyn LlmClient>>,
+        voters: Vec<AgentId>,
     ) -> Self {
         Self {
             id: AgentId::from_name(name),
@@ -43,7 +43,10 @@ impl VotingAgent {
     async fn broadcast_proposal(&self) {
         let msg = SwarmMessage::Task {
             task_id: self.active_task_id.clone().unwrap_or_default(),
-            description: format!("Vote on the following proposal: '{}'. Reply with YES/NO and a brief reason.", self.proposal),
+            description: format!(
+                "Vote on the following proposal: '{}'. Reply with YES/NO and a brief reason.",
+                self.proposal
+            ),
             context: vec![],
             payload: None,
         };
@@ -60,16 +63,19 @@ impl VotingAgent {
         if self.votes.len() >= self.voters.len() {
             self.is_active = false;
             let result = self.tally_votes();
-            
+
             if let Some(requester) = &self.requester_id {
                 let result_msg = SwarmMessage::Result {
                     task_id: self.active_task_id.clone().unwrap_or_default(),
                     content: result.clone(),
                     payload: None,
                 };
-                info!("Voting finished. Sending result to requester: {}", requester.0);
+                info!(
+                    "Voting finished. Sending result to requester: {}",
+                    requester.0
+                );
                 if let Err(e) = self.swarm.send(requester, result_msg, &self.id).await {
-                     warn!("Failed to send result to requester {}: {}", requester.0, e);
+                    warn!("Failed to send result to requester {}: {}", requester.0, e);
                 }
             } else {
                 info!("Voting finished: {}", result);
@@ -92,7 +98,10 @@ impl VotingAgent {
             details.push_str(&format!("- {}: {}\n", voter, vote));
         }
 
-        format!("Voting Result: {} YES, {} NO.\nDetails:\n{}", yes, no, details)
+        format!(
+            "Voting Result: {} YES, {} NO.\nDetails:\n{}",
+            yes, no, details
+        )
     }
 }
 
@@ -112,8 +121,15 @@ impl SwarmAgent for VotingAgent {
 
     async fn receive(&mut self, message: SwarmMessage, sender: AgentId) -> Option<SwarmMessage> {
         match message {
-            SwarmMessage::Task { task_id, description, .. } => {
-                info!("VotingAgent received new proposal from {}: {}", sender.0, description);
+            SwarmMessage::Task {
+                task_id,
+                description,
+                ..
+            } => {
+                info!(
+                    "VotingAgent received new proposal from {}: {}",
+                    sender.0, description
+                );
                 self.requester_id = Some(sender.clone());
                 self.active_task_id = Some(task_id.clone());
                 self.proposal = description;
@@ -126,12 +142,12 @@ impl SwarmAgent for VotingAgent {
                     task_id,
                     status: "Voting Started".to_string(),
                 })
-            },
+            }
             SwarmMessage::Result { content, .. } => {
                 if !self.is_active {
                     return None;
                 }
-                
+
                 // Only count votes from registered voters
                 if self.voters.contains(&sender) {
                     info!("Received vote from {}: {}", sender.0, content);
@@ -140,9 +156,9 @@ impl SwarmAgent for VotingAgent {
                 } else {
                     warn!("Received vote from unauthorized agent: {}", sender.0);
                 }
-                
+
                 None
-            },
+            }
             _ => None,
         }
     }

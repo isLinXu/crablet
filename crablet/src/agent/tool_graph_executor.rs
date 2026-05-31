@@ -676,6 +676,9 @@ pub struct DynamicToolExecutor {
     graph: Arc<RwLock<DynamicToolGraph>>,
     tool_executor: Arc<dyn ToolExecutorTrait>,
     max_parallelism: usize,
+    /// Global concurrency semaphore — limits total in-flight tool calls across all batches.
+    /// This provides back-pressure to avoid overwhelming LLM rate limits or memory peaks.
+    concurrency_semaphore: Arc<Semaphore>,
 }
 
 #[async_trait::async_trait]
@@ -692,6 +695,7 @@ impl DynamicToolExecutor {
         Self {
             graph: Arc::new(RwLock::new(graph)),
             tool_executor,
+            concurrency_semaphore: Arc::new(Semaphore::new(max_parallelism)),
             max_parallelism,
         }
     }
@@ -704,20 +708,22 @@ impl DynamicToolExecutor {
         let mut shared_state: HashMap<String, serde_json::Value> = initial_args;
 
         for batch in graph.get_parallel_nodes(&results.keys().cloned().collect()) {
-            if batch.len() > 1 && batch.len() <= self.max_parallelism {
-                // Execute batch in parallel
-                let semaphore = Arc::new(Semaphore::new(self.max_parallelism));
+            if batch.len() > 1 {
+                // Execute batch in parallel, gated by the global concurrency semaphore.
+                // This ensures at most `max_parallelism` tool calls are in-flight at any time
+                // across the entire execution (not just within a single batch).
                 let mut join_set = JoinSet::new();
 
                 for node_id in batch {
                     let graph_clone = self.graph.clone();
                     let tool_executor_clone = self.tool_executor.clone();
-                    let sem_clone = semaphore.clone();
+                    let sem_clone = self.concurrency_semaphore.clone();
                     let args_clone = shared_state.clone();
 
                     join_set.spawn(async move {
+                        // Acquire a permit before executing; released when permit drops.
                         let _permit = sem_clone.acquire().await
-                            .expect("semaphore should not be closed during execution");
+                            .expect("concurrency semaphore should not be closed");
                         Self::execute_node(&graph_clone, &tool_executor_clone, &node_id, &args_clone).await
                     });
                 }
@@ -730,7 +736,7 @@ impl DynamicToolExecutor {
                     }
                 }
             } else {
-                // Execute serially
+                // Single-node batch — execute serially (no concurrency overhead)
                 for node_id in batch {
                     let result = Self::execute_node(&self.graph, &self.tool_executor, &node_id, &shared_state).await?;
                     shared_state.insert(result.step_id.clone(), result.output.clone().unwrap_or(serde_json::Value::Null));

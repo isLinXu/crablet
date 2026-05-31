@@ -156,7 +156,7 @@ impl MultiArmedBandit {
         self.history.push_back(evaluation.clone());
         
         // 更新策略记录
-        let record = self.strategies.get_mut(&evaluation.strategy).unwrap();
+        let record = self.strategies.get_mut(&evaluation.strategy).expect("strategy key should exist after get_or_create");
         record.total_trials += 1;
         
         if evaluation.success {
@@ -181,7 +181,7 @@ impl MultiArmedBandit {
     /// 获取最佳策略
     pub fn best_strategy(&self) -> Option<Strategy> {
         self.strategies.values()
-            .max_by(|a, b| a.avg_reward().partial_cmp(&b.avg_reward()).unwrap())
+            .max_by(|a, b| a.avg_reward().partial_cmp(&b.avg_reward()).unwrap_or(std::cmp::Ordering::Equal))
             .map(|r| r.strategy)
     }
     

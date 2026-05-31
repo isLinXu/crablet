@@ -282,7 +282,7 @@ impl AgentPool {
     pub fn select_best(&self, task: &SubTask) -> Option<&AgentProfile> {
         let capable = self.find_capable(task);
         capable.into_iter()
-            .max_by(|a, b| a.score_for_task(task).partial_cmp(&b.score_for_task(task)).unwrap())
+            .max_by(|a, b| a.score_for_task(task).partial_cmp(&b.score_for_task(task)).unwrap_or(std::cmp::Ordering::Equal))
     }
 
     /// Select agents for parallel execution

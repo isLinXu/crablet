@@ -170,14 +170,20 @@ impl HarnessManager {
         let harness = AgentHarnessContext::new(cfg.clone());
         let info = HarnessInfo::new(id.clone(), cfg);
 
-        let mut harnesses = self.harnesses.write().await;
-        harnesses.insert(id.clone(), Arc::new(RwLock::new(harness)));
+        {
+            let mut harnesses = self.harnesses.write().await;
+            harnesses.insert(id.clone(), Arc::new(RwLock::new(harness)));
+        }
 
-        let mut info_map = self.info.write().await;
-        info_map.insert(id.clone(), info);
+        {
+            let mut info_map = self.info.write().await;
+            info_map.insert(id.clone(), info);
+        }
 
-        let mut stats = self.stats.write().await;
-        stats.total_created += 1;
+        {
+            let mut stats = self.stats.write().await;
+            stats.total_created += 1;
+        }
 
         Ok(id)
     }
@@ -480,10 +486,13 @@ impl HarnessManager {
 
     /// Cancel a harness
     pub async fn cancel_harness(&self, id: &str) -> Result<(), HarnessError> {
-        let harnesses = self.harnesses.read().await;
-        if let Some(harness) = harnesses.get(id) {
+        let harness = {
+            let harnesses = self.harnesses.read().await;
+            harnesses.get(id).cloned()
+        };
+
+        if let Some(harness) = harness {
             harness.write().await.cancel();
-            drop(harnesses);
 
             self.update_status(id, HarnessStatus::Cancelled).await;
 
@@ -498,8 +507,12 @@ impl HarnessManager {
 
     /// Pause a harness
     pub async fn pause_harness(&self, id: &str) -> Result<(), HarnessError> {
-        let harnesses = self.harnesses.read().await;
-        if let Some(harness) = harnesses.get(id) {
+        let harness = {
+            let harnesses = self.harnesses.read().await;
+            harnesses.get(id).cloned()
+        };
+
+        if let Some(harness) = harness {
             harness.write().await.pause();
             self.update_status(id, HarnessStatus::Paused).await;
             Ok(())
@@ -510,8 +523,12 @@ impl HarnessManager {
 
     /// Resume a harness
     pub async fn resume_harness(&self, id: &str) -> Result<(), HarnessError> {
-        let harnesses = self.harnesses.read().await;
-        if let Some(harness) = harnesses.get(id) {
+        let harness = {
+            let harnesses = self.harnesses.read().await;
+            harnesses.get(id).cloned()
+        };
+
+        if let Some(harness) = harness {
             harness.write().await.resume();
             self.update_status(id, HarnessStatus::Running).await;
             Ok(())
@@ -617,10 +634,13 @@ impl HarnessManager {
 
     /// Remove a harness
     pub async fn remove_harness(&self, id: &str) -> bool {
-        let mut harnesses = self.harnesses.write().await;
-        let mut info_map = self.info.write().await;
+        let removed = {
+            let mut harnesses = self.harnesses.write().await;
+            harnesses.remove(id).is_some()
+        };
 
-        if harnesses.remove(id).is_some() {
+        if removed {
+            let mut info_map = self.info.write().await;
             info_map.remove(id);
             true
         } else {
@@ -635,8 +655,12 @@ impl HarnessManager {
 
     /// Cancel all harnesses (graceful shutdown)
     pub async fn cancel_all(&self) {
-        let harnesses = self.harnesses.read().await;
-        for (_, harness) in harnesses.iter() {
+        let harnesses = {
+            let harnesses = self.harnesses.read().await;
+            harnesses.values().cloned().collect::<Vec<_>>()
+        };
+
+        for harness in harnesses {
             harness.write().await.cancel();
         }
     }
@@ -645,8 +669,10 @@ impl HarnessManager {
     pub async fn shutdown(&self) {
         self.cancel_all().await;
 
-        let mut harnesses = self.harnesses.write().await;
-        harnesses.clear();
+        {
+            let mut harnesses = self.harnesses.write().await;
+            harnesses.clear();
+        }
 
         let mut info_map = self.info.write().await;
         info_map.clear();

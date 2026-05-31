@@ -6,10 +6,10 @@
 //! - Self-reflection on failures
 //! - Timeout and cancellation handling
 
-use std::sync::Arc;
-use tokio::sync::RwLock;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
+use tokio::sync::RwLock;
 
 use super::harness::{AgentHarnessContext, HarnessConfig};
 
@@ -159,8 +159,21 @@ impl StepExecutor {
         mut execute_fn: G,
     ) -> Result<StepExecutionResult>
     where
-        F: FnMut(usize, &str, &[ExecutionStep]) -> Pin<Box<dyn std::future::Future<Output = Result<(String, Option<String>, Option<serde_json::Value>)>> + Send>>,
-        G: FnMut(String, serde_json::Value) -> Pin<Box<dyn std::future::Future<Output = Result<String>> + Send>>,
+        F: FnMut(
+            usize,
+            &str,
+            &[ExecutionStep],
+        ) -> Pin<
+            Box<
+                dyn std::future::Future<
+                        Output = Result<(String, Option<String>, Option<serde_json::Value>)>,
+                    > + Send,
+            >,
+        >,
+        G: FnMut(
+            String,
+            serde_json::Value,
+        ) -> Pin<Box<dyn std::future::Future<Output = Result<String>> + Send>>,
     {
         let start_time = std::time::Instant::now();
         let mut execution_steps = Vec::new();
@@ -182,11 +195,7 @@ impl StepExecutor {
 
             // Generate thought/action
             let history: Vec<ExecutionStep> = execution_steps.clone();
-            let (thought, action_opt, action_args) = generate_fn(
-                step_num,
-                task,
-                &history,
-            ).await?;
+            let (thought, action_opt, action_args) = generate_fn(step_num, task, &history).await?;
 
             let mut step = ExecutionStep::new(step_num, thought);
 
@@ -220,19 +229,30 @@ impl StepExecutor {
 
         // Determine final output
         let (output, success, error) = if steps_failed == 0 {
-            let final_obs = execution_steps.last()
+            let final_obs = execution_steps
+                .last()
                 .and_then(|s| s.observation.clone())
                 .unwrap_or_else(|| "Task completed".to_string());
             (final_obs, true, None)
         } else if execution_steps.is_empty() {
-            ("No steps executed".to_string(), false, Some("No steps were executed".to_string()))
-        } else {
-            let last_step = execution_steps.last().unwrap();
             (
-                last_step.observation.clone().unwrap_or_default(),
+                "No steps executed".to_string(),
                 false,
-                last_step.error.clone(),
+                Some("No steps were executed".to_string()),
             )
+        } else {
+            match execution_steps.last() {
+                Some(last_step) => (
+                    last_step.observation.clone().unwrap_or_default(),
+                    false,
+                    last_step.error.clone(),
+                ),
+                None => (
+                    "No steps executed".to_string(),
+                    false,
+                    Some("No steps were executed".to_string()),
+                ),
+            }
         };
 
         Ok(StepExecutionResult {

@@ -281,7 +281,7 @@ impl MultiDimensionalAgent {
             .max_by(|a, b| {
                 a.match_score(&agent_vec)
                     .partial_cmp(&b.match_score(&agent_vec))
-                    .unwrap()
+                    .unwrap_or(std::cmp::Ordering::Equal)
             })
     }
 
@@ -426,7 +426,7 @@ impl MultiRoleManager {
                     .max_by(|a, b| {
                         a.match_score(&task_vec)
                             .partial_cmp(&b.match_score(&task_vec))
-                            .unwrap()
+                            .unwrap_or(std::cmp::Ordering::Equal)
                     })
                     .cloned();
 
@@ -437,7 +437,7 @@ impl MultiRoleManager {
         candidates
             .iter()
             .max_by(|(_, score_a, _), (_, score_b, _)| {
-                score_a.partial_cmp(score_b).unwrap()
+                score_a.partial_cmp(score_b).unwrap_or(std::cmp::Ordering::Equal)
             })
             .and_then(|(agent, score, best_role)| {
                 best_role.as_ref().map(|role| RoleAssignment {
@@ -475,7 +475,7 @@ impl MultiRoleManager {
                 .max_by(|(_, a), (_, b)| {
                     let score_a = a.task_score(&task_vec);
                     let score_b = b.task_score(&task_vec);
-                    score_a.partial_cmp(&score_b).unwrap()
+                    score_a.partial_cmp(&score_b).unwrap_or(std::cmp::Ordering::Equal)
                 })
             {
                 let score = agent.task_score(&task_vec);
@@ -485,7 +485,7 @@ impl MultiRoleManager {
                     .max_by(|a, b| {
                         a.match_score(&task_vec)
                             .partial_cmp(&b.match_score(&task_vec))
-                            .unwrap()
+                            .unwrap_or(std::cmp::Ordering::Equal)
                     })
                     .cloned();
 

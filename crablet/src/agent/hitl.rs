@@ -1,7 +1,7 @@
-use std::sync::Arc;
-use dashmap::DashMap;
 use chrono::{DateTime, Utc};
+use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use tokio::sync::{broadcast, oneshot};
 use tokio::time::Duration;
 
@@ -110,7 +110,15 @@ impl HumanInTheLoop {
         output: &str,
         review_type: ReviewType,
     ) -> HumanDecision {
-        self.request_review_with_timeout(graph_id, task_id, output, review_type, Duration::from_secs(600), vec![]).await
+        self.request_review_with_timeout(
+            graph_id,
+            task_id,
+            output,
+            review_type,
+            Duration::from_secs(600),
+            vec![],
+        )
+        .await
     }
 
     pub async fn request_review_with_timeout(
@@ -125,8 +133,7 @@ impl HumanInTheLoop {
         let (tx, rx) = oneshot::channel();
         let review_id = uuid::Uuid::new_v4().to_string();
         let deadline = Utc::now()
-            + chrono::Duration::from_std(timeout)
-                .unwrap_or_else(|_| chrono::Duration::minutes(10));
+            + chrono::Duration::from_std(timeout).unwrap_or_else(|_| chrono::Duration::minutes(10));
 
         let review = PendingReview {
             review_id: review_id.clone(),
@@ -140,13 +147,15 @@ impl HumanInTheLoop {
         };
 
         self.pending_reviews.insert(task_id.to_string(), review);
-        let _ = self.notification_channel.send(HITLNotification::ReviewRequested {
-            review_id: review_id.clone(),
-            graph_id: graph_id.to_string(),
-            task_id: task_id.to_string(),
-            review_type,
-            deadline,
-        });
+        let _ = self
+            .notification_channel
+            .send(HITLNotification::ReviewRequested {
+                review_id: review_id.clone(),
+                graph_id: graph_id.to_string(),
+                task_id: task_id.to_string(),
+                review_type,
+                deadline,
+            });
 
         let decision = match tokio::time::timeout(timeout, rx).await {
             Ok(Ok(d)) => d,
@@ -154,11 +163,13 @@ impl HumanInTheLoop {
         };
 
         self.pending_reviews.remove(task_id);
-        let _ = self.notification_channel.send(HITLNotification::ReviewResolved {
-            review_id,
-            task_id: task_id.to_string(),
-            decision: decision.clone(),
-        });
+        let _ = self
+            .notification_channel
+            .send(HITLNotification::ReviewResolved {
+                review_id,
+                task_id: task_id.to_string(),
+                decision: decision.clone(),
+            });
         decision
     }
 
@@ -187,7 +198,14 @@ mod tests {
         let task_id = "t-approve";
         let wait = tokio::spawn(async move {
             hitl2
-                .request_review_with_timeout("g1", task_id, "output", ReviewType::Approval, Duration::from_secs(2), vec![])
+                .request_review_with_timeout(
+                    "g1",
+                    task_id,
+                    "output",
+                    ReviewType::Approval,
+                    Duration::from_secs(2),
+                    vec![],
+                )
                 .await
         });
         tokio::time::sleep(Duration::from_millis(50)).await;
@@ -204,7 +222,14 @@ mod tests {
     async fn hitl_timeout_returns_timeout() {
         let hitl = HumanInTheLoop::new();
         let decision = hitl
-            .request_review_with_timeout("g1", "t-timeout", "output", ReviewType::Approval, Duration::from_millis(80), vec![])
+            .request_review_with_timeout(
+                "g1",
+                "t-timeout",
+                "output",
+                ReviewType::Approval,
+                Duration::from_millis(80),
+                vec![],
+            )
             .await;
         match decision {
             HumanDecision::Timeout => {}

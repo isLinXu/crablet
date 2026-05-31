@@ -5,12 +5,12 @@
 //! - Multi-level breakpoints with conditional triggers
 //! - Step duration tracking and prediction
 
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::sync::RwLock;
-use serde::{Deserialize, Serialize};
 use thiserror::Error;
+use tokio::sync::RwLock;
 
 // ============================================================================
 // Adaptive Timeout
@@ -83,12 +83,15 @@ impl StepHistory {
             return Duration::from_secs(0);
         }
         let avg = self.avg_duration().as_millis() as f64;
-        let variance = self.step_durations.iter()
+        let variance = self
+            .step_durations
+            .iter()
             .map(|d| {
                 let diff = *d as f64 - avg;
                 diff * diff
             })
-            .sum::<f64>() / self.step_durations.len() as f64;
+            .sum::<f64>()
+            / self.step_durations.len() as f64;
         Duration::from_millis(variance.sqrt() as u64)
     }
 
@@ -209,9 +212,7 @@ impl BreakpointCondition {
     /// Check if condition is met based on current state
     pub fn evaluate(&self, ctx: &BreakpointContext) -> bool {
         match self {
-            BreakpointCondition::StepCount { count } => {
-                ctx.step_count >= *count
-            }
+            BreakpointCondition::StepCount { count } => ctx.step_count >= *count,
             BreakpointCondition::TokenThreshold { threshold } => {
                 ctx.tokens_used.unwrap_or(0) >= *threshold
             }
@@ -224,15 +225,9 @@ impl BreakpointCondition {
             BreakpointCondition::ToolCall { tool_name } => {
                 ctx.last_tool.as_ref() == Some(tool_name)
             }
-            BreakpointCondition::TimeElapsed { duration } => {
-                ctx.elapsed >= *duration
-            }
-            BreakpointCondition::MemoryThreshold { bytes } => {
-                ctx.memory_usage >= *bytes
-            }
-            BreakpointCondition::CpuTimeThreshold { ms } => {
-                ctx.cpu_time_ms >= *ms
-            }
+            BreakpointCondition::TimeElapsed { duration } => ctx.elapsed >= *duration,
+            BreakpointCondition::MemoryThreshold { bytes } => ctx.memory_usage >= *bytes,
+            BreakpointCondition::CpuTimeThreshold { ms } => ctx.cpu_time_ms >= *ms,
         }
     }
 
@@ -240,8 +235,12 @@ impl BreakpointCondition {
     pub fn description(&self) -> String {
         match self {
             BreakpointCondition::StepCount { count } => format!("After {} steps", count),
-            BreakpointCondition::TokenThreshold { threshold } => format!("Token usage >= {}", threshold),
-            BreakpointCondition::ErrorRate { threshold } => format!("Error rate >= {}%", (*threshold * 100.0) as i32),
+            BreakpointCondition::TokenThreshold { threshold } => {
+                format!("Token usage >= {}", threshold)
+            }
+            BreakpointCondition::ErrorRate { threshold } => {
+                format!("Error rate >= {}%", (*threshold * 100.0) as i32)
+            }
             BreakpointCondition::ToolCall { tool_name } => format!("Tool call: {}", tool_name),
             BreakpointCondition::TimeElapsed { duration } => format!("After {:?}", duration),
             BreakpointCondition::MemoryThreshold { bytes } => format!("Memory >= {} bytes", bytes),
@@ -318,7 +317,12 @@ pub struct Breakpoint {
 }
 
 impl Breakpoint {
-    pub fn new(id: &str, name: &str, condition: BreakpointCondition, action: BreakpointAction) -> Self {
+    pub fn new(
+        id: &str,
+        name: &str,
+        condition: BreakpointCondition,
+        action: BreakpointAction,
+    ) -> Self {
         Self {
             id: id.to_string(),
             name: name.to_string(),
@@ -451,15 +455,19 @@ impl BreakpointManager {
             "Step Limit",
             BreakpointCondition::StepCount { count: 100 },
             BreakpointAction::Cancel,
-        )).await;
+        ))
+        .await;
 
         // Token budget breakpoint
         self.add_breakpoint(Breakpoint::new(
             "token_budget",
             "Token Budget",
             BreakpointCondition::TokenThreshold { threshold: 100_000 },
-            BreakpointAction::LogAndContinue { message: "Token budget reached".to_string() },
-        )).await;
+            BreakpointAction::LogAndContinue {
+                message: "Token budget reached".to_string(),
+            },
+        ))
+        .await;
 
         // High error rate breakpoint
         self.add_breakpoint(Breakpoint::new(
@@ -467,15 +475,19 @@ impl BreakpointManager {
             "High Error Rate",
             BreakpointCondition::ErrorRate { threshold: 0.5 },
             BreakpointAction::Reflect,
-        )).await;
+        ))
+        .await;
 
         // Timeout breakpoint
         self.add_breakpoint(Breakpoint::new(
             "timeout",
             "Execution Timeout",
-            BreakpointCondition::TimeElapsed { duration: Duration::from_secs(600) },
+            BreakpointCondition::TimeElapsed {
+                duration: Duration::from_secs(600),
+            },
             BreakpointAction::Cancel,
-        )).await;
+        ))
+        .await;
     }
 }
 
@@ -499,9 +511,7 @@ pub struct AdaptiveHarnessExt {
 impl AdaptiveHarnessExt {
     pub fn new(adaptive_config: Option<AdaptiveTimeoutConfig>) -> Self {
         Self {
-            adaptive_timeout: AdaptiveTimeout::new(
-                adaptive_config.unwrap_or_default()
-            ),
+            adaptive_timeout: AdaptiveTimeout::new(adaptive_config.unwrap_or_default()),
             breakpoint_manager: BreakpointManager::new(),
             step_start_times: Vec::new(),
         }
@@ -619,12 +629,16 @@ mod tests {
     async fn test_breakpoint_manager() {
         let manager = BreakpointManager::new();
 
-        manager.add_breakpoint(Breakpoint::new(
-            "test",
-            "Test Breakpoint",
-            BreakpointCondition::StepCount { count: 10 },
-            BreakpointAction::LogAndContinue { message: "Test".to_string() },
-        )).await;
+        manager
+            .add_breakpoint(Breakpoint::new(
+                "test",
+                "Test Breakpoint",
+                BreakpointCondition::StepCount { count: 10 },
+                BreakpointAction::LogAndContinue {
+                    message: "Test".to_string(),
+                },
+            ))
+            .await;
 
         let breakpoints = manager.list_breakpoints().await;
         assert_eq!(breakpoints.len(), 1);
@@ -641,12 +655,14 @@ mod tests {
     async fn test_breakpoint_trigger() {
         let manager = BreakpointManager::new();
 
-        manager.add_breakpoint(Breakpoint::new(
-            "test",
-            "Test",
-            BreakpointCondition::StepCount { count: 5 },
-            BreakpointAction::Cancel,
-        )).await;
+        manager
+            .add_breakpoint(Breakpoint::new(
+                "test",
+                "Test",
+                BreakpointCondition::StepCount { count: 5 },
+                BreakpointAction::Cancel,
+            ))
+            .await;
 
         let ctx = BreakpointContext {
             step_count: 5,

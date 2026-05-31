@@ -1,8 +1,8 @@
-use async_trait::async_trait;
-use crate::types::Message;
-use std::sync::Arc;
+use crate::agent::swarm::{AgentId, SwarmAgent, SwarmMessage};
 use crate::cognitive::llm::LlmClient;
-use crate::agent::swarm::{SwarmAgent, AgentId, SwarmMessage};
+use crate::types::Message;
+use async_trait::async_trait;
+use std::sync::Arc;
 
 pub struct AnalystAgent {
     id: AgentId,
@@ -20,26 +20,35 @@ impl AnalystAgent {
 
 #[async_trait]
 impl SwarmAgent for AnalystAgent {
-    fn id(&self) -> &AgentId { &self.id }
-    fn name(&self) -> &str { "analyst" }
-    
+    fn id(&self) -> &AgentId {
+        &self.id
+    }
+    fn name(&self) -> &str {
+        "analyst"
+    }
+
     async fn receive(&mut self, message: SwarmMessage, _sender: AgentId) -> Option<SwarmMessage> {
-        if let SwarmMessage::Task { task_id, description, .. } = message {
+        if let SwarmMessage::Task {
+            task_id,
+            description,
+            ..
+        } = message
+        {
             let prompt = format!(
                 "You are a professional data analyst. Please analyze the following task:\n{}\n\nOutput Format:\n1. Key Insights\n2. Detailed Analysis\n3. Recommendations",
                 description
             );
-            
+
             let messages = vec![Message::new("user", prompt)];
             match self.llm.chat_complete(&messages).await {
-                Ok(response) => Some(SwarmMessage::Result { 
-                    task_id, 
+                Ok(response) => Some(SwarmMessage::Result {
+                    task_id,
                     content: response,
-                    payload: None 
+                    payload: None,
                 }),
-                Err(e) => Some(SwarmMessage::Error { 
-                    task_id, 
-                    error: format!("Error analyzing: {}", e) 
+                Err(e) => Some(SwarmMessage::Error {
+                    task_id,
+                    error: format!("Error analyzing: {}", e),
                 }),
             }
         } else {

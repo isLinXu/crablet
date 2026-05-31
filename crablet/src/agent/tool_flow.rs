@@ -670,7 +670,7 @@ impl ToolFlowExecutor {
             // If it's already a JSON value, use it directly
             let value = if value_template.is_string() {
                 // Try to evaluate as expression
-                let expr_str = value_template.as_str().unwrap();
+                let expr_str = value_template.as_str().unwrap_or_default();
                 if expr_str.starts_with('$') {
                     // Reference expression
                     let ref_name = &expr_str[1..];

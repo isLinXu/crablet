@@ -279,7 +279,7 @@ impl PriorityMessageQueue {
                     id: batch[0].id.clone(),
                 });
 
-                return Some(batch.into_iter().next().unwrap());
+                return batch.into_iter().next();
             }
 
             // Take first message from batch

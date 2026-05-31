@@ -1,4 +1,4 @@
-use crate::agent::swarm::{Swarm, SwarmAgent, AgentId, SwarmMessage};
+use crate::agent::swarm::{AgentId, Swarm, SwarmAgent, SwarmMessage};
 use crate::cognitive::llm::LlmClient;
 use async_trait::async_trait;
 use std::sync::Arc;
@@ -11,7 +11,7 @@ pub struct DebateModerator {
     llm: Arc<Box<dyn LlmClient>>,
     participants: Vec<AgentId>,
     rounds: usize,
-    
+
     // State
     requester_id: Option<AgentId>,
     active_task_id: Option<String>,
@@ -24,11 +24,11 @@ pub struct DebateModerator {
 
 impl DebateModerator {
     pub fn new(
-        name: &str, 
-        swarm: Arc<Swarm>, 
-        llm: Arc<Box<dyn LlmClient>>, 
-        participants: Vec<AgentId>, 
-        rounds: usize
+        name: &str,
+        swarm: Arc<Swarm>,
+        llm: Arc<Box<dyn LlmClient>>,
+        participants: Vec<AgentId>,
+        rounds: usize,
     ) -> Self {
         Self {
             id: AgentId::from_name(name),
@@ -50,16 +50,19 @@ impl DebateModerator {
         if self.current_round >= self.rounds {
             self.is_active = false;
             let summary = self.summarize_debate().await;
-            
+
             if let Some(requester) = &self.requester_id {
                 let result_msg = SwarmMessage::Result {
                     task_id: self.active_task_id.clone().unwrap_or_default(),
                     content: summary.clone(),
                     payload: None,
                 };
-                info!("Debate finished. Sending result to requester: {}", requester.0);
+                info!(
+                    "Debate finished. Sending result to requester: {}",
+                    requester.0
+                );
                 if let Err(e) = self.swarm.send(requester, result_msg, &self.id).await {
-                     warn!("Failed to send result to requester {}: {}", requester.0, e);
+                    warn!("Failed to send result to requester {}: {}", requester.0, e);
                 }
             } else {
                 warn!("Debate finished but no requester to send result to.");
@@ -68,16 +71,24 @@ impl DebateModerator {
         }
 
         let current_agent_id = &self.participants[self.current_participant_idx];
-        
+
         let prompt = if self.history.is_empty() {
-            format!("Topic: {}. \nPlease state your initial position.", self.topic)
+            format!(
+                "Topic: {}. \nPlease state your initial position.",
+                self.topic
+            )
         } else {
-            let last_entry = self.history.last().unwrap();
+            let last_entry = self.history.last().cloned().unwrap_or_default();
             format!("Topic: {}. \nPrevious argument: \"{}\". \nPlease provide your counter-argument or perspective.", self.topic, last_entry)
         };
 
         let msg = SwarmMessage::Task {
-            task_id: format!("{}-r{}-p{}", self.active_task_id.clone().unwrap_or_default(), self.current_round, self.current_participant_idx),
+            task_id: format!(
+                "{}-r{}-p{}",
+                self.active_task_id.clone().unwrap_or_default(),
+                self.current_round,
+                self.current_participant_idx
+            ),
             description: prompt,
             context: vec![],
             payload: None,
@@ -100,8 +111,9 @@ impl DebateModerator {
 
     async fn summarize_debate(&self) -> String {
         // Simple concatenation for now, ideally call LLM
-        format!("Debate on '{}' finished after {} rounds.\nHistory:\n{}", 
-            self.topic, 
+        format!(
+            "Debate on '{}' finished after {} rounds.\nHistory:\n{}",
+            self.topic,
             self.rounds,
             self.history.join("\n\n")
         )
@@ -124,9 +136,16 @@ impl SwarmAgent for DebateModerator {
 
     async fn receive(&mut self, message: SwarmMessage, sender: AgentId) -> Option<SwarmMessage> {
         match message {
-            SwarmMessage::Task { task_id, description, .. } => {
+            SwarmMessage::Task {
+                task_id,
+                description,
+                ..
+            } => {
                 // Start a new debate
-                info!("Moderator received new debate request from {}: {}", sender.0, description);
+                info!(
+                    "Moderator received new debate request from {}: {}",
+                    sender.0, description
+                );
                 self.requester_id = Some(sender.clone());
                 self.active_task_id = Some(task_id.clone());
                 self.topic = description;
@@ -143,27 +162,27 @@ impl SwarmAgent for DebateModerator {
                     task_id,
                     status: "Debate Started".to_string(),
                 })
-            },
+            }
             SwarmMessage::Result { content, .. } => {
                 if !self.is_active {
                     return None;
                 }
-                
+
                 info!("Received argument from {}: {}", sender.0, content);
                 self.history.push(format!("{}: {}", sender.0, content));
-                
+
                 // Trigger next turn
                 // If debate ends, process_next_turn returns Result.
                 // But who does it return to? The sender (the participant).
                 // Participants usually ignore Result messages.
                 // We should probably send the final result to the ORIGINAL requester.
                 // But we don't have that ID here easily.
-                
+
                 // If process_next_turn returns Some, it goes to sender.
                 // If it returns None, nothing sent back.
-                
+
                 self.process_next_turn().await
-            },
+            }
             _ => None,
         }
     }

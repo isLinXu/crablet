@@ -1,12 +1,12 @@
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
-use async_trait::async_trait;
-use tracing::{info, warn, error};
-use walkdir::WalkDir;
-use serde::{Serialize, Deserialize};
-use crate::agent::swarm::{SwarmAgent, SwarmMessage, AgentId};
+use crate::agent::swarm::{AgentId, SwarmAgent, SwarmMessage};
 use crate::cognitive::llm::LlmClient;
 use crate::types::Message;
+use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use tracing::{error, info, warn};
+use walkdir::WalkDir;
 
 #[derive(Clone)]
 pub struct SecurityAuditAgent {
@@ -74,7 +74,11 @@ impl SecurityAuditAgent {
         let messages = vec![Message::user(prompt)];
         match self.llm.chat_complete(&messages).await {
             Ok(response) => {
-                let cleaned = response.trim().trim_start_matches("```json").trim_start_matches("```").trim_end_matches("```");
+                let cleaned = response
+                    .trim()
+                    .trim_start_matches("```json")
+                    .trim_start_matches("```")
+                    .trim_end_matches("```");
                 match serde_json::from_str::<Vec<Vulnerability>>(cleaned) {
                     Ok(vulns) => Some(vulns),
                     Err(e) => {
@@ -112,16 +116,24 @@ impl SwarmAgent for SecurityAuditAgent {
 
     async fn receive(&mut self, message: SwarmMessage, _sender: AgentId) -> Option<SwarmMessage> {
         match message {
-            SwarmMessage::Task { task_id, description, payload, .. } => {
+            SwarmMessage::Task {
+                task_id,
+                description,
+                payload,
+                ..
+            } => {
                 info!("SecurityAuditAgent received task: {}", description);
-                
+
                 // Extract path from payload or description
                 let path_str = if let Some(p) = payload {
-                    p.get("path").and_then(|v| v.as_str()).map(|s| s.to_string()).unwrap_or(description.clone())
+                    p.get("path")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string())
+                        .unwrap_or(description.clone())
                 } else {
                     description.clone()
                 };
-                
+
                 let path = PathBuf::from(&path_str);
                 if !path.exists() {
                     return Some(SwarmMessage::Error {
@@ -148,7 +160,7 @@ impl SwarmAgent for SecurityAuditAgent {
                 };
 
                 let json_report = serde_json::to_value(&report).unwrap_or_default();
-                
+
                 Some(SwarmMessage::Result {
                     task_id,
                     content: summary,
