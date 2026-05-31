@@ -41,7 +41,7 @@ export OPENAI_API_KEY=sk-xxx
 docker-compose up -d
 
 # 3. 访问 Web UI
-open http://localhost:3000
+open http://localhost:18790
 ```
 
 ## 基本使用
@@ -53,11 +53,11 @@ crablet chat
 # 2. 单次执行
 crablet run "查询北京今天天气"
 
-# 3. 启动 Web 服务
-crablet serve-web --port 3000
+# 3. 启动统一 Web UI + API 网关
+crablet serve-web --port 18790
 
-# 4. 启动网关（WebSocket + JSON-RPC）
-crablet gateway --port 18789
+# 4. 启动网关（显式模式，Web UI + REST + WebSocket + JSON-RPC）
+crablet gateway --port 18790
 
 # 5. 技能管理
 crablet skill list

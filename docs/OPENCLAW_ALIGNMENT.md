@@ -8,6 +8,13 @@
 
 ## 1. 架构对比分析
 
+### 1.0 近期运行时对齐进展
+
+- Web 控制面已经收敛到统一 gateway 入口，`serve-web` 仅作为统一网关的兼容别名。
+- Skill Trigger 运行时已补齐 `keyword`、`regex`、`command`、`intent` 四类触发路径，其中 `intent` 直接复用现有分类器结果，不再是占位逻辑。
+- Fusion Memory 的 Session 层已重新接入 `CognitiveRouter::process()` 主路径，请求进入时会创建或恢复 session 并写入用户消息，响应生成后会写入 assistant 消息，形成 OpenClaw 风格的实时上下文闭环。
+- `semantic` trigger 仍然保持显式未实现状态，当前不参与生产路由决策，后续需要在向量检索路径稳定后再接入。
+
 ### 1.1 OpenClaw 设计理念
 
 ```
