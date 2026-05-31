@@ -550,7 +550,7 @@ impl IntentTracker {
             }
         }
         
-        suggestions.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap());
+        suggestions.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap_or(std::cmp::Ordering::Equal));
         suggestions.truncate(5);
         
         suggestions

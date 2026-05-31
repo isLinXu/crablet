@@ -1,9 +1,9 @@
-use anyhow::Result;
-use std::sync::Arc;
-use crate::knowledge::vector_store::VectorStore;
 use crate::knowledge::chunking::{Chunker, RecursiveCharacterChunker};
 use crate::knowledge::multimodal::process_file;
+use crate::knowledge::vector_store::VectorStore;
+use anyhow::Result;
 use std::path::Path;
+use std::sync::Arc;
 use tracing::info;
 use uuid::Uuid;
 
@@ -37,17 +37,26 @@ impl IngestionService {
             let chunk_id = format!("{}_{}", doc_id, i);
             ids.push(chunk_id);
             contents.push(chunk.content.clone());
-            
+
             let mut payload = metadata.as_object().cloned().unwrap_or_default();
-            payload.insert("doc_id".to_string(), serde_json::Value::String(doc_id.clone()));
-            payload.insert("chunk_index".to_string(), serde_json::Value::Number(serde_json::Number::from(i)));
-            payload.insert("content".to_string(), serde_json::Value::String(chunk.content.clone()));
-            
+            payload.insert(
+                "doc_id".to_string(),
+                serde_json::Value::String(doc_id.clone()),
+            );
+            payload.insert(
+                "chunk_index".to_string(),
+                serde_json::Value::Number(serde_json::Number::from(i)),
+            );
+            payload.insert(
+                "content".to_string(),
+                serde_json::Value::String(chunk.content.clone()),
+            );
+
             // Merge chunk metadata
             for (k, v) in &chunk.metadata {
                 payload.insert(k.clone(), serde_json::Value::String(v.clone()));
             }
-            
+
             payloads.push(serde_json::Value::Object(payload));
         }
 
@@ -60,7 +69,11 @@ impl IngestionService {
     }
 
     pub async fn ingest_file(&self, path: &Path, metadata: serde_json::Value) -> Result<String> {
-        let extension = path.extension().and_then(|s| s.to_str()).unwrap_or("").to_lowercase();
+        let extension = path
+            .extension()
+            .and_then(|s| s.to_str())
+            .unwrap_or("")
+            .to_lowercase();
         let processed = process_file(path, &extension).await?;
         let mut merged = metadata.as_object().cloned().unwrap_or_default();
         if let Some(extra) = processed.metadata.as_object() {
@@ -68,8 +81,12 @@ impl IngestionService {
                 merged.insert(k.clone(), v.clone());
             }
         }
-        merged.insert("processed_at".to_string(), serde_json::Value::String(chrono::Utc::now().to_rfc3339()));
-        self.ingest_text(&processed.text, serde_json::Value::Object(merged)).await
+        merged.insert(
+            "processed_at".to_string(),
+            serde_json::Value::String(chrono::Utc::now().to_rfc3339()),
+        );
+        self.ingest_text(&processed.text, serde_json::Value::Object(merged))
+            .await
     }
 
     pub async fn list_documents(&self) -> Result<Vec<serde_json::Value>> {
@@ -82,12 +99,15 @@ impl IngestionService {
 
     pub async fn search(&self, query: &str, limit: usize) -> Result<Vec<serde_json::Value>> {
         let results = self.vector_store.search(query, limit).await?;
-        Ok(results.into_iter().map(|(content, score, metadata)| {
-            serde_json::json!({
-                "content": content,
-                "score": score,
-                "metadata": metadata
+        Ok(results
+            .into_iter()
+            .map(|(content, score, metadata)| {
+                serde_json::json!({
+                    "content": content,
+                    "score": score,
+                    "metadata": metadata
+                })
             })
-        }).collect())
+            .collect())
     }
 }

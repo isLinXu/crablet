@@ -4,13 +4,13 @@
 //! - Hot: Active canvas state in Redis (fast read/write)
 //! - Cold: Canvas versions in SQLite (persistent)
 
-use std::sync::Arc;
-use sqlx::{SqlitePool, Row};
-use serde::{Deserialize, Serialize};
 use chrono::Utc;
+use serde::{Deserialize, Serialize};
+use sqlx::{Row, SqlitePool};
+use std::sync::Arc;
 use uuid::Uuid;
 
-use super::redis_client::{RedisClient, canvas_key, canvas_lock_key, collab_key};
+use super::redis_client::{canvas_key, canvas_lock_key, collab_key, RedisClient};
 
 /// Canvas state stored in Redis (hot data)
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -149,7 +149,12 @@ impl CanvasStateStore {
     }
 
     /// Create a new canvas
-    pub async fn create_canvas(&self, name: &str, owner_id: &str, folder_id: Option<String>) -> anyhow::Result<CanvasState> {
+    pub async fn create_canvas(
+        &self,
+        name: &str,
+        owner_id: &str,
+        folder_id: Option<String>,
+    ) -> anyhow::Result<CanvasState> {
         let canvas_id = format!("canvas_{}", Uuid::new_v4());
         let now = Utc::now().timestamp();
 
@@ -167,7 +172,8 @@ impl CanvasStateStore {
         self.save_state(&state).await?;
 
         // Create initial version
-        self.create_version(&canvas_id, &state, owner_id, "Initial version").await?;
+        self.create_version(&canvas_id, &state, owner_id, "Initial version")
+            .await?;
 
         Ok(state)
     }
@@ -222,22 +228,29 @@ impl CanvasStateStore {
         .fetch_all(&self.sqlite_pool)
         .await?;
 
-        let versions = rows.iter().map(|row| CanvasVersion {
-            id: row.get("id"),
-            canvas_id: row.get("canvas_id"),
-            version: row.get("version"),
-            snapshot_json: row.get("snapshot_json"),
-            diff_json: row.get("diff_json"),
-            summary: row.get("summary"),
-            created_by: row.get("created_by"),
-            created_at: row.get("created_at"),
-        }).collect();
+        let versions = rows
+            .iter()
+            .map(|row| CanvasVersion {
+                id: row.get("id"),
+                canvas_id: row.get("canvas_id"),
+                version: row.get("version"),
+                snapshot_json: row.get("snapshot_json"),
+                diff_json: row.get("diff_json"),
+                summary: row.get("summary"),
+                created_by: row.get("created_by"),
+                created_at: row.get("created_at"),
+            })
+            .collect();
 
         Ok(versions)
     }
 
     /// Get specific version
-    pub async fn get_version(&self, canvas_id: &str, version: i32) -> anyhow::Result<Option<CanvasVersion>> {
+    pub async fn get_version(
+        &self,
+        canvas_id: &str,
+        version: i32,
+    ) -> anyhow::Result<Option<CanvasVersion>> {
         let row = sqlx::query(
             "SELECT id, canvas_id, version, snapshot_json, diff_json, summary, created_by, created_at
              FROM canvas_versions WHERE canvas_id = ? AND version = ?"
@@ -264,7 +277,11 @@ impl CanvasStateStore {
     }
 
     /// Rollback to a specific version
-    pub async fn rollback_to_version(&self, canvas_id: &str, version: i32) -> anyhow::Result<Option<CanvasState>> {
+    pub async fn rollback_to_version(
+        &self,
+        canvas_id: &str,
+        version: i32,
+    ) -> anyhow::Result<Option<CanvasState>> {
         let old_version = self.get_version(canvas_id, version).await?;
 
         if let Some(v) = old_version {
@@ -274,7 +291,13 @@ impl CanvasStateStore {
             new_state.last_updated = Utc::now().timestamp();
 
             self.save_state(&new_state).await?;
-            self.create_version(canvas_id, &new_state, "system", &format!("Rollback to v{}", version)).await?;
+            self.create_version(
+                canvas_id,
+                &new_state,
+                "system",
+                &format!("Rollback to v{}", version),
+            )
+            .await?;
 
             return Ok(Some(new_state));
         }
@@ -292,7 +315,7 @@ impl CanvasStateStore {
                 canvas_id: canvas_id.to_string(),
                 user_id: user_id.to_string(),
                 locked_at: now,
-                expires_at: now + 30,  // 30 seconds TTL
+                expires_at: now + 30, // 30 seconds TTL
             };
 
             let json = serde_json::to_string(&lock)?;
@@ -329,7 +352,7 @@ impl CanvasStateStore {
         if let Some(redis) = &self.redis {
             let key = collab_key(&state.canvas_id);
             let json = serde_json::to_string(state)?;
-            redis.set(&key, &json, Some(300)).await?;  // 5 min TTL
+            redis.set(&key, &json, Some(300)).await?; // 5 min TTL
         }
 
         Ok(())
@@ -348,7 +371,11 @@ impl CanvasStateStore {
     }
 
     /// Search canvases (uses SQLite FTS)
-    pub async fn search_canvases(&self, query: &str, folder_id: Option<String>) -> anyhow::Result<Vec<CanvasState>> {
+    pub async fn search_canvases(
+        &self,
+        query: &str,
+        folder_id: Option<String>,
+    ) -> anyhow::Result<Vec<CanvasState>> {
         let search_pattern = format!("%{}%", query);
 
         let rows = if let Some(fid) = folder_id {
@@ -372,22 +399,28 @@ impl CanvasStateStore {
             .await?
         };
 
-        let canvases = rows.iter().map(|row| CanvasState {
-            canvas_id: row.get("canvas_id"),
-            name: row.get("name"),
-            nodes_json: row.get("nodes_json"),
-            edges_json: row.get("edges_json"),
-            version: row.get("version"),
-            folder_id: row.get("folder_id"),
-            owner_id: row.get("owner_id"),
-            last_updated: row.get("last_updated"),
-        }).collect();
+        let canvases = rows
+            .iter()
+            .map(|row| CanvasState {
+                canvas_id: row.get("canvas_id"),
+                name: row.get("name"),
+                nodes_json: row.get("nodes_json"),
+                edges_json: row.get("edges_json"),
+                version: row.get("version"),
+                folder_id: row.get("folder_id"),
+                owner_id: row.get("owner_id"),
+                last_updated: row.get("last_updated"),
+            })
+            .collect();
 
         Ok(canvases)
     }
 
     /// List canvases by folder
-    pub async fn list_by_folder(&self, folder_id: Option<String>) -> anyhow::Result<Vec<CanvasState>> {
+    pub async fn list_by_folder(
+        &self,
+        folder_id: Option<String>,
+    ) -> anyhow::Result<Vec<CanvasState>> {
         let rows = if let Some(fid) = folder_id {
             sqlx::query(
                 "SELECT canvas_id, name, nodes_json, edges_json, version, folder_id, owner_id, last_updated
@@ -405,16 +438,19 @@ impl CanvasStateStore {
             .await?
         };
 
-        let canvases = rows.iter().map(|row| CanvasState {
-            canvas_id: row.get("canvas_id"),
-            name: row.get("name"),
-            nodes_json: row.get("nodes_json"),
-            edges_json: row.get("edges_json"),
-            version: row.get("version"),
-            folder_id: row.get("folder_id"),
-            owner_id: row.get("owner_id"),
-            last_updated: row.get("last_updated"),
-        }).collect();
+        let canvases = rows
+            .iter()
+            .map(|row| CanvasState {
+                canvas_id: row.get("canvas_id"),
+                name: row.get("name"),
+                nodes_json: row.get("nodes_json"),
+                edges_json: row.get("edges_json"),
+                version: row.get("version"),
+                folder_id: row.get("folder_id"),
+                owner_id: row.get("owner_id"),
+                last_updated: row.get("last_updated"),
+            })
+            .collect();
 
         Ok(canvases)
     }
@@ -454,7 +490,7 @@ pub async fn init_canvas_tables(pool: &SqlitePool) -> anyhow::Result<()> {
             folder_id TEXT,
             owner_id TEXT NOT NULL,
             last_updated INTEGER NOT NULL
-        )"
+        )",
     )
     .execute(pool)
     .await?;
@@ -470,7 +506,7 @@ pub async fn init_canvas_tables(pool: &SqlitePool) -> anyhow::Result<()> {
             created_by TEXT NOT NULL,
             created_at INTEGER NOT NULL,
             FOREIGN KEY (canvas_id) REFERENCES canvases(canvas_id)
-        )"
+        )",
     )
     .execute(pool)
     .await?;
@@ -482,7 +518,7 @@ pub async fn init_canvas_tables(pool: &SqlitePool) -> anyhow::Result<()> {
             parent_id TEXT,
             owner_id TEXT NOT NULL,
             created_at INTEGER NOT NULL
-        )"
+        )",
     )
     .execute(pool)
     .await?;
@@ -492,9 +528,11 @@ pub async fn init_canvas_tables(pool: &SqlitePool) -> anyhow::Result<()> {
         .execute(pool)
         .await?;
 
-    sqlx::query("CREATE INDEX IF NOT EXISTS idx_canvas_versions ON canvas_versions(canvas_id, version)")
-        .execute(pool)
-        .await?;
+    sqlx::query(
+        "CREATE INDEX IF NOT EXISTS idx_canvas_versions ON canvas_versions(canvas_id, version)",
+    )
+    .execute(pool)
+    .await?;
 
     Ok(())
 }

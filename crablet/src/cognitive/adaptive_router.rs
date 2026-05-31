@@ -1,4 +1,11 @@
-//! Adaptive Routing System
+//! Adaptive Routing System — DEPRECATED
+//!
+//! ⚠️ This module is deprecated since v0.6.0 and will be removed in a future version.
+//! Use `FusionRouter` (`cognitive::fusion_router`) instead, which provides
+//! unified routing with adaptive capabilities.
+//!
+//! This module is not declared in any `mod.rs` and is effectively dead code.
+//! It is kept only for reference during migration.
 //!
 //! Dynamically adjusts routing decisions based on historical performance,
 //! user feedback, and real-time context analysis.

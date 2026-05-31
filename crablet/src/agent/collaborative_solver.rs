@@ -250,7 +250,7 @@ impl KnowledgeBase {
 
     pub fn get_top_insights(&self, limit: usize) -> Vec<&Insight> {
         let mut sorted = self.insights.iter().collect::<Vec<_>>();
-        sorted.sort_by(|a, b| b.importance.partial_cmp(&a.importance).unwrap());
+        sorted.sort_by(|a, b| b.importance.partial_cmp(&a.importance).unwrap_or(std::cmp::Ordering::Equal));
         sorted.into_iter().take(limit).collect()
     }
 }

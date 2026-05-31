@@ -1,38 +1,38 @@
 //! Crablet + OpenClaw Fusion Configuration Module
-//! 
+//!
 //! This module provides bidirectional configuration management between
 //! Markdown-based OpenClaw configs and Crablet's runtime state.
 
 pub mod parser;
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use serde::{Deserialize, Serialize};
 
 /// Fusion configuration combining OpenClaw style with Crablet features
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FusionConfig {
     /// Configuration metadata
     pub metadata: ConfigMetadata,
-    
+
     /// Agent identity (from AGENTS.md)
     pub agent: AgentConfig,
-    
+
     /// Soul/Personality (from SOUL.md)
     pub soul: SoulConfig,
-    
+
     /// User profile (from USER.md)
     pub user: UserConfig,
-    
+
     /// Memory settings (from MEMORY.md)
     pub memory: MemoryConfig,
-    
+
     /// Tools/Skills (from TOOLS.md)
     pub tools: ToolsConfig,
-    
+
     /// Heartbeat/Scheduling (from HEARTBEAT.md)
     pub heartbeat: HeartbeatConfig,
-    
+
     /// Engine settings (Crablet specific)
     pub engine: EngineConfig,
 }
@@ -113,9 +113,9 @@ pub struct BehaviorConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ProactivityLevel {
-    Passive,    // Wait for user input
-    Balanced,   // Suggest when appropriate
-    Active,     // Proactively offer help
+    Passive,  // Wait for user input
+    Balanced, // Suggest when appropriate
+    Active,   // Proactively offer help
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -482,10 +482,7 @@ impl FusionConfig {
                         plugin: true,
                         hot_reload: true,
                     },
-                    channels: vec![
-                        "web".to_string(),
-                        "telegram".to_string(),
-                    ],
+                    channels: vec!["web".to_string(), "telegram".to_string()],
                 },
                 behavior: BehaviorConfig {
                     proactivity: ProactivityLevel::Balanced,
@@ -659,27 +656,23 @@ impl FusionConfig {
                             enabled: true,
                         },
                     ],
-                    weekly: vec![
-                        ScheduledTask {
-                            name: "consolidate_memories".to_string(),
-                            schedule: "0 1 * * 0".to_string(),
-                            action: "consolidate_memories".to_string(),
-                            enabled: true,
-                        },
-                    ],
+                    weekly: vec![ScheduledTask {
+                        name: "consolidate_memories".to_string(),
+                        schedule: "0 1 * * 0".to_string(),
+                        action: "consolidate_memories".to_string(),
+                        enabled: true,
+                    }],
                     monthly: vec![],
                 },
                 health_checks: HealthChecksConfig {
                     enabled: true,
                     interval_secs: 60,
-                    checks: vec![
-                        HealthCheck {
-                            name: "database".to_string(),
-                            check_type: "ping".to_string(),
-                            parameters: HashMap::new(),
-                            alert_on_failure: true,
-                        },
-                    ],
+                    checks: vec![HealthCheck {
+                        name: "database".to_string(),
+                        check_type: "ping".to_string(),
+                        parameters: HashMap::new(),
+                        alert_on_failure: true,
+                    }],
                 },
             },
             engine: EngineConfig {
@@ -723,17 +716,46 @@ impl FusionConfig {
             },
         }
     }
-    
+
     /// Validate the configuration
     pub fn validate(&self) -> Result<(), ConfigValidationError> {
-        // TODO: Implement comprehensive validation
+        if self.metadata.name.is_empty() {
+            return Err(ConfigValidationError {
+                field: "metadata.name".to_string(),
+                message: "Config name must not be empty".to_string(),
+            });
+        }
+        if self.metadata.version.is_empty() {
+            return Err(ConfigValidationError {
+                field: "metadata.version".to_string(),
+                message: "Config version must not be empty".to_string(),
+            });
+        }
+        if self.metadata.edition.is_empty() {
+            return Err(ConfigValidationError {
+                field: "metadata.edition".to_string(),
+                message: "Config edition must not be empty".to_string(),
+            });
+        }
+        if self.agent.identity.name.is_empty() {
+            return Err(ConfigValidationError {
+                field: "agent.identity.name".to_string(),
+                message: "Agent name must not be empty".to_string(),
+            });
+        }
         Ok(())
     }
-    
+
     /// Merge with another config (for hot reload)
     pub fn merge(&mut self, other: FusionConfig) {
-        // TODO: Implement smart merge logic
+        // Preserve metadata timestamps
+        let preserved_updated_at = if other.metadata.updated_at.is_empty() {
+            self.metadata.updated_at.clone()
+        } else {
+            other.metadata.updated_at.clone()
+        };
         *self = other;
+        self.metadata.updated_at = preserved_updated_at;
     }
 }
 
@@ -745,7 +767,11 @@ pub struct ConfigValidationError {
 
 impl std::fmt::Display for ConfigValidationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Config validation error in {}: {}", self.field, self.message)
+        write!(
+            f,
+            "Config validation error in {}: {}",
+            self.field, self.message
+        )
     }
 }
 

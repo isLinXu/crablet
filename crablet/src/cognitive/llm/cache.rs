@@ -1,13 +1,13 @@
+use super::LlmClient;
+use crate::types::Message;
 use anyhow::Result;
 use async_trait::async_trait;
 use lru::LruCache;
-use std::sync::Arc;
 use parking_lot::Mutex;
+use sha2::{Digest, Sha256};
 use std::num::NonZeroUsize;
-use crate::types::Message;
-use super::LlmClient;
+use std::sync::Arc;
 use tracing::info;
-use sha2::{Sha256, Digest};
 
 pub struct CachedLlmClient {
     inner: Box<dyn LlmClient>,
@@ -16,7 +16,11 @@ pub struct CachedLlmClient {
 
 impl CachedLlmClient {
     pub fn new(inner: Box<dyn LlmClient>, capacity: usize) -> Self {
-        let cap = NonZeroUsize::new(capacity).unwrap_or(NonZeroUsize::new(100).unwrap());
+        let normalized_capacity = if capacity == 0 { 100 } else { capacity };
+        let cap = match NonZeroUsize::new(normalized_capacity) {
+            Some(capacity) => capacity,
+            None => NonZeroUsize::MIN,
+        };
         Self {
             inner,
             cache: Arc::new(Mutex::new(LruCache::new(cap))),
@@ -35,7 +39,7 @@ impl LlmClient for CachedLlmClient {
         hasher.update(self.inner.model_name().as_bytes());
         let result = hasher.finalize();
         let cache_key = format!("{:x}", result);
-        
+
         {
             let mut cache = self.cache.lock();
             if let Some(cached) = cache.get(&cache_key) {
@@ -43,18 +47,22 @@ impl LlmClient for CachedLlmClient {
                 return Ok(cached.clone());
             }
         }
-        
+
         let response = self.inner.chat_complete(messages).await?;
-        
+
         {
             let mut cache = self.cache.lock();
             cache.put(cache_key, response.clone());
         }
-        
+
         Ok(response)
     }
 
-    async fn chat_complete_with_tools(&self, messages: &[Message], tools: &[serde_json::Value]) -> Result<Message> {
+    async fn chat_complete_with_tools(
+        &self,
+        messages: &[Message],
+        tools: &[serde_json::Value],
+    ) -> Result<Message> {
         // We don't cache tool calls for now as they are dynamic and side-effect prone
         self.inner.chat_complete_with_tools(messages, tools).await
     }

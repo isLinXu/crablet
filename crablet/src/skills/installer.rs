@@ -1,4 +1,4 @@
-use anyhow::{Result, Context};
+use anyhow::{Context, Result};
 use std::path::Path;
 use tokio::process::Command;
 use tracing::info;
@@ -15,13 +15,19 @@ impl SkillInstaller {
         }
 
         // Parse name from URL (simple heuristic)
-        let repo_name = url.split('/').next_back().unwrap_or("unknown_skill")
+        let repo_name = url
+            .split('/')
+            .next_back()
+            .unwrap_or("unknown_skill")
             .trim_end_matches(".git");
-            
+
         let target_path = skills_dir.join(repo_name);
-        
+
         if target_path.exists() {
-            return Err(anyhow::anyhow!("Skill directory already exists: {:?}", target_path));
+            return Err(anyhow::anyhow!(
+                "Skill directory already exists: {:?}",
+                target_path
+            ));
         }
 
         // git clone
@@ -40,13 +46,13 @@ impl SkillInstaller {
         }
 
         info!("Skill installed to {:?}", target_path);
-        
+
         // Validation: Check if it's a valid skill
         // We can use SkillRegistry logic, but for now just check for manifest
-        let has_manifest = target_path.join("skill.yaml").exists() || 
-                           target_path.join("skill.json").exists() ||
-                           target_path.join("SKILL.md").exists();
-                           
+        let has_manifest = target_path.join("skill.yaml").exists()
+            || target_path.join("skill.json").exists()
+            || target_path.join("SKILL.md").exists();
+
         if !has_manifest {
             // Rollback
             let _ = tokio::fs::remove_dir_all(&target_path).await;

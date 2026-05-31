@@ -2,12 +2,12 @@
 //!
 //! Handles token usage, message starring, dual search, and TopK recommendations.
 
-use std::sync::Arc;
 use axum::{
-    extract::{State, Json, Path, Query},
+    extract::{Json, Path, Query, State},
     http::StatusCode,
 };
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
 use crate::gateway::server::CrabletGateway;
 
@@ -25,7 +25,11 @@ pub async fn get_token_usage(
     State(gateway): State<Arc<CrabletGateway>>,
     Path(session_id): Path<String>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
-    let usage = gateway.storage.session_context.get_token_usage(&session_id).await;
+    let usage = gateway
+        .storage
+        .session_context
+        .get_token_usage(&session_id)
+        .await;
 
     match usage {
         Ok(Some(token_usage)) => Ok(Json(serde_json::json!({
@@ -56,7 +60,12 @@ pub async fn star_message(
     Path(session_id): Path<String>,
     Json(req): Json<StarRequest>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
-    match gateway.storage.message_stars.star_message(&session_id, &req.message_id).await {
+    match gateway
+        .storage
+        .message_stars
+        .star_message(&session_id, &req.message_id)
+        .await
+    {
         Ok(Some(star)) => Ok(Json(serde_json::json!({
             "status": "starred",
             "id": star.id,
@@ -80,7 +89,12 @@ pub async fn unstar_message(
     State(gateway): State<Arc<CrabletGateway>>,
     Path((session_id, message_id)): Path<(String, String)>,
 ) -> Result<StatusCode, StatusCode> {
-    match gateway.storage.message_stars.unstar_message(&session_id, &message_id).await {
+    match gateway
+        .storage
+        .message_stars
+        .unstar_message(&session_id, &message_id)
+        .await
+    {
         Ok(true) => Ok(StatusCode::NO_CONTENT),
         Ok(false) => Ok(StatusCode::NOT_FOUND),
         Err(e) => {
@@ -114,7 +128,12 @@ pub async fn is_starred(
     State(gateway): State<Arc<CrabletGateway>>,
     Path((session_id, message_id)): Path<(String, String)>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
-    match gateway.storage.message_stars.is_starred(&session_id, &message_id).await {
+    match gateway
+        .storage
+        .message_stars
+        .is_starred(&session_id, &message_id)
+        .await
+    {
         Ok(starred) => Ok(Json(serde_json::json!({
             "status": "success",
             "session_id": session_id,
@@ -133,7 +152,12 @@ pub async fn get_star_count(
     State(gateway): State<Arc<CrabletGateway>>,
     Path(session_id): Path<String>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
-    match gateway.storage.message_stars.get_star_count(&session_id).await {
+    match gateway
+        .storage
+        .message_stars
+        .get_star_count(&session_id)
+        .await
+    {
         Ok(count) => Ok(Json(serde_json::json!({
             "status": "success",
             "session_id": session_id,
@@ -187,18 +211,18 @@ pub async fn dual_search(
         if let Some(ingestion) = &gateway.ingestion {
             if let Ok(results) = ingestion.search(&query.q, limit).await {
                 for result in results {
-                    let source = result.get("metadata")
+                    let source = result
+                        .get("metadata")
                         .and_then(|m| m.get("source"))
                         .and_then(|v| v.as_str())
                         .unwrap_or("kb")
                         .to_string();
-                    let content = result.get("content")
+                    let content = result
+                        .get("content")
                         .and_then(|c| c.as_str())
                         .unwrap_or("")
                         .to_string();
-                    let score = result.get("score")
-                        .and_then(|s| s.as_f64())
-                        .unwrap_or(0.0) as f32;
+                    let score = result.get("score").and_then(|s| s.as_f64()).unwrap_or(0.0) as f32;
 
                     kb_results.push(DualSearchResult {
                         source,
@@ -216,7 +240,12 @@ pub async fn dual_search(
 
     // History Search
     if mode != "kb_only" {
-        if let Ok(results) = gateway.storage.session_context.search_history(&query.q, limit).await {
+        if let Ok(results) = gateway
+            .storage
+            .session_context
+            .search_history(&query.q, limit)
+            .await
+        {
             for result in results {
                 history_results.push(DualSearchResult {
                     source: format!("session:{}", result.session_id),
@@ -233,9 +262,16 @@ pub async fn dual_search(
     // Fuse results if dual mode
     if mode == "dual" && !kb_results.is_empty() && !history_results.is_empty() {
         let max_kb_score = kb_results.iter().map(|r| r.score).fold(0.0f32, f32::max);
-        let normalized_kb: Vec<f32> = kb_results.iter().map(|r| {
-            if max_kb_score > 0.0 { r.score / max_kb_score } else { r.score }
-        }).collect();
+        let normalized_kb: Vec<f32> = kb_results
+            .iter()
+            .map(|r| {
+                if max_kb_score > 0.0 {
+                    r.score / max_kb_score
+                } else {
+                    r.score
+                }
+            })
+            .collect();
 
         let mut fused: Vec<DualSearchResult> = vec![];
 
@@ -263,7 +299,11 @@ pub async fn dual_search(
             });
         }
 
-        fused.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        fused.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         fused.truncate(limit);
 
         let kb_count = kb_results.len();
@@ -280,21 +320,30 @@ pub async fn dual_search(
         })));
     }
 
-    let use_kb = mode == "kb_only" || (mode == "dual" && (kb_results.is_empty() || history_results.is_empty()));
+    let use_kb = mode == "kb_only"
+        || (mode == "dual" && (kb_results.is_empty() || history_results.is_empty()));
     let history_count = history_results.len();
 
     let (kb_count, results) = if use_kb {
         let kb_count = kb_results.len();
         let mut results = kb_results;
         results.extend(history_results);
-        results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        results.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         results.truncate(limit);
         (kb_count, results)
     } else {
         let kb_count = 0;
         let mut results: Vec<DualSearchResult> = vec![];
         results.extend(history_results);
-        results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        results.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         results.truncate(limit);
         (kb_count, results)
     };
@@ -339,15 +388,25 @@ pub async fn topk_recommend(
     const MIN_TOPK: usize = 3;
     const MAX_TOPK: usize = 20;
 
-    let (token_usage_pct, session_token_count, session_token_limit) = if let Some(ref session_id) = query.session_id {
-        if let Ok(Some(usage)) = gateway.storage.session_context.get_token_usage(session_id).await {
-            (usage.usage_percentage, usage.total_tokens, usage.token_limit)
+    let (token_usage_pct, session_token_count, session_token_limit) =
+        if let Some(ref session_id) = query.session_id {
+            if let Ok(Some(usage)) = gateway
+                .storage
+                .session_context
+                .get_token_usage(session_id)
+                .await
+            {
+                (
+                    usage.usage_percentage,
+                    usage.total_tokens,
+                    usage.token_limit,
+                )
+            } else {
+                (0.0, 0, DEFAULT_TOKEN_LIMIT)
+            }
         } else {
             (0.0, 0, DEFAULT_TOKEN_LIMIT)
-        }
-    } else {
-        (0.0, 0, DEFAULT_TOKEN_LIMIT)
-    };
+        };
 
     let current_topk = query.current_topk.unwrap_or(DEFAULT_TOPK);
     let recommended_topk = if token_usage_pct >= 80.0 {
@@ -367,11 +426,20 @@ pub async fn topk_recommend(
     let reason = if token_usage_pct >= 80.0 {
         format!("Token usage is critical ({}%). Recommend minimal retrieval to prevent context overflow.", token_usage_pct as u32)
     } else if token_usage_pct >= 60.0 {
-        format!("Token usage is high ({}%). Reducing TopK from {} to {} to save context.", token_usage_pct as u32, current_topk, recommended_topk)
+        format!(
+            "Token usage is high ({}%). Reducing TopK from {} to {} to save context.",
+            token_usage_pct as u32, current_topk, recommended_topk
+        )
     } else if token_usage_pct >= 40.0 {
-        format!("Token usage is moderate ({}%). Keeping TopK at {} for balanced retrieval.", token_usage_pct as u32, recommended_topk)
+        format!(
+            "Token usage is moderate ({}%). Keeping TopK at {} for balanced retrieval.",
+            token_usage_pct as u32, recommended_topk
+        )
     } else if token_usage_pct >= 20.0 {
-        format!("Token usage is low ({}%). Increasing TopK from {} to {} for better results.", token_usage_pct as u32, current_topk, recommended_topk)
+        format!(
+            "Token usage is low ({}%). Increasing TopK from {} to {} for better results.",
+            token_usage_pct as u32, current_topk, recommended_topk
+        )
     } else {
         format!("Token usage is very low ({}%). Increasing TopK from {} to {} for comprehensive retrieval.", token_usage_pct as u32, current_topk, recommended_topk)
     };

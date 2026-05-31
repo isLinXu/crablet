@@ -1,7 +1,7 @@
+use crate::channels::cli::args::AudioSubcommands;
+use crate::cognitive::multimodal::audio::AudioTool;
 use anyhow::Result;
 use tracing::info;
-use crate::cognitive::multimodal::audio::AudioTool;
-use crate::channels::cli::args::AudioSubcommands;
 
 pub async fn handle_audio(subcmd: &AudioSubcommands) -> Result<()> {
     match subcmd {

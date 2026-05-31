@@ -356,7 +356,7 @@ impl FeedbackLearningSystem {
             .map(|(skill, score)| (skill, if max_score > 0.0 { score / max_score } else { 0.0 }))
             .collect();
         
-        result.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+        result.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         result
     }
 

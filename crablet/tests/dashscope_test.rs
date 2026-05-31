@@ -1,7 +1,7 @@
 use crablet::cognitive::router::CognitiveRouter;
 use crablet::events::EventBus;
-use std::sync::Arc;
 use std::env;
+use std::sync::Arc;
 use tokio::time::{timeout, Duration};
 
 #[tokio::test]
@@ -24,21 +24,25 @@ async fn test_dashscope_integration() {
         println!("Skipping DashScope test: OPENAI_API_BASE is not DashScope");
         return;
     }
-    
+
     let event_bus = Arc::new(EventBus::new(100));
-    
+
     // 2. Initialize Router
     let config = crablet::config::Config::default();
     let router = CognitiveRouter::new(&config, None, event_bus).await;
-    
+
     println!("Starting DashScope integration test...");
 
     // 3. Send Request
     // Use [FORCE_CLOUD] to ensure we hit System 2 (Cloud)
     let prompt = "[FORCE_CLOUD] What is the capital of China? Answer in one word.";
-    
+
     // Set a timeout
-    let result = timeout(Duration::from_secs(30), router.process(prompt, "test_session_dashscope")).await;
+    let result = timeout(
+        Duration::from_secs(30),
+        router.process(prompt, "test_session_dashscope"),
+    )
+    .await;
 
     match result {
         Ok(Ok((response, _traces))) => {

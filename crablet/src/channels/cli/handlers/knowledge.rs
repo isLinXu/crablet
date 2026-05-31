@@ -1,11 +1,11 @@
-use anyhow::Result;
-use tracing::{info, warn};
-use std::sync::Arc;
-use crate::memory::semantic::SharedKnowledgeGraph;
-use crate::knowledge::vector_store::VectorStore;
+use crate::channels::cli::args::KnowledgeSubcommands;
 use crate::knowledge::extractor::KnowledgeExtractor;
 use crate::knowledge::pdf::PdfParser;
-use crate::channels::cli::args::KnowledgeSubcommands;
+use crate::knowledge::vector_store::VectorStore;
+use crate::memory::semantic::SharedKnowledgeGraph;
+use anyhow::Result;
+use std::sync::Arc;
+use tracing::{info, warn};
 
 pub async fn handle_knowledge(
     subcmd: &KnowledgeSubcommands,
@@ -16,27 +16,36 @@ pub async fn handle_knowledge(
         KnowledgeSubcommands::Extract { input, file } => {
             let text = if *file {
                 if input.ends_with(".pdf") {
-                     PdfParser::extract_text(input)?
+                    PdfParser::extract_text(input)?
                 } else {
-                     std::fs::read_to_string(input)?
+                    std::fs::read_to_string(input)?
                 }
             } else {
                 input.clone()
             };
 
-            info!("Extracting knowledge from input (length: {})...", text.len());
+            info!(
+                "Extracting knowledge from input (length: {})...",
+                text.len()
+            );
             let extractor = KnowledgeExtractor::new()?;
             let result = extractor.extract_from_text(&text).await?;
             println!("{:#?}", result);
 
             // Persist to Knowledge Graph
             if let Some(kg) = &kg {
-                info!("Persisting {} entities and {} relations to Knowledge Graph...", result.entities.len(), result.relations.len());
+                info!(
+                    "Persisting {} entities and {} relations to Knowledge Graph...",
+                    result.entities.len(),
+                    result.relations.len()
+                );
                 for entity in result.entities {
                     let _ = kg.add_entity(&entity.name, &entity.r#type).await;
                 }
                 for relation in result.relations {
-                    let _ = kg.add_relation(&relation.source, &relation.target, &relation.relation).await;
+                    let _ = kg
+                        .add_relation(&relation.source, &relation.target, &relation.relation)
+                        .await;
                 }
                 info!("Knowledge persisted successfully.");
             } else {
@@ -81,9 +90,14 @@ pub async fn handle_knowledge(
                             println!("  (No documents found)");
                         } else {
                             for doc in docs {
-                                let source = doc.get("source").and_then(|v| v.as_str()).unwrap_or("Unknown");
-                                let file_type = doc.get("file_type").and_then(|v| v.as_str()).unwrap_or("?");
-                                let chunks = doc.get("chunks").and_then(|v| v.as_i64()).unwrap_or(0);
+                                let source = doc
+                                    .get("source")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("Unknown");
+                                let file_type =
+                                    doc.get("file_type").and_then(|v| v.as_str()).unwrap_or("?");
+                                let chunks =
+                                    doc.get("chunks").and_then(|v| v.as_i64()).unwrap_or(0);
                                 println!("  - {} [{}] ({} chunks)", source, file_type, chunks);
                             }
                         }

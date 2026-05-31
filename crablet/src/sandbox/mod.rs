@@ -1,5 +1,5 @@
-use async_trait::async_trait;
 use anyhow::Result;
+use async_trait::async_trait;
 
 #[derive(Debug, Clone)]
 pub struct ExecutionResult {
@@ -21,10 +21,10 @@ pub enum Language {
 pub trait Sandbox: Send + Sync {
     /// Initialize the sandbox (e.g. pull images)
     async fn init(&self) -> Result<()>;
-    
+
     /// Execute code in the sandbox
     async fn execute(&self, language: Language, code: &str) -> Result<ExecutionResult>;
-    
+
     /// Cleanup resources (e.g. stop containers)
     async fn cleanup(&self) -> Result<()>;
 }

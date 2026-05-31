@@ -24,15 +24,12 @@ impl InstallProgress {
         self.step += 1;
         let progress = (self.step * 100) / self.total_steps;
         let bar = self.render_progress_bar(progress);
-        
-        println!("\r{} [{}] {} {}/{}", 
-            bar,
-            self.skill_name,
-            description,
-            self.step,
-            self.total_steps
+
+        println!(
+            "\r{} [{}] {} {}/{}",
+            bar, self.skill_name, description, self.step, self.total_steps
         );
-        io::stdout().flush().unwrap();
+        io::stdout().flush().ok();
     }
 
     pub fn success(&self) {
@@ -44,7 +41,7 @@ impl InstallProgress {
     }
 
     fn render_progress_bar(&self, percentage: usize) -> String {
-        let filled = (percentage as usize) / 10;
+        let filled = percentage / 10;
         let empty = 10 - filled;
         let filled_bar = "█".repeat(filled);
         let empty_bar = "░".repeat(empty);
@@ -65,14 +62,14 @@ impl SkillInfoDisplay {
         println!("  Description: {}", skill.description);
         println!("  Entrypoint:  {}", skill.entrypoint);
         println!("  Location:    {:?}", path);
-        
+
         if !skill.requires.is_empty() {
             println!("\n  System Dependencies:");
             for dep in &skill.requires {
                 println!("    • {}", dep);
             }
         }
-        
+
         if let Some(ref deps) = skill.dependencies {
             if !deps.pip.is_empty() {
                 println!("\n  Python Dependencies:");
@@ -87,7 +84,7 @@ impl SkillInfoDisplay {
                 }
             }
         }
-        
+
         if !skill.permissions.is_empty() {
             println!("\n  Permissions Required:");
             for perm in &skill.permissions {
@@ -100,7 +97,7 @@ impl SkillInfoDisplay {
                 println!("    {} {}", icon, perm);
             }
         }
-        
+
         println!("{}", "═".repeat(50));
     }
 
@@ -113,10 +110,9 @@ impl SkillInfoDisplay {
         println!("  Failed:   0");
         println!("\n  Installed Skills:");
         for result in results {
-            println!("    ✅ {} v{} at {:?}", 
-                result.skill_name, 
-                result.version,
-                result.install_path
+            println!(
+                "    ✅ {} v{} at {:?}",
+                result.skill_name, result.version, result.install_path
             );
         }
         println!("{}", "═".repeat(50));
@@ -130,11 +126,13 @@ impl UserPrompt {
     /// 询问用户确认
     pub fn confirm(message: &str) -> bool {
         print!("{} [Y/n]: ", message);
-        io::stdout().flush().unwrap();
-        
+        io::stdout().flush().ok();
+
         let mut input = String::new();
-        io::stdin().read_line(&mut input).unwrap();
-        
+        if io::stdin().read_line(&mut input).is_err() {
+            return false;
+        }
+
         let trimmed = input.trim().to_lowercase();
         trimmed == "y" || trimmed == "yes" || trimmed.is_empty()
     }
@@ -145,14 +143,20 @@ impl UserPrompt {
         for (i, option) in options.iter().enumerate() {
             println!("  {}. {}", i + 1, option);
         }
-        
+
         print!("Select (1-{}): ", options.len());
-        io::stdout().flush().unwrap();
-        
+        io::stdout().flush().ok();
+
         let mut input = String::new();
-        io::stdin().read_line(&mut input).unwrap();
-        
-        input.trim().parse::<usize>().ok().map(|n| n.saturating_sub(1))
+        if io::stdin().read_line(&mut input).is_err() {
+            return None;
+        }
+
+        input
+            .trim()
+            .parse::<usize>()
+            .ok()
+            .map(|n| n.saturating_sub(1))
     }
 
     /// 输入字符串
@@ -161,11 +165,13 @@ impl UserPrompt {
             Some(d) => print!("{} [{}]: ", message, d),
             None => print!("{}: ", message),
         }
-        io::stdout().flush().unwrap();
-        
+        io::stdout().flush().ok();
+
         let mut input = String::new();
-        io::stdin().read_line(&mut input).unwrap();
-        
+        if io::stdin().read_line(&mut input).is_err() {
+            return default.unwrap_or("").to_string();
+        }
+
         let trimmed = input.trim();
         if trimmed.is_empty() {
             default.unwrap_or("").to_string()
@@ -187,11 +193,11 @@ impl Spinner {
             message: message.to_string(),
             running: true,
         };
-        
+
         // 在实际应用中，这里会启动一个异步任务来显示旋转动画
         print!("⏳ {}...", message);
-        io::stdout().flush().unwrap();
-        
+        io::stdout().flush().ok();
+
         spinner
     }
 
@@ -210,10 +216,10 @@ pub struct ErrorDisplay;
 impl ErrorDisplay {
     pub fn show_error(error: &anyhow::Error) {
         eprintln!("\n❌ Error: {}", error);
-        
+
         // 尝试提取更有用的错误信息
         let error_string = error.to_string();
-        
+
         if error_string.contains("git") {
             eprintln!("\n💡 Suggestions:");
             eprintln!("  • Make sure git is installed: git --version");

@@ -1,12 +1,12 @@
 //! Optimizer - 应用改进并优化策略
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
-use serde::{Deserialize, Serialize};
 use tracing::{debug, info};
 
-use crate::error::Result;
 use crate::cognitive::meta_controller::learner::LearnedKnowledge;
+use crate::error::Result;
 
 /// 优化器
 pub struct Optimizer {
@@ -89,7 +89,10 @@ impl Optimizer {
     }
 
     /// 应用改进
-    pub async fn apply_improvements(&self, knowledge: &[LearnedKnowledge]) -> Result<OptimizationResult> {
+    pub async fn apply_improvements(
+        &self,
+        knowledge: &[LearnedKnowledge],
+    ) -> Result<OptimizationResult> {
         debug!("Applying {} improvements", knowledge.len());
 
         let mut improvements_count = 0;
@@ -144,15 +147,21 @@ impl Optimizer {
     }
 
     /// 为任务模式优化
-    async fn optimize_for_task_pattern(&self, knowledge: &LearnedKnowledge) -> Result<Option<String>> {
+    async fn optimize_for_task_pattern(
+        &self,
+        knowledge: &LearnedKnowledge,
+    ) -> Result<Option<String>> {
         // 解析任务类别
         let category = self.extract_category(&knowledge.content)?;
-        
+
         // 选择最佳策略
         let best_strategy = self.select_best_strategy_for_category(&category).await;
-        
+
         if let Some(strategy) = best_strategy {
-            debug!("Selected strategy '{}' for category '{}'", strategy, category);
+            debug!(
+                "Selected strategy '{}' for category '{}'",
+                strategy, category
+            );
             Ok(Some(format!(
                 "Optimized strategy for category '{}': {}",
                 category, strategy
@@ -167,10 +176,10 @@ impl Optimizer {
     async fn apply_error_prevention(&self, knowledge: &LearnedKnowledge) -> Result<Option<String>> {
         // 从知识内容中提取错误类型
         let error_type = self.extract_error_type(&knowledge.content)?;
-        
+
         // 应用错误预防措施
         debug!("Applying error prevention for: {}", error_type);
-        
+
         Ok(Some(format!(
             "Applied error prevention for: {}",
             error_type
@@ -181,10 +190,11 @@ impl Optimizer {
     async fn reinforce_strategy(&self, knowledge: &LearnedKnowledge) -> Result<Option<String>> {
         // 记录成功策略
         let strategy = self.extract_strategy(&knowledge.content)?;
-        
+
         // 更新策略评分
-        self.record_strategy_success(&strategy, knowledge.confidence).await;
-        
+        self.record_strategy_success(&strategy, knowledge.confidence)
+            .await;
+
         Ok(Some(format!(
             "Reinforced successful strategy: {} (confidence: {:.2})",
             strategy, knowledge.confidence
@@ -194,25 +204,25 @@ impl Optimizer {
     /// 选择最佳策略
     async fn select_best_strategy_for_category(&self, category: &str) -> Option<String> {
         let strategies = self.strategy_scores.read().await;
-        
+
         // 查找适合该类别的策略
         let mut candidates: Vec<_> = strategies
             .values()
             .filter(|s| self.is_strategy_suitable_for_category(s, category))
             .collect();
-        
+
         if candidates.is_empty() {
             // 返回默认策略
             return Some("default".to_string());
         }
-        
+
         // 选择成功率最高的策略
         candidates.sort_by(|a, b| {
             b.success_rate()
                 .partial_cmp(&a.success_rate())
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
-        
+
         Some(candidates.first()?.strategy.clone())
     }
 
@@ -256,7 +266,7 @@ impl Optimizer {
         if let Some(first) = parts.first() {
             let category = first
                 .split(':')
-                .last()
+                .next_back()
                 .map(|s| s.trim().to_string())
                 .unwrap_or_else(|| "general".to_string());
             Ok(category)
@@ -277,7 +287,12 @@ impl Optimizer {
 
     /// 提取策略
     fn extract_strategy(&self, content: &str) -> Result<String> {
-        Ok(content.split(':').last().unwrap_or("default").trim().to_string())
+        Ok(content
+            .split(':')
+            .next_back()
+            .unwrap_or("default")
+            .trim()
+            .to_string())
     }
 
     /// 获取策略统计
@@ -289,11 +304,11 @@ impl Optimizer {
     /// 获取最佳策略
     pub async fn get_best_strategy(&self) -> Option<String> {
         let strategies = self.strategy_scores.read().await;
-        
+
         if strategies.is_empty() {
             return Some("default".to_string());
         }
-        
+
         strategies
             .values()
             .max_by(|a, b| {
@@ -317,10 +332,16 @@ impl Optimizer {
     }
 
     /// 最后优化时间
+    pub async fn last_optimization_async(&self) -> Option<String> {
+        self.last_optimization.read().await.clone()
+    }
+
+    /// 最后优化时间 (sync wrapper — returns None if lock is contended)
     pub fn last_optimization(&self) -> Option<String> {
-        // 这个方法需要异步访问，但为了简化我们返回 None
-        // 实际使用时应该改为 async
-        None
+        self.last_optimization
+            .try_read()
+            .ok()
+            .and_then(|guard| guard.clone())
     }
 }
 
@@ -343,17 +364,15 @@ mod tests {
     #[tokio::test]
     async fn test_apply_improvements() {
         let optimizer = Optimizer::new();
-        
-        let knowledge = vec![
-            LearnedKnowledge {
-                knowledge_id: "test-1".into(),
-                knowledge_type: "task_pattern".into(),
-                content: "Task category: coding".into(),
-                related_patterns: vec![],
-                confidence: 0.9,
-            },
-        ];
-        
+
+        let knowledge = vec![LearnedKnowledge {
+            knowledge_id: "test-1".into(),
+            knowledge_type: "task_pattern".into(),
+            content: "Task category: coding".into(),
+            related_patterns: vec![],
+            confidence: 0.9,
+        }];
+
         let result = optimizer.apply_improvements(&knowledge).await.unwrap();
         assert_eq!(result.improvements_count, 1);
     }
@@ -361,8 +380,10 @@ mod tests {
     #[tokio::test]
     async fn test_record_strategy_result() {
         let optimizer = Optimizer::new();
-        optimizer.record_strategy_result("test-strategy", true, 0.9, 100).await;
-        
+        optimizer
+            .record_strategy_result("test-strategy", true, 0.9, 100)
+            .await;
+
         let stats = optimizer.get_strategy_stats().await;
         assert_eq!(stats.len(), 1);
         assert_eq!(stats[0].strategy, "test-strategy");
@@ -372,7 +393,9 @@ mod tests {
     #[tokio::test]
     async fn test_extract_category() {
         let optimizer = Optimizer::new();
-        let category = optimizer.extract_category("Task category: coding, complexity: 0.5").unwrap();
+        let category = optimizer
+            .extract_category("Task category: coding, complexity: 0.5")
+            .unwrap();
         assert_eq!(category, "coding");
     }
 }

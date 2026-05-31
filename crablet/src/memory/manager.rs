@@ -1,23 +1,23 @@
-use std::sync::Arc;
-use std::path::PathBuf;
-use dashmap::DashMap;
-use tokio::task::JoinHandle;
-use std::time::{Duration, Instant};
-use parking_lot::Mutex;
-use lru::LruCache;
-use crate::memory::episodic::EpisodicMemory;
-use crate::memory::working::WorkingMemory;
-use crate::memory::shared::{SharedBlackboard, CrossAgentMessage};
-use crate::memory::core::{CoreMemory, CoreMemoryBlock};
 use crate::agent::AgentRole;
-use tracing::{info, warn, error};
 use crate::error::Result;
+use crate::memory::core::{CoreMemory, CoreMemoryBlock};
+use crate::memory::episodic::EpisodicMemory;
+use crate::memory::shared::{CrossAgentMessage, SharedBlackboard};
+use crate::memory::working::WorkingMemory;
+use dashmap::DashMap;
+use lru::LruCache;
+use parking_lot::Mutex;
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+use tokio::task::JoinHandle;
+use tracing::{error, info, warn};
 
 #[cfg(feature = "knowledge")]
 use crate::memory::consolidator::MemoryConsolidator;
 
-use tokio::sync::RwLock;
 use moka::future::Cache as MokaCache;
+use tokio::sync::RwLock;
 
 /// Helper for managing working memory with O(1) LRU eviction
 pub struct WorkingMemoryStore {
@@ -30,7 +30,9 @@ impl WorkingMemoryStore {
     pub fn new(max_entries: usize) -> Self {
         Self {
             data: DashMap::new(),
-            access_order: Mutex::new(LruCache::new(std::num::NonZeroUsize::new(max_entries).unwrap())),
+            access_order: Mutex::new(LruCache::new(
+                std::num::NonZeroUsize::new(max_entries).unwrap_or(std::num::NonZeroUsize::MIN),
+            )),
             max_entries,
         }
     }
@@ -108,31 +110,25 @@ impl MemoryManager {
     }
 
     pub fn with_clean_interval(
-        episodic: Option<Arc<EpisodicMemory>>, 
-        max_entries: usize, 
+        episodic: Option<Arc<EpisodicMemory>>,
+        max_entries: usize,
         ttl: Duration,
         clean_interval: Duration,
     ) -> Self {
-        Self::with_clean_interval_and_core_path(
-            episodic,
-            max_entries,
-            ttl,
-            clean_interval,
-            None,
-        )
+        Self::with_clean_interval_and_core_path(episodic, max_entries, ttl, clean_interval, None)
     }
 
     /// Create MemoryManager with custom Core Memory persistence path
     pub fn with_clean_interval_and_core_path(
-        episodic: Option<Arc<EpisodicMemory>>, 
-        max_entries: usize, 
+        episodic: Option<Arc<EpisodicMemory>>,
+        max_entries: usize,
         ttl: Duration,
         clean_interval: Duration,
         core_memory_path: Option<PathBuf>,
     ) -> Self {
         let working_store = Arc::new(WorkingMemoryStore::new(max_entries));
         let cleaner = Self::start_ttl_cleaner(working_store.clone(), ttl, clean_interval);
-        
+
         // Load or create Core Memory
         let core_memory = if let Some(ref path) = core_memory_path {
             match CoreMemory::load(path) {
@@ -145,7 +141,7 @@ impl MemoryManager {
         } else {
             Arc::new(RwLock::new(CoreMemory::new()))
         };
-        
+
         // Initialize HotReloader if path is provided
         let mut hot_reloader = None;
         let mut distributed_sync = None;
@@ -156,18 +152,20 @@ impl MemoryManager {
             } else {
                 hot_reloader = Some(reloader);
             }
-            
-            distributed_sync = Some(Arc::new(crate::memory::distributed::DistributedCoreMemory::new(
-                core_memory.clone(),
-                path.clone()
-            )));
+
+            distributed_sync = Some(Arc::new(
+                crate::memory::distributed::DistributedCoreMemory::new(
+                    core_memory.clone(),
+                    path.clone(),
+                ),
+            ));
         }
-        
+
         let l1_cache = MokaCache::builder()
             .max_capacity(100)
             .time_to_live(Duration::from_secs(300))
             .build();
-            
+
         Self {
             episodic,
             working_store,
@@ -186,13 +184,17 @@ impl MemoryManager {
         }
     }
 
-    fn start_ttl_cleaner(store: Arc<WorkingMemoryStore>, ttl: Duration, interval: Duration) -> JoinHandle<()> {
+    fn start_ttl_cleaner(
+        store: Arc<WorkingMemoryStore>,
+        ttl: Duration,
+        interval: Duration,
+    ) -> JoinHandle<()> {
         tokio::spawn(async move {
             loop {
                 tokio::time::sleep(interval).await;
                 let now = Instant::now();
                 let initial_count = store.len();
-                
+
                 // Collect keys to remove to avoid holding locks too long
                 let mut to_remove = Vec::new();
                 for entry in store.iter() {
@@ -201,20 +203,27 @@ impl MemoryManager {
                         to_remove.push(entry.key().clone());
                     }
                 }
-                
+
                 for key in to_remove {
                     store.remove(&key);
                 }
 
                 let cleaned_count = initial_count - store.len();
                 if cleaned_count > 0 {
-                    info!("MemoryManager: Cleaned {} expired working memories", cleaned_count);
+                    info!(
+                        "MemoryManager: Cleaned {} expired working memories",
+                        cleaned_count
+                    );
                 }
             }
         })
     }
 
-    pub async fn get_or_create_working_memory(&self, session_id: &str, role: Option<&AgentRole>) -> Arc<RwLock<WorkingMemory>> {
+    pub async fn get_or_create_working_memory(
+        &self,
+        session_id: &str,
+        role: Option<&AgentRole>,
+    ) -> Arc<RwLock<WorkingMemory>> {
         // 1. Check L1 Cache
         if let Some(wm_arc) = self.l1_cache.get(session_id).await {
             let _ = self.working_store.get(session_id);
@@ -228,8 +237,10 @@ impl MemoryManager {
 
         // 2. Check Working Store (L2)
         if let Some(wm_arc) = self.working_store.get(session_id) {
-            self.l1_cache.insert(session_id.to_string(), wm_arc.clone()).await;
-            
+            self.l1_cache
+                .insert(session_id.to_string(), wm_arc.clone())
+                .await;
+
             let wm_arc_clone = wm_arc.clone();
             tokio::spawn(async move {
                 let mut wm = wm_arc_clone.write().await;
@@ -244,13 +255,16 @@ impl MemoryManager {
             Some(AgentRole::Coder) => (20, 16000),
             Some(AgentRole::Reviewer) => (10, 8000),
             Some(AgentRole::Custom(_)) => (10, 8000), // Default
-            _ => (10, 8000), // Default
+            _ => (10, 8000),                          // Default
         };
 
         // Create New
         let wm_arc = Arc::new(RwLock::new(WorkingMemory::new(capacity, max_tokens)));
-        self.working_store.insert(session_id.to_string(), wm_arc.clone());
-        self.l1_cache.insert(session_id.to_string(), wm_arc.clone()).await;
+        self.working_store
+            .insert(session_id.to_string(), wm_arc.clone());
+        self.l1_cache
+            .insert(session_id.to_string(), wm_arc.clone())
+            .await;
 
         wm_arc
     }
@@ -258,16 +272,16 @@ impl MemoryManager {
     /// 启动预热: 加载最近活跃的 sessions
     pub async fn warmup(&self, recent_session_ids: &[String]) -> Result<()> {
         let mut handles = Vec::new();
-        
+
         for session_id in recent_session_ids {
             let wm = self.get_or_create_working_memory(session_id, None).await;
-            
+
             // 从 Episodic Memory 预加载历史
             if let Some(episodic) = &self.episodic {
                 let wm_clone = wm.clone();
                 let sid = session_id.to_string();
                 let episodic_clone = episodic.clone();
-                
+
                 handles.push(tokio::spawn(async move {
                     if let Ok(history) = episodic_clone.get_context(&sid, 10).await {
                         let mut w = wm_clone.write().await;
@@ -278,27 +292,51 @@ impl MemoryManager {
                 }));
             }
         }
-        
+
         for h in handles {
             let _ = h.await;
         }
-        
-        info!("Warmup completed: {} sessions preloaded", recent_session_ids.len());
+
+        info!(
+            "Warmup completed: {} sessions preloaded",
+            recent_session_ids.len()
+        );
         Ok(())
     }
 
     /// Save Message to both Episodic and Working Memory
-    pub async fn save_message_atomic(&self, session_id: &str, role: &str, content: &str) -> Result<()> {
+    pub async fn save_message_atomic(
+        &self,
+        session_id: &str,
+        role: &str,
+        content: &str,
+    ) -> Result<()> {
+        self.save_message_atomic_with_metrics(session_id, role, content, None, None)
+            .await
+    }
+
+    /// Save message to both episodic and working memory, including optional telemetry.
+    pub async fn save_message_atomic_with_metrics(
+        &self,
+        session_id: &str,
+        role: &str,
+        content: &str,
+        tokens: Option<i64>,
+        latency_ms: Option<i64>,
+    ) -> Result<()> {
         // 1. Transactional Save to Episodic Memory
         if let Some(mem) = &self.episodic {
-            mem.save_message_transactional(session_id, role, content).await?;
+            mem.save_message_transactional_with_metrics(
+                session_id, role, content, tokens, latency_ms,
+            )
+            .await?;
         }
 
         // 2. Update Working Memory atomically
         let wm_arc = self.get_or_create_working_memory(session_id, None).await;
         let mut wm = wm_arc.write().await;
         wm.add_message(role, content);
-        
+
         // Trigger consolidation logic
         #[cfg(feature = "knowledge")]
         if let Some(consolidator) = &self.consolidator {
@@ -313,7 +351,23 @@ impl MemoryManager {
             warn!("Failed to save message atomically: {}", e);
         }
     }
-    
+
+    pub async fn save_message_with_metrics(
+        &self,
+        session_id: &str,
+        role: &str,
+        content: &str,
+        tokens: Option<i64>,
+        latency_ms: Option<i64>,
+    ) {
+        if let Err(e) = self
+            .save_message_atomic_with_metrics(session_id, role, content, tokens, latency_ms)
+            .await
+        {
+            warn!("Failed to save message with metrics atomically: {}", e);
+        }
+    }
+
     pub async fn get_context(&self, session_id: &str) -> Vec<crate::types::Message> {
         let wm_arc = self.get_or_create_working_memory(session_id, None).await;
         let wm = wm_arc.read().await;
@@ -334,14 +388,10 @@ impl MemoryManager {
     }
 
     /// Append to Core Memory block
-    pub async fn core_memory_append(
-        &self,
-        block: CoreMemoryBlock,
-        content: &str,
-    ) -> Result<usize> {
+    pub async fn core_memory_append(&self, block: CoreMemoryBlock, content: &str) -> Result<usize> {
         let mut core = self.core_memory.write().await;
         let added = core.append(block, content)?;
-        
+
         // Immediate persistence (Async, non-blocking)
         let path = self.core_memory_path.clone();
         let core_clone = core.clone();
@@ -352,7 +402,7 @@ impl MemoryManager {
                 }
             }
         });
-        
+
         Ok(added)
     }
 
@@ -365,7 +415,7 @@ impl MemoryManager {
     ) -> Result<bool> {
         let mut core = self.core_memory.write().await;
         let replaced = core.replace(block, old_content, new_content)?;
-        
+
         if replaced {
             // Immediate persistence (Async, non-blocking)
             let path = self.core_memory_path.clone();
@@ -378,7 +428,7 @@ impl MemoryManager {
                 }
             });
         }
-        
+
         Ok(replaced)
     }
 
@@ -386,7 +436,7 @@ impl MemoryManager {
     pub async fn core_memory_clear(&self, block: CoreMemoryBlock) {
         let mut core = self.core_memory.write().await;
         core.clear(block);
-        
+
         // Immediate persistence (Async, non-blocking)
         let path = self.core_memory_path.clone();
         let core_clone = core.clone();
@@ -459,7 +509,9 @@ mod tests {
             let m = manager.clone();
             let session = session_id.to_string();
             handles.push(tokio::spawn(async move {
-                m.save_message_atomic(&session, "user", &format!("Message {}", i)).await.unwrap();
+                m.save_message_atomic(&session, "user", &format!("Message {}", i))
+                    .await
+                    .unwrap();
             }));
         }
 
@@ -477,20 +529,29 @@ mod tests {
     async fn test_memory_manager_eviction() {
         // Max 2 entries
         let manager = Arc::new(MemoryManager::new(None, 2, Duration::from_secs(60)));
-        
+
         // Add 3 sessions
-        manager.save_message_atomic("s1", "user", "msg1").await.unwrap();
+        manager
+            .save_message_atomic("s1", "user", "msg1")
+            .await
+            .unwrap();
         tokio::time::sleep(Duration::from_millis(50)).await;
-        
-        manager.save_message_atomic("s2", "user", "msg2").await.unwrap();
+
+        manager
+            .save_message_atomic("s2", "user", "msg2")
+            .await
+            .unwrap();
         tokio::time::sleep(Duration::from_millis(50)).await;
-        
+
         // Access s1 to make it recent in LRU order
         let _ = manager.working_store.get("s1");
         tokio::time::sleep(Duration::from_millis(50)).await;
 
         // Add s3 -> s2 should be evicted (oldest accessed)
-        manager.save_message_atomic("s3", "user", "msg3").await.unwrap();
+        manager
+            .save_message_atomic("s3", "user", "msg3")
+            .await
+            .unwrap();
 
         // Check
         assert!(manager.working_store.contains_key("s1")); // Kept (accessed)

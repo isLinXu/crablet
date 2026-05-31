@@ -1,7 +1,7 @@
-use serde::{Deserialize, Serialize};
-use anyhow::Result;
 use crate::cognitive::llm::LlmClient;
 use crate::types::Message;
+use anyhow::Result;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tracing::info;
 
@@ -39,7 +39,7 @@ impl TaskPlanner {
 
     pub async fn create_plan(&self, goal: &str) -> Result<Plan> {
         info!("Creating plan for goal: {}", goal);
-        
+
         let prompt = format!(
             "You are an expert task planner. Break down the following goal into a sequence of subtasks.\n\
             Goal: \"{}\"\n\
@@ -65,9 +65,10 @@ impl TaskPlanner {
         ];
 
         let response = self.llm.chat_complete(&messages).await?;
-        
+
         // Clean markdown code blocks if present
-        let clean_json = response.trim()
+        let clean_json = response
+            .trim()
             .trim_start_matches("```json")
             .trim_start_matches("```")
             .trim_end_matches("```")
@@ -77,7 +78,7 @@ impl TaskPlanner {
         struct PlanResponse {
             tasks: Vec<SubTaskResponse>,
         }
-        
+
         #[derive(Deserialize)]
         struct SubTaskResponse {
             id: usize,
@@ -86,14 +87,18 @@ impl TaskPlanner {
         }
 
         let plan_resp: PlanResponse = serde_json::from_str(clean_json)?;
-        
-        let tasks = plan_resp.tasks.into_iter().map(|t| SubTask {
-            id: t.id,
-            description: t.description,
-            tool_needed: t.tool_needed,
-            status: TaskStatus::Pending,
-            result: None,
-        }).collect();
+
+        let tasks = plan_resp
+            .tasks
+            .into_iter()
+            .map(|t| SubTask {
+                id: t.id,
+                description: t.description,
+                tool_needed: t.tool_needed,
+                status: TaskStatus::Pending,
+                result: None,
+            })
+            .collect();
 
         Ok(Plan {
             goal: goal.to_string(),

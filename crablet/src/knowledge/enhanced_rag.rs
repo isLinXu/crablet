@@ -92,10 +92,7 @@ pub struct EnhancedRAG {
 }
 
 impl EnhancedRAG {
-    pub fn new(
-        vector_store: Arc<VectorStore>,
-        knowledge_graph: SharedKnowledgeGraph,
-    ) -> Self {
+    pub fn new(vector_store: Arc<VectorStore>, knowledge_graph: SharedKnowledgeGraph) -> Self {
         Self::with_config(vector_store, knowledge_graph, RerankConfig::default())
     }
 
@@ -127,16 +124,20 @@ impl EnhancedRAG {
 
         // 2. 查询分析
         let analysis = self.query_analyzer.analyze(query).await?;
-        
+
         // 3. 多路召回
         let multi_results = self.multi_route_retrieve(&analysis, top_k * 2).await?;
-        
+
         // 4. 融合与重排序
-        let ranked = self.fuse_and_rerank(multi_results, &analysis, top_k).await?;
-        
+        let ranked = self
+            .fuse_and_rerank(multi_results, &analysis, top_k)
+            .await?;
+
         // 5. 更新缓存
-        self.query_cache.insert(query.to_string(), ranked.clone()).await;
-        
+        self.query_cache
+            .insert(query.to_string(), ranked.clone())
+            .await;
+
         Ok(ranked)
     }
 
@@ -169,13 +170,14 @@ impl EnhancedRAG {
         top_k: usize,
     ) -> Result<Vec<RetrievedDocument>> {
         let mut all_results = Vec::new();
-        
+
         for query in queries {
             let results = self.vector_store.search(query, top_k).await?;
             for (content, score, metadata) in results {
                 all_results.push(RetrievedDocument {
                     content,
-                    source: metadata.get("source")
+                    source: metadata
+                        .get("source")
                         .and_then(|v| v.as_str())
                         .unwrap_or("unknown")
                         .to_string(),
@@ -185,7 +187,7 @@ impl EnhancedRAG {
                 });
             }
         }
-        
+
         // 去重
         self.deduplicate_by_content(all_results)
     }
@@ -202,18 +204,19 @@ impl EnhancedRAG {
 
         // 构建关键词查询
         let keyword_query = keywords.join(" ");
-        
+
         // 使用向量存储的搜索作为基础，但后续可以替换为专门的关键词索引
         let results = self.vector_store.search(&keyword_query, top_k).await?;
-        
+
         let mut docs = Vec::new();
         for (content, score, metadata) in results {
             // 关键词匹配度评分
             let keyword_score = self.calculate_keyword_score(&content, keywords);
-            
+
             docs.push(RetrievedDocument {
                 content,
-                source: metadata.get("source")
+                source: metadata
+                    .get("source")
                     .and_then(|v| v.as_str())
                     .unwrap_or("unknown")
                     .to_string(),
@@ -222,7 +225,7 @@ impl EnhancedRAG {
                 metadata,
             });
         }
-        
+
         self.deduplicate_by_content(docs)
     }
 
@@ -233,11 +236,13 @@ impl EnhancedRAG {
         top_k: usize,
     ) -> Result<Vec<RetrievedDocument>> {
         let mut results = Vec::new();
-        
+
         for entity in entities.iter().take(5) {
             let relations = self.knowledge_graph.find_related(&entity.name).await?;
-            
-            for (direction, relation, target) in relations.iter().take(top_k / entities.len().max(1)) {
+
+            for (direction, relation, target) in
+                relations.iter().take(top_k / entities.len().max(1))
+            {
                 let content = format!("{} {} {} {}", entity.name, direction, relation, target);
                 results.push(RetrievedDocument {
                     content,
@@ -252,7 +257,7 @@ impl EnhancedRAG {
                 });
             }
         }
-        
+
         Ok(results)
     }
 
@@ -263,13 +268,17 @@ impl EnhancedRAG {
         top_k: usize,
     ) -> Result<Vec<RetrievedDocument>> {
         let mut all_results = Vec::new();
-        
+
         for query in sub_queries.iter().take(3) {
-            let results = self.vector_store.search(query, top_k / sub_queries.len().max(1)).await?;
+            let results = self
+                .vector_store
+                .search(query, top_k / sub_queries.len().max(1))
+                .await?;
             for (content, score, metadata) in results {
                 all_results.push(RetrievedDocument {
                     content,
-                    source: metadata.get("source")
+                    source: metadata
+                        .get("source")
                         .and_then(|v| v.as_str())
                         .unwrap_or("unknown")
                         .to_string(),
@@ -279,7 +288,7 @@ impl EnhancedRAG {
                 });
             }
         }
-        
+
         self.deduplicate_by_content(all_results)
     }
 
@@ -291,7 +300,7 @@ impl EnhancedRAG {
         top_k: usize,
     ) -> Result<Vec<RetrievedDocument>> {
         let mut all_docs = multi_results.all();
-        
+
         // 1. 根据检索类型加权
         for doc in &mut all_docs {
             let type_weight = match doc.retrieval_type {
@@ -302,24 +311,25 @@ impl EnhancedRAG {
             };
             doc.score *= type_weight;
         }
-        
+
         // 2. 应用时效性权重
         if let Some(temporal) = &analysis.temporal_hints {
             if temporal.has_time_constraint {
                 for doc in &mut all_docs {
-                    let recency_boost = self.calculate_recency_boost(&doc.metadata, temporal.recency_preference);
-                    doc.score = doc.score * (1.0 - self.config.recency_weight) 
+                    let recency_boost =
+                        self.calculate_recency_boost(&doc.metadata, temporal.recency_preference);
+                    doc.score = doc.score * (1.0 - self.config.recency_weight)
                         + recency_boost * self.config.recency_weight;
                 }
             }
         }
-        
+
         // 3. MMR多样性重排序
         let diverse_results = self.mmr_rerank(all_docs, top_k, 0.5);
-        
+
         // 4. 根据意图调整排序
         let final_results = self.adjust_for_intent(diverse_results, analysis.intent);
-        
+
         Ok(final_results.into_iter().take(top_k).collect())
     }
 
@@ -333,13 +343,17 @@ impl EnhancedRAG {
         if docs.is_empty() {
             return docs;
         }
-        
+
         // 按分数排序
-        docs.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
-        
+        docs.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+
         let mut selected = Vec::new();
         let mut remaining: Vec<RetrievedDocument> = docs;
-        
+
         while selected.len() < top_k && !remaining.is_empty() {
             if selected.is_empty() {
                 // 选择第一个最高分的
@@ -348,25 +362,26 @@ impl EnhancedRAG {
                 // 计算MMR分数
                 let mut best_idx = 0;
                 let mut best_mmr_score = f32::MIN;
-                
+
                 for (idx, doc) in remaining.iter().enumerate() {
                     let relevance = doc.score;
-                    let max_sim = selected.iter()
+                    let max_sim = selected
+                        .iter()
                         .map(|s| self.content_similarity(&doc.content, &s.content))
                         .fold(0.0f32, f32::max);
-                    
+
                     let mmr_score = lambda * relevance - (1.0 - lambda) * max_sim;
-                    
+
                     if mmr_score > best_mmr_score {
                         best_mmr_score = mmr_score;
                         best_idx = idx;
                     }
                 }
-                
+
                 selected.push(remaining.remove(best_idx));
             }
         }
-        
+
         selected
     }
 
@@ -397,9 +412,13 @@ impl EnhancedRAG {
             }
             _ => {}
         }
-        
+
         // 重新排序
-        docs.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        docs.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         docs
     }
 
@@ -407,13 +426,13 @@ impl EnhancedRAG {
     fn calculate_keyword_score(&self, content: &str, keywords: &[String]) -> f32 {
         let content_lower = content.to_lowercase();
         let mut matches = 0;
-        
+
         for keyword in keywords {
             if content_lower.contains(&keyword.to_lowercase()) {
                 matches += 1;
             }
         }
-        
+
         if keywords.is_empty() {
             0.0
         } else {
@@ -427,7 +446,7 @@ impl EnhancedRAG {
         if let Some(timestamp) = metadata.get("timestamp").and_then(|v| v.as_i64()) {
             let now = chrono::Utc::now().timestamp();
             let age_days = (now - timestamp) / 86400;
-            
+
             // 指数衰减
             let decay = (-0.01 * age_days as f32).exp();
             decay * preference
@@ -438,18 +457,20 @@ impl EnhancedRAG {
 
     /// 内容相似度（简化版Jaccard）
     fn content_similarity(&self, a: &str, b: &str) -> f32 {
-        let a_words: HashSet<String> = a.to_lowercase()
+        let a_words: HashSet<String> = a
+            .to_lowercase()
             .split_whitespace()
             .map(|s| s.to_string())
             .collect();
-        let b_words: HashSet<String> = b.to_lowercase()
+        let b_words: HashSet<String> = b
+            .to_lowercase()
             .split_whitespace()
             .map(|s| s.to_string())
             .collect();
-        
+
         let intersection: HashSet<_> = a_words.intersection(&b_words).collect();
         let union: HashSet<_> = a_words.union(&b_words).collect();
-        
+
         if union.is_empty() {
             0.0
         } else {
@@ -464,7 +485,7 @@ impl EnhancedRAG {
     ) -> Result<Vec<RetrievedDocument>> {
         let mut seen = HashSet::new();
         let mut unique = Vec::new();
-        
+
         for doc in docs {
             // 使用内容的前100个字符作为去重键
             let key = doc.content.chars().take(100).collect::<String>();
@@ -473,7 +494,7 @@ impl EnhancedRAG {
                 unique.push(doc);
             }
         }
-        
+
         Ok(unique)
     }
 
@@ -493,8 +514,6 @@ impl EnhancedRAG {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[tokio::test]
     async fn test_enhanced_rag_retrieval() {
         // 这个测试需要完整的依赖注入，这里仅作为结构示例

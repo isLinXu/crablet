@@ -1,0 +1,181 @@
+/* ===== Crablet Brand Colors ===== */
+:root {
+  --crablet-primary: #ff6e40;
+  --crablet-primary-dark: #e64a19;
+  --crablet-accent: #ff9e80;
+  --crablet-bg-gradient: linear-gradient(135deg, #ff6e40 0%, #ff9e80 50%, #ffccbc 100%);
+}
+
+/* ===== Hero Section ===== */
+.md-typeset .hero-section {
+  text-align: center;
+  padding: 2rem 0 1rem;
+}
+
+.md-typeset .hero-section h1 {
+  font-size: 3rem;
+  font-weight: 800;
+  margin-bottom: 0.5rem;
+  background: var(--crablet-bg-gradient);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.md-typeset .hero-section .subtitle {
+  font-size: 1.25rem;
+  color: var(--md-default-fg-color--light);
+  margin-bottom: 1.5rem;
+}
+
+/* ===== Card Grid ===== */
+.md-typeset .grid.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1rem;
+}
+
+.md-typeset .grid.cards > ul > li,
+.md-typeset .grid.cards > ol > li,
+.md-typeset .grid.cards > .card {
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 0.75rem;
+  padding: 1.25rem;
+  transition: all 0.2s ease;
+}
+
+.md-typeset .grid.cards > ul > li:hover,
+.md-typeset .grid.cards > ol > li:hover,
+.md-typeset .grid.cards > .card:hover {
+  border-color: var(--crablet-primary);
+  box-shadow: 0 4px 20px rgba(255, 110, 64, 0.15);
+  transform: translateY(-2px);
+}
+
+/* ===== Feature Badges ===== */
+.feature-badge {
+  display: inline-block;
+  padding: 0.15rem 0.6rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  margin-right: 0.3rem;
+}
+
+.feature-badge.new {
+  background: #e8f5e9;
+  color: #2e7d32;
+}
+
+.feature-badge.beta {
+  background: #fff3e0;
+  color: #e65100;
+}
+
+.feature-badge.stable {
+  background: #e3f2fd;
+  color: #1565c0;
+}
+
+.feature-badge.planned {
+  background: #fce4ec;
+  color: #c62828;
+}
+
+/* ===== Admonition Styling ===== */
+.md-typeset .admonition.crablet-tip,
+.md-typeset details.crablet-tip {
+  border-color: var(--crablet-primary);
+}
+
+.md-typeset .crablet-tip > .admonition-title {
+  background-color: rgba(255, 110, 64, 0.1);
+}
+
+.md-typeset .crablet-tip > .admonition-title::before {
+  color: var(--crablet-primary);
+}
+
+/* ===== Architecture Diagram ===== */
+.arch-diagram {
+  background: var(--md-default-bg-color);
+  border-radius: 0.75rem;
+  padding: 1.5rem;
+  overflow-x: auto;
+}
+
+.arch-diagram pre {
+  margin: 0;
+}
+
+/* ===== Tabbed Code Blocks ===== */
+.md-typeset .tabbed-labels {
+  font-size: 0.85rem;
+}
+
+/* ===== Status Table ===== */
+.status-table td:first-child {
+  font-weight: 600;
+}
+
+/* ===== Learning Path Timeline ===== */
+.learning-path {
+  position: relative;
+  padding-left: 2rem;
+}
+
+.learning-path::before {
+  content: '';
+  position: absolute;
+  left: 0.5rem;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--crablet-bg-gradient);
+  border-radius: 2px;
+}
+
+.learning-path .step {
+  position: relative;
+  margin-bottom: 1.5rem;
+  padding-left: 1rem;
+}
+
+.learning-path .step::before {
+  content: '';
+  position: absolute;
+  left: -1.65rem;
+  top: 0.5rem;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--crablet-primary);
+  border: 2px solid white;
+}
+
+/* ===== Responsive ===== */
+@media screen and (max-width: 600px) {
+  .md-typeset .hero-section h1 {
+    font-size: 2rem;
+  }
+  .md-typeset .grid.cards {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ===== Dark Mode Adjustments ===== */
+[data-md-color-scheme="slate"] .feature-badge.new {
+  background: rgba(46, 125, 50, 0.2);
+}
+
+[data-md-color-scheme="slate"] .feature-badge.beta {
+  background: rgba(230, 81, 0, 0.2);
+}
+
+[data-md-color-scheme="slate"] .feature-badge.stable {
+  background: rgba(21, 101, 192, 0.2);
+}
+
+[data-md-color-scheme="slate"] .feature-badge.planned {
+  background: rgba(198, 40, 40, 0.2);
+}

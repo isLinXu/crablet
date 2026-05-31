@@ -588,7 +588,13 @@ impl ValidatedAnswerGenerator {
             }
         }
 
-        Ok((best_answer.unwrap_or_default(), best_validation.unwrap()))
+        match best_validation {
+            Some(validation) => Ok((best_answer.unwrap_or_default(), validation)),
+            None => Err(anyhow::anyhow!(
+                "Failed to generate a validated answer after {} iterations",
+                self.max_iterations
+            )),
+        }
     }
 }
 

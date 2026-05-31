@@ -2,10 +2,10 @@
 //!
 //! 从成功的执行历史中自动发现可复用的技能模式
 
-use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, info};
 
@@ -17,12 +17,12 @@ pub struct ExecutionPattern {
     pub id: String,
     pub name: String,
     pub description: String,
-    pub input_pattern: String,     // 输入匹配模式
-    pub output_template: String,   // 输出模板
+    pub input_pattern: String,      // 输入匹配模式
+    pub output_template: String,    // 输出模板
     pub tool_sequence: Vec<String>, // 工具调用序列
-    pub frequency: u32,            // 出现频率
-    pub success_rate: f64,         // 成功率
-    pub avg_latency_ms: u64,       // 平均延迟
+    pub frequency: u32,             // 出现频率
+    pub success_rate: f64,          // 成功率
+    pub avg_latency_ms: u64,        // 平均延迟
     pub first_seen: DateTime<Utc>,
     pub last_seen: DateTime<Utc>,
     pub example_inputs: Vec<String>,
@@ -40,11 +40,11 @@ pub struct SkillCandidate {
 /// 技能发现配置
 #[derive(Debug, Clone)]
 pub struct SkillDiscoveryConfig {
-    pub min_frequency: u32,           // 最小出现频率
-    pub min_success_rate: f64,        // 最小成功率
-    pub max_patterns: usize,          // 最大模式数量
-    pub similarity_threshold: f64,    // 相似度阈值
-    pub analysis_window_days: i64,    // 分析窗口（天）
+    pub min_frequency: u32,        // 最小出现频率
+    pub min_success_rate: f64,     // 最小成功率
+    pub max_patterns: usize,       // 最大模式数量
+    pub similarity_threshold: f64, // 相似度阈值
+    pub analysis_window_days: i64, // 分析窗口（天）
 }
 
 impl Default for SkillDiscoveryConfig {
@@ -83,7 +83,7 @@ impl SkillDiscoverer {
     /// 分析执行历史，发现技能模式
     pub async fn discover_patterns(&self, executions: &[ExecutionRecord]) -> Vec<SkillCandidate> {
         let mut candidates = Vec::new();
-        
+
         // 1. 聚类相似查询
         let clusters = self.cluster_executions(executions).await;
         debug!("Found {} execution clusters", clusters.len());
@@ -108,7 +108,7 @@ impl SkillDiscoverer {
                 .partial_cmp(&a.confidence)
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
-        
+
         info!("Discovered {} skill candidates", candidates.len());
         candidates
     }
@@ -119,15 +119,12 @@ impl SkillDiscoverer {
         executions: &[ExecutionRecord],
     ) -> HashMap<String, Vec<ExecutionRecord>> {
         let mut clusters: HashMap<String, Vec<ExecutionRecord>> = HashMap::new();
-        
+
         for exec in executions {
             // 基于意图和工具序列生成聚类键
             let cluster_key = self.generate_cluster_key(exec);
-            
-            clusters
-                .entry(cluster_key)
-                .or_default()
-                .push(exec.clone());
+
+            clusters.entry(cluster_key).or_default().push(exec.clone());
         }
 
         clusters
@@ -136,11 +133,13 @@ impl SkillDiscoverer {
     fn generate_cluster_key(&self, exec: &ExecutionRecord) -> String {
         // 使用工具序列和查询类型作为聚类键
         let tool_sig = exec.tool_sequence.join("->");
-        let intent_prefix = exec.query.split_whitespace()
+        let intent_prefix = exec
+            .query
+            .split_whitespace()
             .next()
             .unwrap_or("unknown")
             .to_lowercase();
-        
+
         format!("{}:{}", intent_prefix, tool_sig)
     }
 
@@ -163,19 +162,15 @@ impl SkillDiscoverer {
         }
 
         let avg_latency = executions.iter().map(|e| e.latency_ms).sum::<u64>() / total as u64;
-        
+
         // 提取共同工具序列
         let common_tools = self.extract_common_tools(executions);
-        
+
         // 生成输入模式（简化版）
         let input_pattern = self.generate_input_pattern(executions);
-        
+
         // 收集示例输入
-        let examples: Vec<String> = executions
-            .iter()
-            .take(5)
-            .map(|e| e.query.clone())
-            .collect();
+        let examples: Vec<String> = executions.iter().take(5).map(|e| e.query.clone()).collect();
 
         let timestamps: Vec<DateTime<Utc>> = executions.iter().map(|e| e.timestamp).collect();
         let first_seen = timestamps.iter().min().copied().unwrap_or(Utc::now());
@@ -204,7 +199,7 @@ impl SkillDiscoverer {
 
         // 找到最长的公共工具序列前缀
         let mut common = executions[0].tool_sequence.clone();
-        
+
         for exec in executions.iter().skip(1) {
             common = common
                 .iter()
@@ -237,16 +232,16 @@ impl SkillDiscoverer {
 
         let mut common_words: HashSet<String> = words[0].clone();
         for word_set in words.iter().skip(1) {
-            common_words = common_words
-                .intersection(word_set)
-                .cloned()
-                .collect();
+            common_words = common_words.intersection(word_set).cloned().collect();
         }
 
         if common_words.is_empty() {
             ".*".to_string()
         } else {
-            format!("(?i).*({}).*", common_words.into_iter().collect::<Vec<_>>().join("|"))
+            format!(
+                "(?i).*({}).*",
+                common_words.into_iter().collect::<Vec<_>>().join("|")
+            )
         }
     }
 
@@ -254,7 +249,7 @@ impl SkillDiscoverer {
         // 分析输出格式，提取模板
         // 简化实现：返回最常见的输出前缀
         let mut prefix_counts: HashMap<String, usize> = HashMap::new();
-        
+
         for exec in executions {
             if let Some(ref output) = exec.output {
                 let prefix: String = output.chars().take(50).collect();
@@ -273,7 +268,11 @@ impl SkillDiscoverer {
         // 从聚类ID生成可读名称
         let parts: Vec<&str> = cluster_id.split(':').collect();
         if parts.len() >= 2 {
-            format!("auto_{}_{}", parts[0], &uuid::Uuid::new_v4().to_string()[..6])
+            format!(
+                "auto_{}_{}",
+                parts[0],
+                &uuid::Uuid::new_v4().to_string()[..6]
+            )
         } else {
             format!("auto_pattern_{}", &uuid::Uuid::new_v4().to_string()[..8])
         }
@@ -283,7 +282,7 @@ impl SkillDiscoverer {
     async fn generate_skill_candidate(&self, pattern: ExecutionPattern) -> Option<SkillCandidate> {
         // 计算置信度
         let confidence = self.calculate_confidence(&pattern);
-        
+
         if confidence < 0.5 {
             return None;
         }
@@ -343,7 +342,9 @@ impl SkillDiscoverer {
         let mut params = Vec::new();
 
         // 检测数字参数
-        let has_numbers = examples.iter().any(|e| e.chars().any(|c| c.is_ascii_digit()));
+        let has_numbers = examples
+            .iter()
+            .any(|e| e.chars().any(|c| c.is_ascii_digit()));
         if has_numbers {
             params.push(SkillParameter {
                 name: "value".to_string(),
@@ -370,7 +371,7 @@ impl SkillDiscoverer {
     pub async fn add_pattern(&self, pattern: ExecutionPattern) {
         let mut patterns = self.patterns.write().await;
         patterns.push(pattern);
-        
+
         if patterns.len() > self.config.max_patterns {
             patterns.remove(0);
         }
@@ -384,7 +385,7 @@ impl SkillDiscoverer {
     /// 查找匹配输入的模式
     pub async fn find_matching_patterns(&self, input: &str) -> Vec<ExecutionPattern> {
         let patterns = self.patterns.read().await;
-        
+
         patterns
             .iter()
             .filter(|p| self.matches_pattern(input, &p.input_pattern))
@@ -397,16 +398,16 @@ impl SkillDiscoverer {
         if pattern == ".*" {
             return true;
         }
-        
+
         let input_lower = input.to_lowercase();
         let pattern_lower = pattern.to_lowercase();
-        
+
         // 提取关键词（简单处理）
         let keywords: Vec<&str> = pattern_lower
             .split(|c: char| !c.is_alphanumeric())
             .filter(|s| !s.is_empty() && s.len() > 2)
             .collect();
-        
+
         keywords.iter().any(|kw| input_lower.contains(kw))
     }
 }
@@ -465,17 +466,20 @@ mod tests {
         ];
 
         let candidates = discoverer.discover_patterns(&executions).await;
-        
+
         assert!(!candidates.is_empty());
         let candidate = &candidates[0];
         assert!(candidate.confidence > 0.5);
-        assert_eq!(candidate.pattern.tool_sequence, vec!["web_search", "summarize"]);
+        assert_eq!(
+            candidate.pattern.tool_sequence,
+            vec!["web_search", "summarize"]
+        );
     }
 
     #[test]
     fn test_common_tools_extraction() {
         let discoverer = SkillDiscoverer::new();
-        
+
         let executions = vec![
             ExecutionRecord {
                 query: "test".to_string(),

@@ -1,0 +1,198 @@
+site_name: Crablet Documentation
+site_description: A Production-Ready AI Agent Operating System Built from Scratch in Rust
+site_author: isLinXu & Contributors
+site_url: https://crablet.dev
+
+copyright: Copyright &copy; 2026 isLinXu & Contributors — Licensed under MIT
+
+repo_name: crablet
+repo_url: https://github.com/isLinXu/crablet
+edit_uri: edit/main/docs-site/docs/
+
+theme:
+  name: material
+  logo: assets/logo.svg
+  favicon: assets/favicon.svg
+  palette:
+    - media: "(prefers-color-scheme)"
+      toggle:
+        icon: material/brightness-auto
+        name: Switch to light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: deep orange
+      accent: deep orange
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: deep orange
+      accent: deep orange
+      toggle:
+        icon: material/weather-night
+        name: Switch to light mode
+  font:
+    text: Inter
+    code: JetBrains Mono
+  icon:
+    repo: fontawesome/brands/github
+  features:
+    - navigation.instant
+    - navigation.instant.progress
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.sections
+    - navigation.expand
+    - navigation.indexes
+    - navigation.top
+    - navigation.footer
+    - search.suggest
+    - search.highlight
+    - search.share
+    - toc.follow
+    - content.code.copy
+    - content.code.annotate
+    - content.tooltips
+    - content.tabs.link
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/isLinXu/crablet
+      name: GitHub
+  analytics:
+    feedback:
+      title: Was this page helpful?
+      ratings:
+        - icon: material/thumb-up-outline
+          name: This page was helpful
+          data: 1
+          note: Thanks for your feedback!
+        - icon: material/thumb-down-outline
+          name: This page could be improved
+          data: 0
+          note: Thanks for your feedback! Help us improve by opening an issue.
+
+extra_css:
+  - assets/stylesheets/extra.css
+
+extra_javascript:
+  - assets/javascripts/extra.js
+
+plugins:
+  - search:
+      lang:
+        - en
+        - zh
+  - minify:
+      minify_html: true
+  - git-revision-date-localized:
+      enable_creation_date: true
+      type: datetime
+      timezone: Asia/Shanghai
+
+markdown_extensions:
+  - abbr
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - toc:
+      permalink: true
+      toc_depth: 4
+  - tables
+  - pymdownx.arithmatex:
+      generic: true
+  - pymdownx.betterem:
+      smart_enable: all
+  - pymdownx.caret
+  - pymdownx.details
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.keys
+  - pymdownx.magiclink:
+      normalize_issue_symbols: true
+      repo_url_shorthand: true
+      user: isLinXu
+      repo: crablet
+  - pymdownx.mark
+  - pymdownx.smartsymbols
+  - pymdownx.snippets:
+      auto_append:
+        - includes/abbreviations.md
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.tilde
+
+nav:
+  - Home: index.md
+  - Getting Started:
+    - getting-started/index.md
+    - Installation: getting-started/installation.md
+    - Quickstart: getting-started/quickstart.md
+    - Learning Path: getting-started/learning-path.md
+    - Configuration: getting-started/configuration.md
+  - User Guide:
+    - user-guide/index.md
+    - CLI Usage: user-guide/cli.md
+    - Messaging:
+      - user-guide/messaging/index.md
+      - Telegram: user-guide/messaging/telegram.md
+      - Discord: user-guide/messaging/discord.md
+      - Web UI: user-guide/messaging/web-ui.md
+    - Features:
+      - user-guide/features/index.md
+      - Tools: user-guide/features/tools.md
+      - Skills: user-guide/features/skills.md
+      - Memory: user-guide/features/memory.md
+      - Knowledge & RAG: user-guide/features/knowledge.md
+      - Browser Automation: user-guide/features/browser.md
+      - Code Execution: user-guide/features/code-execution.md
+      - Cron Scheduling: user-guide/features/cron.md
+      - Delegation: user-guide/features/delegation.md
+      - Hooks: user-guide/features/hooks.md
+    - Cognitive System:
+      - user-guide/cognitive/index.md
+      - Three-Layer Architecture: user-guide/cognitive/three-layer.md
+      - Meta-Cognition: user-guide/cognitive/meta-cognition.md
+      - Thought Visualization: user-guide/cognitive/thought-visualization.md
+    - Memory System:
+      - user-guide/memory/index.md
+      - Four-Layer Memory: user-guide/memory/four-layer.md
+      - Memory Fusion: user-guide/memory/fusion.md
+    - Security: user-guide/security.md
+  - Developer Guide:
+    - developer-guide/index.md
+    - Architecture: developer-guide/architecture.md
+    - Adding Tools: developer-guide/adding-tools.md
+    - Creating Skills: developer-guide/creating-skills.md
+    - Adding Channels: developer-guide/adding-channels.md
+    - Middleware: developer-guide/middleware.md
+    - Contributing: developer-guide/contributing.md
+  - Deployment:
+    - deployment/index.md
+    - Docker: deployment/docker.md
+    - Production: deployment/production.md
+    - Monitoring: deployment/monitoring.md
+  - API Reference:
+    - api/index.md
+    - REST API: api/rest.md
+    - WebSocket: api/websocket.md
+    - JSON-RPC: api/json-rpc.md
+  - FAQ: faq/index.md

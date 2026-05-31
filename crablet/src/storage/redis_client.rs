@@ -2,10 +2,10 @@
 //!
 //! Provides Redis connection management with connection pooling and error handling.
 
-use redis::{AsyncCommands, Client};
-use redis::aio::ConnectionManager;
-use std::sync::Arc;
 use anyhow::Result;
+use redis::aio::ConnectionManager;
+use redis::{AsyncCommands, Client};
+use std::sync::Arc;
 
 /// Connection pool configuration
 #[derive(Clone, Debug)]
@@ -168,7 +168,12 @@ impl RedisClient {
     }
 
     /// Get sorted set members with scores
-    pub async fn zrange_with_scores(&self, key: &str, start: isize, stop: isize) -> Result<Vec<(String, f64)>> {
+    pub async fn zrange_with_scores(
+        &self,
+        key: &str,
+        start: isize,
+        stop: isize,
+    ) -> Result<Vec<(String, f64)>> {
         let mut conn = self.get_conn().await;
         let result: Vec<(String, f64)> = conn.zrange_withscores(key, start, stop).await?;
         Ok(result)

@@ -1,25 +1,22 @@
-use jsonwebtoken::{encode, decode, Header, Validation, EncodingKey, DecodingKey, Algorithm};
+use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
 // use axum::{
 //     extract::{Request, State},
 //     http::{StatusCode, header},
 //     middleware::Next,
 //     response::Response,
 // };
-use chrono::Utc;
-use serde::{Deserialize, Serialize};
-use moka::future::Cache;
-use std::time::Duration;
-use std::sync::Arc;
-use dashmap::DashMap;
-use sqlx::{SqlitePool, Row};
-use uuid::Uuid;
 use argon2::{
-    password_hash::{
-        rand_core::OsRng,
-        PasswordHash, PasswordHasher, PasswordVerifier, SaltString
-    },
-    Argon2
+    password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
+    Argon2,
 };
+use chrono::Utc;
+use dashmap::DashMap;
+use moka::future::Cache;
+use serde::{Deserialize, Serialize};
+use sqlx::{Row, SqlitePool};
+use std::sync::Arc;
+use std::time::Duration;
+use uuid::Uuid;
 // use tracing::{info, warn};
 // use tracing::info;
 
@@ -53,7 +50,7 @@ pub struct Claims {
 pub struct AuthManager {
     mode: AuthMode,
     api_keys: Cache<String, String>, // Key (Plain) -> UserID (Cache with TTL)
-    tokens: Arc<DashMap<String, String>>,   // Token -> UserID
+    tokens: Arc<DashMap<String, String>>, // Token -> UserID
     pub pool: Option<SqlitePool>,
     jwt_secret: String,
 }
@@ -73,7 +70,7 @@ impl AuthManager {
                 BASE64_STANDARD.encode(&random_bytes)
             }
         });
-        
+
         Self {
             mode,
             api_keys: Cache::builder()
@@ -89,11 +86,11 @@ impl AuthManager {
     pub fn mode(&self) -> &AuthMode {
         &self.mode
     }
-    
+
     pub fn has_tokens(&self) -> bool {
         !self.tokens.is_empty()
     }
-    
+
     pub fn generate_token(&self, user_id: &str, role: &str) -> String {
         match self.mode {
             AuthMode::JWT => self.generate_jwt(user_id, role).unwrap_or_else(|e| {
@@ -107,12 +104,10 @@ impl AuthManager {
             }
         }
     }
-    
+
     pub fn generate_jwt(&self, user_id: &str, role: &str) -> jsonwebtoken::errors::Result<String> {
-        let expiration = Utc::now()
-            .checked_add_signed(chrono::Duration::hours(24))
-            .expect("valid timestamp")
-            .timestamp() as usize;
+        const TOKEN_TTL_SECS: i64 = 24 * 60 * 60;
+        let expiration = Utc::now().timestamp().saturating_add(TOKEN_TTL_SECS).max(0) as usize;
 
         let claims = Claims {
             sub: user_id.to_owned(),
@@ -152,11 +147,11 @@ impl AuthManager {
                 // But we are in async context mostly.
                 // For MVP, if called sync, we just return None to force async check or fail.
                 None
-            },
-            AuthMode::MTLS => None, 
+            }
+            AuthMode::MTLS => None,
         }
     }
-    
+
     pub async fn validate_token_async(&self, token: &str) -> Option<String> {
         match self.mode {
             AuthMode::ApiKey => {
@@ -164,7 +159,7 @@ impl AuthManager {
                 if let Some(user_id) = self.api_keys.get(token).await {
                     return Some(user_id);
                 }
-                
+
                 if let Some(pool) = &self.pool {
                     let prefix = if token.len() >= 8 { &token[..8] } else { token };
                     // Query candidates
@@ -173,21 +168,26 @@ impl AuthManager {
                         .fetch_all(pool)
                         .await
                         .ok()?;
-                    
+
                     for row in rows {
                         let hash: String = row.get("key_hash");
                         let user_id: String = row.get("user_id");
-                        
+
                         let parsed_hash = PasswordHash::new(&hash).ok()?;
-                        if Argon2::default().verify_password(token.as_bytes(), &parsed_hash).is_ok() {
+                        if Argon2::default()
+                            .verify_password(token.as_bytes(), &parsed_hash)
+                            .is_ok()
+                        {
                             // Valid! Cache it.
-                            self.api_keys.insert(token.to_string(), user_id.clone()).await;
+                            self.api_keys
+                                .insert(token.to_string(), user_id.clone())
+                                .await;
                             return Some(user_id);
                         }
                     }
                 }
                 None
-            },
+            }
             AuthMode::JWT => self.validate_jwt(token),
             _ => self.validate_token(token),
         }
@@ -203,15 +203,16 @@ impl AuthManager {
         let key = format!("sk-{}", Uuid::new_v4()); // Simple key format
         let id = Uuid::new_v4().to_string();
         let now = Utc::now().timestamp();
-        
+
         // Hash
         let salt = SaltString::generate(&mut OsRng);
-        let password_hash = Argon2::default().hash_password(key.as_bytes(), &salt)
+        let password_hash = Argon2::default()
+            .hash_password(key.as_bytes(), &salt)
             .map_err(|e| anyhow::anyhow!("Hashing failed: {}", e))?
             .to_string();
-            
+
         let prefix = &key[..8];
-        
+
         if let Some(pool) = &self.pool {
             sqlx::query("INSERT INTO api_keys (id, key_hash, key_prefix, user_id, name, created_at, status) VALUES (?, ?, ?, ?, ?, ?, 'active')")
                 .bind(id)
@@ -223,7 +224,7 @@ impl AuthManager {
                 .execute(pool)
                 .await?;
         }
-        
+
         // Cache the new key immediately so it works
         self.api_keys.insert(key.clone(), user_id.to_string()).await;
         Ok(key)
@@ -234,7 +235,7 @@ impl AuthManager {
             let rows = sqlx::query("SELECT id, name, key_prefix, created_at, status FROM api_keys WHERE status = 'active' ORDER BY created_at DESC")
                 .fetch_all(pool)
                 .await?;
-            
+
             let mut keys = Vec::new();
             for row in rows {
                 let prefix: String = row.get("key_prefix");
@@ -258,7 +259,7 @@ impl AuthManager {
                 .bind(id)
                 .execute(pool)
                 .await?;
-                
+
             // Invalidate entire cache to be safe (since we can't map ID -> Token easily without extra index)
             // Or we just rely on TTL (5 mins).
             // For security, strict revocation requires clearing cache.
@@ -267,4 +268,3 @@ impl AuthManager {
         Ok(())
     }
 }
-

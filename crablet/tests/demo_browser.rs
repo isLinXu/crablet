@@ -1,9 +1,9 @@
 #[allow(unused_imports)]
 use anyhow::Result;
 #[allow(unused_imports)]
-use crablet::tools::browser::BrowserPlugin;
-#[allow(unused_imports)]
 use crablet::plugins::Plugin;
+#[allow(unused_imports)]
+use crablet::tools::browser::BrowserPlugin;
 #[allow(unused_imports)]
 use serde_json::json;
 
@@ -11,14 +11,14 @@ use serde_json::json;
 #[cfg(feature = "browser")]
 async fn test_demo_d_browser_automation() -> Result<()> {
     let plugin = BrowserPlugin;
-    
+
     // Check if we can run browser
     // This might fail in CI or environment without Chrome.
     // We'll wrap in a check or just assume it fails gracefully.
-    
+
     let url = "https://example.com";
     let args = json!({ "url": url });
-    
+
     println!("Running Browser Plugin on {}", url);
     match plugin.execute("browse_web", args).await {
         Ok(content) => {
@@ -32,6 +32,6 @@ async fn test_demo_d_browser_automation() -> Result<()> {
             // If we are in an environment without display/chrome, headless_chrome tries to find one.
         }
     }
-    
+
     Ok(())
 }

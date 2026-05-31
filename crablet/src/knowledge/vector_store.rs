@@ -1,14 +1,75 @@
+use crate::knowledge::chunking::{Chunker, MarkdownChunker, RecursiveCharacterChunker};
+use crate::knowledge::embedder::{cosine_similarity, Embedder, EmbedderPool};
 use anyhow::Result;
-use fastembed::{InitOptions, EmbeddingModel};
-use sqlx::{sqlite::SqlitePool, Row};
-use std::sync::{Arc, Mutex};
+use fastembed::{EmbeddingModel, InitOptions};
+use futures::StreamExt;
 use serde_json::json;
-use crate::knowledge::chunking::{Chunker, RecursiveCharacterChunker, MarkdownChunker};
-use crate::knowledge::embedder::{EmbedderPool, Embedder, cosine_similarity};
-use futures::StreamExt; // For stream iteration
+use sqlx::{sqlite::SqlitePool, Row};
+use std::cmp::Ordering;
+use std::collections::BinaryHeap;
+use std::sync::{Arc, Mutex}; // For stream iteration
+
+type SearchResult = (String, f32, serde_json::Value);
+
+#[derive(Debug)]
+struct ScoredDocument {
+    content: String,
+    similarity: f32,
+    metadata: serde_json::Value,
+}
+
+impl PartialEq for ScoredDocument {
+    fn eq(&self, other: &Self) -> bool {
+        self.similarity.to_bits() == other.similarity.to_bits()
+    }
+}
+
+impl Eq for ScoredDocument {}
+
+impl PartialOrd for ScoredDocument {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for ScoredDocument {
+    fn cmp(&self, other: &Self) -> Ordering {
+        other.similarity.total_cmp(&self.similarity)
+    }
+}
+
+fn push_top_result(heap: &mut BinaryHeap<ScoredDocument>, candidate: ScoredDocument, limit: usize) {
+    if limit == 0 {
+        return;
+    }
+
+    if heap.len() < limit {
+        heap.push(candidate);
+        return;
+    }
+
+    if let Some(worst) = heap.peek() {
+        if candidate.similarity.total_cmp(&worst.similarity).is_gt() {
+            heap.pop();
+            heap.push(candidate);
+        }
+    }
+}
+
+fn sorted_search_results(heap: BinaryHeap<ScoredDocument>) -> Vec<SearchResult> {
+    let mut results: Vec<SearchResult> = heap
+        .into_iter()
+        .map(|doc| (doc.content, doc.similarity, doc.metadata))
+        .collect();
+    results.sort_by(|a, b| b.1.total_cmp(&a.1));
+    results
+}
 
 #[cfg(feature = "qdrant-support")]
-use qdrant_client::qdrant::{PointStruct, Distance, CreateCollectionBuilder, VectorParamsBuilder, UpsertPointsBuilder, SearchPointsBuilder, DeletePointsBuilder, Filter, Condition, Value};
+use qdrant_client::qdrant::{
+    Condition, CreateCollectionBuilder, DeletePointsBuilder, Distance, Filter, PointStruct,
+    SearchPointsBuilder, UpsertPointsBuilder, Value, VectorParamsBuilder,
+};
 #[cfg(feature = "qdrant-support")]
 use qdrant_client::Qdrant;
 
@@ -24,7 +85,7 @@ enum StoreBackend {
     },
     InMemory {
         docs: Arc<Mutex<Vec<(String, Vec<f32>, serde_json::Value)>>>,
-    }
+    },
 }
 
 pub struct VectorStore {
@@ -43,28 +104,31 @@ impl VectorStore {
         let mut options = InitOptions::default();
         options.model_name = EmbeddingModel::AllMiniLML6V2;
         options.show_download_progress = true;
-        
+
         // Move heavy initialization to blocking task
         let embedder_pool = tokio::task::spawn_blocking(move || {
             // Create a pool of 2 embedders for concurrency
             EmbedderPool::new(2, options)
-        }).await??;
+        })
+        .await??;
 
         // Check for Qdrant config
         #[cfg(feature = "qdrant-support")]
         if let Ok(url) = std::env::var("QDRANT_URL") {
             let client = Qdrant::from_url(&url).build()?;
             let collection = "crablet_knowledge".to_string();
-            
+
             if !client.collection_exists(&collection).await? {
-                client.create_collection(
-                    CreateCollectionBuilder::new(collection.clone())
-                        .vectors_config(VectorParamsBuilder::new(384, Distance::Cosine))
-                ).await?;
+                client
+                    .create_collection(
+                        CreateCollectionBuilder::new(collection.clone())
+                            .vectors_config(VectorParamsBuilder::new(384, Distance::Cosine)),
+                    )
+                    .await?;
             }
-            
+
             return Ok(Self {
-                backend: StoreBackend::Qdrant { 
+                backend: StoreBackend::Qdrant {
                     client: Arc::new(client),
                     collection,
                     pool: pool.clone(),
@@ -73,24 +137,32 @@ impl VectorStore {
             });
         }
 
-        Ok(Self { 
+        Ok(Self {
             backend: StoreBackend::Sqlite { pool },
             embedder: Arc::new(embedder_pool),
         })
     }
-    
+
     pub fn new_in_memory() -> Self {
         Self {
-            backend: StoreBackend::InMemory { docs: Arc::new(Mutex::new(Vec::new())) },
+            backend: StoreBackend::InMemory {
+                docs: Arc::new(Mutex::new(Vec::new())),
+            },
             embedder: Arc::new(EmbedderPool::new_mock()),
         }
     }
 
-    pub async fn add_documents(&self, contents: Vec<String>, payloads: Vec<serde_json::Value>) -> Result<()> {
-        if contents.is_empty() { return Ok(()); }
-        
+    pub async fn add_documents(
+        &self,
+        contents: Vec<String>,
+        payloads: Vec<serde_json::Value>,
+    ) -> Result<()> {
+        if contents.is_empty() {
+            return Ok(());
+        }
+
         let embeddings = self.embedder.embed(contents.clone()).await?;
-        
+
         match &self.backend {
             StoreBackend::Sqlite { pool } => {
                 let mut tx = pool.begin().await?;
@@ -99,7 +171,7 @@ impl VectorStore {
                     let embedding_json = serde_json::to_string(embedding)?;
                     let id = uuid::Uuid::new_v4().to_string();
                     let metadata = &payloads[i];
-                    
+
                     sqlx::query("INSERT INTO document_embeddings (id, content, embedding, metadata) VALUES (?, ?, ?, ?)")
                         .bind(id)
                         .bind(&contents[i])
@@ -109,23 +181,27 @@ impl VectorStore {
                         .await?;
                 }
                 tx.commit().await?;
-            },
+            }
             #[cfg(feature = "qdrant-support")]
-            StoreBackend::Qdrant { client, collection, pool } => {
+            StoreBackend::Qdrant {
+                client,
+                collection,
+                pool,
+            } => {
                 let mut points = Vec::new();
-                
+
                 // ALSO insert into SQLite for metadata tracking
                 let mut tx = pool.begin().await?;
-                
+
                 for (i, _content) in contents.iter().enumerate() {
                     let embedding = &embeddings[i];
                     let id = uuid::Uuid::new_v4().to_string();
                     let metadata = &payloads[i];
-                    
+
                     // 1. Qdrant Payload
                     let mut payload = std::collections::HashMap::new();
                     payload.insert("content".to_string(), json!(&contents[i]));
-                    
+
                     if let Some(obj) = metadata.as_object() {
                         for (k, v) in obj {
                             payload.insert(k.clone(), v.clone());
@@ -135,12 +211,15 @@ impl VectorStore {
                     points.push(PointStruct::new(
                         id.clone(),
                         embedding.clone(),
-                        payload.into_iter().map(|(k, v)| (k, v.into())).collect::<std::collections::HashMap<String, Value>>()
+                        payload
+                            .into_iter()
+                            .map(|(k, v)| (k, v.into()))
+                            .collect::<std::collections::HashMap<String, Value>>(),
                     ));
-                    
+
                     // 2. SQLite Metadata
                     let embedding_json = serde_json::to_string(embedding)?;
-                     sqlx::query("INSERT INTO document_embeddings (id, content, embedding, metadata) VALUES (?, ?, ?, ?)")
+                    sqlx::query("INSERT INTO document_embeddings (id, content, embedding, metadata) VALUES (?, ?, ?, ?)")
                         .bind(id)
                         .bind(&contents[i])
                         .bind(embedding_json)
@@ -148,12 +227,16 @@ impl VectorStore {
                         .execute(&mut *tx)
                         .await?;
                 }
-                
+
                 tx.commit().await?;
-                client.upsert_points(UpsertPointsBuilder::new(collection, points)).await?;
-            },
+                client
+                    .upsert_points(UpsertPointsBuilder::new(collection, points))
+                    .await?;
+            }
             StoreBackend::InMemory { docs } => {
-                let mut guard = docs.lock().map_err(|e| anyhow::anyhow!("Lock poisoned: {}", e))?;
+                let mut guard = docs
+                    .lock()
+                    .map_err(|e| anyhow::anyhow!("Lock poisoned: {}", e))?;
                 for (i, content) in contents.iter().enumerate() {
                     guard.push((content.clone(), embeddings[i].clone(), payloads[i].clone()));
                 }
@@ -162,41 +245,55 @@ impl VectorStore {
         Ok(())
     }
 
-    pub async fn add_document(&self, content: &str, metadata: Option<serde_json::Value>) -> Result<()> {
+    pub async fn add_document(
+        &self,
+        content: &str,
+        metadata: Option<serde_json::Value>,
+    ) -> Result<()> {
         // Auto-detect type
         let is_markdown = if let Some(meta) = &metadata {
-            meta.get("file_type").and_then(|v| v.as_str()).map(|s| s == "markdown").unwrap_or(false)
+            meta.get("file_type")
+                .and_then(|v| v.as_str())
+                .map(|s| s == "markdown")
+                .unwrap_or(false)
         } else {
             false
         };
-        
+
         if is_markdown {
             let chunker = MarkdownChunker::new(1000);
-            self.add_document_with_chunker(content, metadata, &chunker).await
+            self.add_document_with_chunker(content, metadata, &chunker)
+                .await
         } else {
             let chunker = RecursiveCharacterChunker::new(500, 50);
-            self.add_document_with_chunker(content, metadata, &chunker).await
+            self.add_document_with_chunker(content, metadata, &chunker)
+                .await
         }
     }
 
-    pub async fn add_document_with_chunker(&self, content: &str, metadata: Option<serde_json::Value>, chunker: &dyn Chunker) -> Result<()> {
+    pub async fn add_document_with_chunker(
+        &self,
+        content: &str,
+        metadata: Option<serde_json::Value>,
+        chunker: &dyn Chunker,
+    ) -> Result<()> {
         let chunks_obj = chunker.chunk(content)?;
         let chunks: Vec<String> = chunks_obj.iter().map(|c| c.content.clone()).collect();
-        
+
         let embeddings = self.embedder.embed(chunks.clone()).await?;
-        
+
         match &self.backend {
             StoreBackend::Sqlite { pool } => {
                 // Batch insert to DB
                 let mut tx = pool.begin().await?;
-                
+
                 for (i, chunk) in chunks.iter().enumerate() {
                     let embedding = &embeddings[i];
                     let embedding_json = serde_json::to_string(embedding)?;
-                    
+
                     let id = uuid::Uuid::new_v4().to_string();
                     let mut meta = metadata.clone().unwrap_or(json!({}));
-                    
+
                     if let Some(obj) = meta.as_object_mut() {
                         obj.insert("chunk_index".to_string(), json!(i));
                         obj.insert("total_chunks".to_string(), json!(chunks.len()));
@@ -214,24 +311,28 @@ impl VectorStore {
                         .execute(&mut *tx)
                         .await?;
                 }
-                
+
                 tx.commit().await?;
-            },
+            }
             #[cfg(feature = "qdrant-support")]
-            StoreBackend::Qdrant { client, collection, pool } => {
+            StoreBackend::Qdrant {
+                client,
+                collection,
+                pool,
+            } => {
                 let mut points = Vec::new();
-                
+
                 // ALSO insert into SQLite for metadata tracking
                 let mut tx = pool.begin().await?;
-                
+
                 for (i, chunk) in chunks.iter().enumerate() {
                     let embedding = &embeddings[i];
                     let id = uuid::Uuid::new_v4().to_string();
-                    
+
                     // 1. Qdrant Payload
                     let mut payload = std::collections::HashMap::new();
                     payload.insert("content".to_string(), json!(chunk));
-                    
+
                     if let Some(meta) = &metadata {
                         if let Some(obj) = meta.as_object() {
                             for (k, v) in obj {
@@ -250,13 +351,16 @@ impl VectorStore {
                     points.push(PointStruct::new(
                         id.clone(),
                         embedding.clone(),
-                        payload.into_iter().map(|(k, v)| (k, v.into())).collect::<std::collections::HashMap<String, Value>>()
+                        payload
+                            .into_iter()
+                            .map(|(k, v)| (k, v.into()))
+                            .collect::<std::collections::HashMap<String, Value>>(),
                     ));
-                    
+
                     // 2. SQLite Metadata
                     let embedding_json = serde_json::to_string(embedding)?;
                     let mut meta = metadata.clone().unwrap_or(json!({}));
-                    
+
                     if let Some(obj) = meta.as_object_mut() {
                         obj.insert("chunk_index".to_string(), json!(i));
                         obj.insert("total_chunks".to_string(), json!(chunks.len()));
@@ -273,13 +377,17 @@ impl VectorStore {
                         .execute(&mut *tx)
                         .await?;
                 }
-                
+
                 tx.commit().await?;
-                client.upsert_points(UpsertPointsBuilder::new(collection, points)).await?;
-            },
+                client
+                    .upsert_points(UpsertPointsBuilder::new(collection, points))
+                    .await?;
+            }
             StoreBackend::InMemory { docs } => {
-                 let mut guard = docs.lock().map_err(|e| anyhow::anyhow!("Lock poisoned: {}", e))?;
-                 for (i, chunk) in chunks.iter().enumerate() {
+                let mut guard = docs
+                    .lock()
+                    .map_err(|e| anyhow::anyhow!("Lock poisoned: {}", e))?;
+                for (i, chunk) in chunks.iter().enumerate() {
                     let mut meta = metadata.clone().unwrap_or(json!({}));
                     if let Some(obj) = meta.as_object_mut() {
                         obj.insert("chunk_index".to_string(), json!(i));
@@ -289,68 +397,93 @@ impl VectorStore {
                         }
                     }
                     guard.push((chunk.clone(), embeddings[i].clone(), meta));
-                 }
+                }
             }
         }
 
         Ok(())
     }
 
-    pub async fn search(&self, query: &str, limit: usize) -> Result<Vec<(String, f32, serde_json::Value)>> {
+    pub async fn search(
+        &self,
+        query: &str,
+        limit: usize,
+    ) -> Result<Vec<(String, f32, serde_json::Value)>> {
         let (results, _) = self.search_with_embedding(query, limit).await?;
         Ok(results)
     }
 
-    pub async fn search_with_embedding(&self, query: &str, limit: usize) -> Result<(Vec<(String, f32, serde_json::Value)>, Vec<f32>)> {
+    pub async fn search_with_embedding(
+        &self,
+        query: &str,
+        limit: usize,
+    ) -> Result<(Vec<SearchResult>, Vec<f32>)> {
         let query_vec = self.embed_query(query).await?;
+        if limit == 0 {
+            return Ok((Vec::new(), query_vec));
+        }
 
         match &self.backend {
             StoreBackend::Sqlite { pool } => {
-                let mut rows = sqlx::query("SELECT content, embedding, metadata FROM document_embeddings")
-                    .fetch(pool);
-                
-                let mut results: Vec<(String, f32, serde_json::Value)> = Vec::with_capacity(limit * 2);
-                
+                let mut rows =
+                    sqlx::query("SELECT content, embedding, metadata FROM document_embeddings")
+                        .fetch(pool);
+
+                let mut top_results = BinaryHeap::with_capacity(limit);
+
                 while let Some(row) = rows.next().await {
                     let row = row?;
                     let embedding_json: String = row.get("embedding");
-                    
+
                     if let Ok(embedding) = serde_json::from_str::<Vec<f32>>(&embedding_json) {
                         let similarity = cosine_similarity(&query_vec, &embedding);
-                        
+
                         let content: String = row.get("content");
                         let metadata_str: String = row.get("metadata");
-                        let metadata: serde_json::Value = serde_json::from_str(&metadata_str).unwrap_or(json!({}));
-                        
-                        results.push((content, similarity, metadata));
-                        
-                        if results.len() >= limit * 4 {
-                             results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-                             results.truncate(limit);
-                        }
+                        let metadata: serde_json::Value =
+                            serde_json::from_str(&metadata_str).unwrap_or(json!({}));
+
+                        push_top_result(
+                            &mut top_results,
+                            ScoredDocument {
+                                content,
+                                similarity,
+                                metadata,
+                            },
+                            limit,
+                        );
                     }
                 }
-                
-                results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-                results.truncate(limit);
 
+                let results = sorted_search_results(top_results);
                 Ok((results, query_vec))
-            },
+            }
             #[cfg(feature = "qdrant-support")]
-            StoreBackend::Qdrant { client, collection, .. } => {
-                let search_result = client.search_points(
-                    SearchPointsBuilder::new(collection.clone(), query_vec.clone(), limit as u64)
-                        .with_payload(true)
-                ).await?;
+            StoreBackend::Qdrant {
+                client, collection, ..
+            } => {
+                let search_result = client
+                    .search_points(
+                        SearchPointsBuilder::new(
+                            collection.clone(),
+                            query_vec.clone(),
+                            limit as u64,
+                        )
+                        .with_payload(true),
+                    )
+                    .await?;
 
                 let mut results = Vec::new();
                 for point in search_result.result {
                     let score = point.score;
                     let payload = point.payload;
-                    let content = payload.get("content")
+                    let content = payload
+                        .get("content")
                         .and_then(|v| match v.kind {
-                            Some(qdrant_client::qdrant::value::Kind::StringValue(ref s)) => Some(s.as_str()),
-                            _ => None
+                            Some(qdrant_client::qdrant::value::Kind::StringValue(ref s)) => {
+                                Some(s.as_str())
+                            }
+                            _ => None,
                         })
                         .unwrap_or("")
                         .to_string();
@@ -358,23 +491,32 @@ impl VectorStore {
                     results.push((content, score, metadata));
                 }
                 Ok((results, query_vec))
-            },
+            }
             StoreBackend::InMemory { docs } => {
-                let guard = docs.lock().map_err(|e| anyhow::anyhow!("Lock poisoned: {}", e))?;
-                let mut results: Vec<(String, f32, serde_json::Value)> = guard.iter()
-                    .map(|(content, embedding, meta)| {
-                        let similarity = cosine_similarity(&query_vec, embedding);
-                        (content.clone(), similarity, meta.clone())
-                    })
-                    .collect();
-                
-                results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-                results.truncate(limit);
+                let guard = docs
+                    .lock()
+                    .map_err(|e| anyhow::anyhow!("Lock poisoned: {}", e))?;
+                let mut top_results = BinaryHeap::with_capacity(limit);
+
+                for (content, embedding, meta) in guard.iter() {
+                    let similarity = cosine_similarity(&query_vec, embedding);
+                    push_top_result(
+                        &mut top_results,
+                        ScoredDocument {
+                            content: content.clone(),
+                            similarity,
+                            metadata: meta.clone(),
+                        },
+                        limit,
+                    );
+                }
+
+                let results = sorted_search_results(top_results);
                 Ok((results, query_vec))
             }
         }
     }
-    
+
     pub async fn list_documents(&self) -> Result<Vec<serde_json::Value>> {
         match &self.backend {
             StoreBackend::Sqlite { pool } => {
@@ -383,17 +525,17 @@ impl VectorStore {
                             json_extract(metadata, '$.file_type') as file_type,
                             COUNT(*) as chunk_count
                         FROM document_embeddings 
-                        GROUP BY source"
+                        GROUP BY source",
                 )
                 .fetch_all(pool)
                 .await?;
-                
+
                 let mut docs = Vec::new();
                 for row in rows {
                     let source: Option<String> = row.try_get("source").ok();
                     let file_type: Option<String> = row.try_get("file_type").ok();
                     let chunk_count: i64 = row.get("chunk_count");
-                    
+
                     if let Some(src) = source {
                         docs.push(json!({
                             "source": src,
@@ -403,7 +545,7 @@ impl VectorStore {
                     }
                 }
                 Ok(docs)
-            },
+            }
             #[cfg(feature = "qdrant-support")]
             StoreBackend::Qdrant { pool, .. } => {
                 // Same as Sqlite
@@ -412,17 +554,17 @@ impl VectorStore {
                             json_extract(metadata, '$.file_type') as file_type,
                             COUNT(*) as chunk_count
                         FROM document_embeddings 
-                        GROUP BY source"
+                        GROUP BY source",
                 )
                 .fetch_all(pool)
                 .await?;
-                
+
                 let mut docs = Vec::new();
                 for row in rows {
                     let source: Option<String> = row.try_get("source").ok();
                     let file_type: Option<String> = row.try_get("file_type").ok();
                     let chunk_count: i64 = row.get("chunk_count");
-                    
+
                     if let Some(src) = source {
                         docs.push(json!({
                             "source": src,
@@ -432,29 +574,39 @@ impl VectorStore {
                     }
                 }
                 Ok(docs)
-            },
+            }
             StoreBackend::InMemory { docs } => {
-                 // In memory listing logic
-                 // We need to group by source
-                 let guard = docs.lock().map_err(|e| anyhow::anyhow!("Lock poisoned: {}", e))?;
-                 let mut map: std::collections::HashMap<String, (String, usize)> = std::collections::HashMap::new();
-                 
-                 for (_, _, meta) in guard.iter() {
-                     if let Some(src) = meta.get("source").and_then(|v| v.as_str()) {
-                         let ftype = meta.get("file_type").and_then(|v| v.as_str()).unwrap_or("unknown").to_string();
-                         let entry = map.entry(src.to_string()).or_insert((ftype, 0));
-                         entry.1 += 1;
-                     }
-                 }
-                 
-                 let docs = map.into_iter().map(|(src, (ftype, count))| {
-                     json!({
-                         "source": src,
-                         "file_type": ftype,
-                         "chunks": count
-                     })
-                 }).collect();
-                 Ok(docs)
+                // In memory listing logic
+                // We need to group by source
+                let guard = docs
+                    .lock()
+                    .map_err(|e| anyhow::anyhow!("Lock poisoned: {}", e))?;
+                let mut map: std::collections::HashMap<String, (String, usize)> =
+                    std::collections::HashMap::new();
+
+                for (_, _, meta) in guard.iter() {
+                    if let Some(src) = meta.get("source").and_then(|v| v.as_str()) {
+                        let ftype = meta
+                            .get("file_type")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("unknown")
+                            .to_string();
+                        let entry = map.entry(src.to_string()).or_insert((ftype, 0));
+                        entry.1 += 1;
+                    }
+                }
+
+                let docs = map
+                    .into_iter()
+                    .map(|(src, (ftype, count))| {
+                        json!({
+                            "source": src,
+                            "file_type": ftype,
+                            "chunks": count
+                        })
+                    })
+                    .collect();
+                Ok(docs)
             }
         }
     }
@@ -468,19 +620,20 @@ impl VectorStore {
                 .bind(source)
                 .fetch_all(pool)
                 .await?;
-                
+
                 let mut chunks = Vec::new();
                 for row in rows {
                     let content: String = row.get("content");
                     let metadata_str: String = row.get("metadata");
-                    let metadata: serde_json::Value = serde_json::from_str(&metadata_str).unwrap_or(json!({}));
+                    let metadata: serde_json::Value =
+                        serde_json::from_str(&metadata_str).unwrap_or(json!({}));
                     chunks.push(json!({
                         "content": content,
                         "metadata": metadata
                     }));
                 }
                 Ok(chunks)
-            },
+            }
             #[cfg(feature = "qdrant-support")]
             StoreBackend::Qdrant { pool, .. } => {
                 // Use metadata pool for retrieval as Qdrant might be slower for full scan
@@ -490,27 +643,35 @@ impl VectorStore {
                 .bind(source)
                 .fetch_all(pool)
                 .await?;
-                
+
                 let mut chunks = Vec::new();
                 for row in rows {
                     let content: String = row.get("content");
                     let metadata_str: String = row.get("metadata");
-                    let metadata: serde_json::Value = serde_json::from_str(&metadata_str).unwrap_or(json!({}));
+                    let metadata: serde_json::Value =
+                        serde_json::from_str(&metadata_str).unwrap_or(json!({}));
                     chunks.push(json!({
                         "content": content,
                         "metadata": metadata
                     }));
                 }
                 Ok(chunks)
-            },
+            }
             StoreBackend::InMemory { docs } => {
-                let guard = docs.lock().map_err(|e| anyhow::anyhow!("Lock poisoned: {}", e))?;
-                let chunks = guard.iter()
-                    .filter(|(_, _, meta)| meta.get("source").and_then(|v| v.as_str()) == Some(source))
-                    .map(|(content, _, meta)| json!({
-                        "content": content,
-                        "metadata": meta
-                    }))
+                let guard = docs
+                    .lock()
+                    .map_err(|e| anyhow::anyhow!("Lock poisoned: {}", e))?;
+                let chunks = guard
+                    .iter()
+                    .filter(|(_, _, meta)| {
+                        meta.get("source").and_then(|v| v.as_str()) == Some(source)
+                    })
+                    .map(|(content, _, meta)| {
+                        json!({
+                            "content": content,
+                            "metadata": meta
+                        })
+                    })
                     .collect();
                 Ok(chunks)
             }
@@ -520,25 +681,36 @@ impl VectorStore {
     pub async fn delete_document(&self, source: &str) -> Result<()> {
         match &self.backend {
             StoreBackend::Sqlite { pool } => {
-                sqlx::query("DELETE FROM document_embeddings WHERE json_extract(metadata, '$.source') = ?")
-                    .bind(source)
-                    .execute(pool)
-                    .await?;
-            },
+                sqlx::query(
+                    "DELETE FROM document_embeddings WHERE json_extract(metadata, '$.source') = ?",
+                )
+                .bind(source)
+                .execute(pool)
+                .await?;
+            }
             #[cfg(feature = "qdrant-support")]
-            StoreBackend::Qdrant { client, collection, pool } => {
-                sqlx::query("DELETE FROM document_embeddings WHERE json_extract(metadata, '$.source') = ?")
-                    .bind(source)
-                    .execute(pool)
+            StoreBackend::Qdrant {
+                client,
+                collection,
+                pool,
+            } => {
+                sqlx::query(
+                    "DELETE FROM document_embeddings WHERE json_extract(metadata, '$.source') = ?",
+                )
+                .bind(source)
+                .execute(pool)
+                .await?;
+
+                client
+                    .delete_points(DeletePointsBuilder::new(collection).points(Filter::all([
+                        Condition::matches("source", source.to_string()),
+                    ])))
                     .await?;
-                
-                client.delete_points(
-                    DeletePointsBuilder::new(collection)
-                        .points(Filter::all([Condition::matches("source", source.to_string())]))
-                ).await?;
-            },
+            }
             StoreBackend::InMemory { docs } => {
-                let mut guard = docs.lock().map_err(|e| anyhow::anyhow!("Lock poisoned: {}", e))?;
+                let mut guard = docs
+                    .lock()
+                    .map_err(|e| anyhow::anyhow!("Lock poisoned: {}", e))?;
                 guard.retain(|(_, _, meta)| {
                     meta.get("source").and_then(|v| v.as_str()) != Some(source)
                 });
@@ -555,5 +727,50 @@ impl VectorStore {
 
     pub fn get_embedder(&self) -> Embedder {
         Embedder::new(self.embedder.clone())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn top_results_keep_highest_scores_in_descending_order() {
+        let mut heap = BinaryHeap::new();
+
+        for score in [0.1, 0.9, 0.4, 0.7, 0.2] {
+            push_top_result(
+                &mut heap,
+                ScoredDocument {
+                    content: format!("score-{score}"),
+                    similarity: score,
+                    metadata: json!({}),
+                },
+                3,
+            );
+        }
+
+        let scores: Vec<f32> = sorted_search_results(heap)
+            .into_iter()
+            .map(|(_, score, _)| score)
+            .collect();
+
+        assert_eq!(scores, vec![0.9, 0.7, 0.4]);
+    }
+
+    #[test]
+    fn top_results_respect_zero_limit() {
+        let mut heap = BinaryHeap::new();
+        push_top_result(
+            &mut heap,
+            ScoredDocument {
+                content: "ignored".to_string(),
+                similarity: 1.0,
+                metadata: json!({}),
+            },
+            0,
+        );
+
+        assert!(heap.is_empty());
     }
 }

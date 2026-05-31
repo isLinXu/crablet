@@ -3,7 +3,7 @@
 //! Allows replaying, stepping through, and forking Agent executions for debugging.
 
 use super::{AgentSpan, ExecutionContext, TraceSession};
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// Records an execution for later replay
@@ -104,14 +104,14 @@ impl ExecutionReplay {
     /// Jump to next checkpoint
     pub fn next_checkpoint(&mut self) -> Option<&Checkpoint> {
         let current = self.current_index;
-        
+
         for checkpoint in &self.recording.checkpoints {
             if checkpoint.step_index > current {
                 self.current_index = checkpoint.step_index;
                 return Some(checkpoint);
             }
         }
-        
+
         None
     }
 
@@ -119,7 +119,7 @@ impl ExecutionReplay {
     pub fn prev_checkpoint(&mut self) -> Option<&Checkpoint> {
         let current = self.current_index;
         let mut prev = None;
-        
+
         for checkpoint in &self.recording.checkpoints {
             if checkpoint.step_index < current {
                 prev = Some(checkpoint);
@@ -127,11 +127,11 @@ impl ExecutionReplay {
                 break;
             }
         }
-        
+
         if let Some(checkpoint) = prev {
             self.current_index = checkpoint.step_index;
         }
-        
+
         prev
     }
 
@@ -157,13 +157,13 @@ impl ExecutionReplay {
     /// Create a fork at current position with modified context
     pub fn fork(&self, modifications: ContextModifications) -> ForkedExecution {
         let fork_point = self.current_index;
-        
+
         // Get context at fork point
         let base_context = self.get_context_at(fork_point);
-        
+
         // Apply modifications
         let modified_context = modifications.apply(base_context);
-        
+
         ForkedExecution {
             original_recording: self.recording.clone(),
             fork_point,
@@ -182,7 +182,7 @@ impl ExecutionReplay {
             current_action: None,
             variables: HashMap::new(),
         };
-        
+
         for span in &self.recording.spans[..step] {
             match span {
                 AgentSpan::Thought { content, .. } => {
@@ -195,7 +195,7 @@ impl ExecutionReplay {
                 _ => {}
             }
         }
-        
+
         context
     }
 
@@ -207,14 +207,29 @@ impl ExecutionReplay {
     /// Get execution statistics
     pub fn get_stats(&self) -> ExecutionStats {
         let spans = &self.recording.spans;
-        
+
         ExecutionStats {
             total_steps: spans.len(),
-            thought_steps: spans.iter().filter(|s| matches!(s, AgentSpan::Thought { .. })).count(),
-            action_steps: spans.iter().filter(|s| matches!(s, AgentSpan::Action { .. })).count(),
-            observation_steps: spans.iter().filter(|s| matches!(s, AgentSpan::Observation { .. })).count(),
-            reflection_steps: spans.iter().filter(|s| matches!(s, AgentSpan::Reflection { .. })).count(),
-            error_steps: spans.iter().filter(|s| matches!(s, AgentSpan::Error { .. })).count(),
+            thought_steps: spans
+                .iter()
+                .filter(|s| matches!(s, AgentSpan::Thought { .. }))
+                .count(),
+            action_steps: spans
+                .iter()
+                .filter(|s| matches!(s, AgentSpan::Action { .. }))
+                .count(),
+            observation_steps: spans
+                .iter()
+                .filter(|s| matches!(s, AgentSpan::Observation { .. }))
+                .count(),
+            reflection_steps: spans
+                .iter()
+                .filter(|s| matches!(s, AgentSpan::Reflection { .. }))
+                .count(),
+            error_steps: spans
+                .iter()
+                .filter(|s| matches!(s, AgentSpan::Error { .. }))
+                .count(),
             avg_step_duration_ms: self.calculate_avg_duration(),
         }
     }
@@ -222,14 +237,14 @@ impl ExecutionReplay {
     fn calculate_avg_duration(&self) -> u64 {
         let mut total_duration = 0u64;
         let mut count = 0usize;
-        
+
         for window in self.recording.spans.windows(2) {
             if let (Some(t1), Some(t2)) = (get_timestamp(&window[0]), get_timestamp(&window[1])) {
                 total_duration += t2 - t1;
                 count += 1;
             }
         }
-        
+
         if count > 0 {
             total_duration / count as u64
         } else {
@@ -260,7 +275,7 @@ impl ForkedExecution {
     /// Compare with original execution
     pub fn compare_with_original(&self) -> ExecutionComparison {
         let original_spans = &self.original_recording.spans[self.fork_point..];
-        
+
         ExecutionComparison {
             fork_point: self.fork_point,
             original_path: original_spans.to_vec(),
@@ -275,7 +290,7 @@ impl ForkedExecution {
                 return Some(i);
             }
         }
-        
+
         if self.new_spans.len() != original.len() {
             Some(std::cmp::min(self.new_spans.len(), original.len()))
         } else {
@@ -287,7 +302,7 @@ impl ForkedExecution {
     pub fn to_recording(self) -> ExecutionRecording {
         let mut spans = self.original_recording.spans[..self.fork_point].to_vec();
         spans.extend(self.new_spans);
-        
+
         ExecutionRecording {
             session: self.original_recording.session,
             spans,
@@ -310,12 +325,12 @@ impl ContextModifications {
         for (key, value) in &self.variable_updates {
             context.variables.insert(key.clone(), value.clone());
         }
-        
+
         // Inject thought if provided
         if let Some(ref thought) = self.inject_thought {
             context.current_thought = Some(thought.clone());
         }
-        
+
         context
     }
 }
@@ -354,6 +369,12 @@ pub struct RecordingBuilder {
     checkpoints: Vec<Checkpoint>,
 }
 
+impl Default for RecordingBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl RecordingBuilder {
     pub fn new() -> Self {
         Self {
@@ -378,7 +399,11 @@ impl RecordingBuilder {
             step_index: self.spans.len(),
             description: description.into(),
             context_snapshot: ExecutionContext {
-                execution_id: self.session.as_ref().map(|s| s.execution_id.clone()).unwrap_or_default(),
+                execution_id: self
+                    .session
+                    .as_ref()
+                    .map(|s| s.execution_id.clone())
+                    .unwrap_or_default(),
                 step_number: self.spans.len(),
                 current_thought: None,
                 current_action: None,
@@ -394,8 +419,16 @@ impl RecordingBuilder {
             let metadata = RecordingMetadata {
                 total_steps: self.spans.len(),
                 total_duration_ms: 0, // Calculate from spans
-                tool_calls: self.spans.iter().filter(|s| matches!(s, AgentSpan::Action { .. })).count(),
-                errors: self.spans.iter().filter(|s| matches!(s, AgentSpan::Error { .. })).count(),
+                tool_calls: self
+                    .spans
+                    .iter()
+                    .filter(|s| matches!(s, AgentSpan::Action { .. }))
+                    .count(),
+                errors: self
+                    .spans
+                    .iter()
+                    .filter(|s| matches!(s, AgentSpan::Error { .. }))
+                    .count(),
                 final_output: None,
             };
 

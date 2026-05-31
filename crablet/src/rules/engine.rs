@@ -72,7 +72,8 @@ impl RuleEngine {
             .name("Block dd to /dev/zero")
             .priority(100)
             .condition(Condition::Regex(
-                regex::Regex::new(r"dd\s+.*if=/dev/zero").unwrap()
+                regex::Regex::new(r"dd\s+.*if=/dev/zero")
+                    .expect("built-in dd safety regex should compile")
             ))
             .action(Action::Block("Block device write operations are not allowed".to_string()))
             .build()

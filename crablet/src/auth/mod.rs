@@ -1,6 +1,6 @@
 pub mod context;
-pub mod oidc;
-pub mod middleware;
 pub mod handlers;
+pub mod middleware;
+pub mod oidc;
 
 pub use context::{JwtClaims, UserContext};

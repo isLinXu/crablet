@@ -6,22 +6,24 @@
 //! - Execution replay
 //! - Real-time event streaming
 
+use axum::BoxError;
 use axum::{
-    extract::{Path, State, Query},
-    response::{Json, sse::{Event, KeepAlive, Sse}},
+    extract::{Path, Query, State},
     http::StatusCode,
+    response::{
+        sse::{Event, KeepAlive, Sse},
+        Json,
+    },
 };
-use std::sync::Arc;
+use futures::stream::Stream;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::StreamExt;
-use futures::stream::Stream;
-use axum::BoxError;
 
 use crate::gateway::server::CrabletGateway;
 use crate::observability::{
-    BreakpointCondition, BreakpointAction,
-    TraceSession, AgentSpan, SessionStatus
+    AgentSpan, BreakpointAction, BreakpointCondition, SessionStatus, TraceSession,
 };
 
 // ============================================================================
@@ -67,15 +69,31 @@ pub struct CreateBreakpointRequest {
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type")]
 pub enum BreakpointConditionRequest {
-    OnStep { count: usize },
-    LowConfidence { threshold: f32 },
+    OnStep {
+        count: usize,
+    },
+    LowConfidence {
+        threshold: f32,
+    },
     LoopDetected,
-    ThoughtContains { text: String },
-    ExecutionTimeExceeded { max_duration_ms: u64 },
-    TokenBudgetExceeded { max_tokens: usize },
-    OnError { recoverable_only: bool },
-    All { conditions: Vec<BreakpointConditionRequest> },
-    Any { conditions: Vec<BreakpointConditionRequest> },
+    ThoughtContains {
+        text: String,
+    },
+    ExecutionTimeExceeded {
+        max_duration_ms: u64,
+    },
+    TokenBudgetExceeded {
+        max_tokens: usize,
+    },
+    OnError {
+        recoverable_only: bool,
+    },
+    All {
+        conditions: Vec<BreakpointConditionRequest>,
+    },
+    Any {
+        conditions: Vec<BreakpointConditionRequest>,
+    },
 }
 
 #[derive(Debug, Deserialize)]
@@ -83,8 +101,12 @@ pub enum BreakpointConditionRequest {
 pub enum BreakpointActionRequest {
     Pause,
     Continue,
-    ModifyContext { variable_updates: std::collections::HashMap<String, serde_json::Value> },
-    InjectHint { hint: String },
+    ModifyContext {
+        variable_updates: std::collections::HashMap<String, serde_json::Value>,
+    },
+    InjectHint {
+        hint: String,
+    },
     Skip,
 }
 
@@ -137,7 +159,7 @@ pub async fn list_sessions(
     let sys2 = &gateway.router.sys2;
     let tracer_arc = sys2.observability.tracer();
     let tracer = tracer_arc.read().await;
-    
+
     let sessions: Vec<SessionSummary> = tracer
         .list_sessions()
         .into_iter()
@@ -165,9 +187,9 @@ pub async fn list_sessions(
         })
         .take(query.limit.unwrap_or(100))
         .collect();
-    
+
     let total = sessions.len();
-    
+
     Ok(Json(SessionsResponse { sessions, total }))
 }
 
@@ -179,13 +201,13 @@ pub async fn get_session(
     let sys2 = &gateway.router.sys2;
     let tracer_arc = sys2.observability.tracer();
     let tracer = tracer_arc.read().await;
-    
+
     let session = tracer
         .get_session(&execution_id)
         .ok_or(StatusCode::NOT_FOUND)?;
-    
+
     let spans = tracer.get_spans(&execution_id).await.unwrap_or_default();
-    
+
     Ok(Json(SessionDetail { session, spans }))
 }
 
@@ -197,7 +219,7 @@ pub async fn delete_session(
     let sys2 = &gateway.router.sys2;
     let tracer_arc = sys2.observability.tracer();
     let mut tracer = tracer_arc.write().await;
-    
+
     tracer.delete_session(&execution_id);
     StatusCode::NO_CONTENT
 }
@@ -208,26 +230,25 @@ pub async fn stream_session_events(
     Path(execution_id): Path<String>,
 ) -> Sse<impl Stream<Item = Result<Event, BoxError>>> {
     let rx = gateway.router.sys2.observability.subscribe();
-    
-    let stream = BroadcastStream::new(rx)
-        .filter_map(move |msg| {
-            match msg {
-                Ok(event) => {
-                    // Filter events for this execution
-                    let event_json = serde_json::to_value(&event).ok()?;
-                    let event_execution_id = event_json.get("execution_id")?.as_str()?;
-                    
-                    if event_execution_id == execution_id {
-                        let data = serde_json::to_string(&event).ok()?;
-                        Some(Ok(Event::default().data(data)))
-                    } else {
-                        None
-                    }
+
+    let stream = BroadcastStream::new(rx).filter_map(move |msg| {
+        match msg {
+            Ok(event) => {
+                // Filter events for this execution
+                let event_json = serde_json::to_value(&event).ok()?;
+                let event_execution_id = event_json.get("execution_id")?.as_str()?;
+
+                if event_execution_id == execution_id {
+                    let data = serde_json::to_string(&event).ok()?;
+                    Some(Ok(Event::default().data(data)))
+                } else {
+                    None
                 }
-                Err(_) => Some(Ok(Event::default().comment("missed message"))),
             }
-        });
-    
+            Err(_) => Some(Ok(Event::default().comment("missed message"))),
+        }
+    });
+
     Sse::new(stream).keep_alive(KeepAlive::default())
 }
 
@@ -238,9 +259,9 @@ pub async fn list_breakpoints(
     let sys2 = &gateway.router.sys2;
     let bp_manager_arc = sys2.observability.breakpoint_manager();
     let bp_manager = bp_manager_arc.read().await;
-    
+
     let breakpoints_list = bp_manager.list_breakpoints().await;
-    
+
     let breakpoints: Vec<BreakpointResponse> = breakpoints_list
         .into_iter()
         .map(|(id, bp)| BreakpointResponse {
@@ -251,7 +272,7 @@ pub async fn list_breakpoints(
             created_at: bp.created_at,
         })
         .collect();
-    
+
     Json(breakpoints)
 }
 
@@ -287,7 +308,7 @@ pub async fn delete_breakpoint(
     let sys2 = &gateway.router.sys2;
     let bp_manager_arc = sys2.observability.breakpoint_manager();
     let bp_manager = bp_manager_arc.read().await;
-    
+
     bp_manager.remove_breakpoint(&id).await;
     StatusCode::NO_CONTENT
 }
@@ -299,7 +320,7 @@ pub async fn get_paused_sessions(
     let sys2 = &gateway.router.sys2;
     let tracer_arc = sys2.observability.tracer();
     let tracer = tracer_arc.read().await;
-    
+
     let sessions: Vec<SessionSummary> = tracer
         .list_sessions()
         .into_iter()
@@ -313,7 +334,7 @@ pub async fn get_paused_sessions(
             step_count: s.spans.len(),
         })
         .collect();
-    
+
     Json(sessions)
 }
 
@@ -326,16 +347,16 @@ pub async fn intervene(
     let sys2 = &gateway.router.sys2;
     let tracer_arc = sys2.observability.tracer();
     let mut tracer = tracer_arc.write().await;
-    
+
     // Check if session exists and is paused
     let session = tracer
         .get_session(&execution_id)
         .ok_or(StatusCode::NOT_FOUND)?;
-    
+
     if !matches!(session.status, SessionStatus::Paused) {
         return Err(StatusCode::CONFLICT);
     }
-    
+
     // Handle the intervention based on decision type
     match req.decision.as_str() {
         "continue" => {
@@ -353,7 +374,7 @@ pub async fn intervene(
         }
         _ => return Err(StatusCode::BAD_REQUEST),
     }
-    
+
     Ok(StatusCode::OK)
 }
 
@@ -365,13 +386,13 @@ pub async fn get_metrics(
     let sys2 = &gateway.router.sys2;
     let tracer_arc = sys2.observability.tracer();
     let tracer = tracer_arc.read().await;
-    
+
     let session = tracer
         .get_session(&execution_id)
         .ok_or(StatusCode::NOT_FOUND)?;
-    
+
     let metrics = session.metrics;
-    
+
     let step_metrics: Vec<StepMetricDetail> = metrics
         .step_metrics
         .into_iter()
@@ -382,7 +403,7 @@ pub async fn get_metrics(
             llm_calls: m.llm_calls,
         })
         .collect();
-    
+
     Ok(Json(MetricsResponse {
         execution_id: execution_id.clone(),
         total_steps: metrics.total_steps,
@@ -400,17 +421,15 @@ pub async fn stream_events(
     State(gateway): State<Arc<CrabletGateway>>,
 ) -> Sse<impl Stream<Item = Result<Event, BoxError>>> {
     let rx = gateway.router.sys2.observability.subscribe();
-    
-    let stream = BroadcastStream::new(rx).map(|msg| {
-        match msg {
-            Ok(event) => {
-                let data = serde_json::to_string(&event).unwrap_or_default();
-                Ok(Event::default().data(data))
-            }
-            Err(_) => Ok(Event::default().comment("missed message")),
+
+    let stream = BroadcastStream::new(rx).map(|msg| match msg {
+        Ok(event) => {
+            let data = serde_json::to_string(&event).unwrap_or_default();
+            Ok(Event::default().data(data))
         }
+        Err(_) => Ok(Event::default().comment("missed message")),
     });
-    
+
     Sse::new(stream).keep_alive(KeepAlive::default())
 }
 
@@ -418,23 +437,37 @@ pub async fn stream_events(
 // Helper Functions
 // ============================================================================
 
-fn convert_condition_request(req: BreakpointConditionRequest) -> Result<BreakpointCondition, StatusCode> {
+fn convert_condition_request(
+    req: BreakpointConditionRequest,
+) -> Result<BreakpointCondition, StatusCode> {
     match req {
         BreakpointConditionRequest::OnStep { count } => Ok(BreakpointCondition::OnStep { count }),
-        BreakpointConditionRequest::LowConfidence { threshold } => Ok(BreakpointCondition::LowConfidence { threshold }),
+        BreakpointConditionRequest::LowConfidence { threshold } => {
+            Ok(BreakpointCondition::LowConfidence { threshold })
+        }
         BreakpointConditionRequest::LoopDetected => Ok(BreakpointCondition::LoopDetected),
-        BreakpointConditionRequest::ThoughtContains { text } => Ok(BreakpointCondition::ThoughtContains { text }),
-        BreakpointConditionRequest::ExecutionTimeExceeded { max_duration_ms } => Ok(BreakpointCondition::ExecutionTimeExceeded { max_duration_ms }),
-        BreakpointConditionRequest::TokenBudgetExceeded { max_tokens } => Ok(BreakpointCondition::TokenBudgetExceeded { max_tokens }),
-        BreakpointConditionRequest::OnError { recoverable_only } => Ok(BreakpointCondition::OnError { recoverable_only }),
+        BreakpointConditionRequest::ThoughtContains { text } => {
+            Ok(BreakpointCondition::ThoughtContains { text })
+        }
+        BreakpointConditionRequest::ExecutionTimeExceeded { max_duration_ms } => {
+            Ok(BreakpointCondition::ExecutionTimeExceeded { max_duration_ms })
+        }
+        BreakpointConditionRequest::TokenBudgetExceeded { max_tokens } => {
+            Ok(BreakpointCondition::TokenBudgetExceeded { max_tokens })
+        }
+        BreakpointConditionRequest::OnError { recoverable_only } => {
+            Ok(BreakpointCondition::OnError { recoverable_only })
+        }
         BreakpointConditionRequest::All { conditions } => {
-            let converted: Result<Vec<_>, _> = conditions.into_iter()
+            let converted: Result<Vec<_>, _> = conditions
+                .into_iter()
                 .map(convert_condition_request)
                 .collect();
             Ok(BreakpointCondition::All(converted?))
         }
         BreakpointConditionRequest::Any { conditions } => {
-            let converted: Result<Vec<_>, _> = conditions.into_iter()
+            let converted: Result<Vec<_>, _> = conditions
+                .into_iter()
                 .map(convert_condition_request)
                 .collect();
             Ok(BreakpointCondition::Any(converted?))
@@ -446,7 +479,9 @@ fn convert_action_request(req: BreakpointActionRequest) -> Result<BreakpointActi
     match req {
         BreakpointActionRequest::Pause => Ok(BreakpointAction::Pause),
         BreakpointActionRequest::Continue => Ok(BreakpointAction::Continue),
-        BreakpointActionRequest::ModifyContext { variable_updates } => Ok(BreakpointAction::ModifyContext { variable_updates }),
+        BreakpointActionRequest::ModifyContext { variable_updates } => {
+            Ok(BreakpointAction::ModifyContext { variable_updates })
+        }
         BreakpointActionRequest::InjectHint { hint } => Ok(BreakpointAction::InjectHint { hint }),
         BreakpointActionRequest::Skip => Ok(BreakpointAction::Skip),
     }

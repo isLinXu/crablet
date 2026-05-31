@@ -1,12 +1,12 @@
-use sqlx::{sqlite::SqlitePool, Row};
 use anyhow::Result;
-use uuid::Uuid;
-use serde::Serialize;
 use async_trait::async_trait;
-use std::collections::HashMap;
 #[cfg(feature = "knowledge")]
-use neo4rs::{Graph, query};
+use neo4rs::{query, Graph};
+use serde::Serialize;
+use sqlx::{sqlite::SqlitePool, Row};
+use std::collections::HashMap;
 use std::sync::Arc;
+use uuid::Uuid;
 // use serde_json::Value; // Removed unused import
 // use futures::StreamExt; // Removed unused import
 
@@ -35,7 +35,10 @@ pub trait KnowledgeGraph: Send + Sync {
     async fn add_entity(&self, name: &str, type_: &str) -> Result<String>;
     async fn add_relation(&self, source: &str, target: &str, relation: &str) -> Result<()>;
     async fn find_related(&self, entity_name: &str) -> Result<Vec<(String, String, String)>>;
-    async fn find_related_batch(&self, entity_names: &[String]) -> Result<HashMap<String, Vec<(String, String, String)>>>;
+    async fn find_related_batch(
+        &self,
+        entity_names: &[String],
+    ) -> Result<HashMap<String, Vec<(String, String, String)>>>;
     async fn find_entities_batch(&self, names: &[String]) -> Result<Vec<(String, String)>>;
     async fn export_d3_json(&self) -> Result<String>;
 }
@@ -67,9 +70,9 @@ impl SqliteKnowledgeGraph {
             UNIQUE(source_id, target_id, relation)
         );
         "#;
-        
+
         sqlx::query(schema).execute(&pool).await?;
-        
+
         Ok(Self { pool })
     }
 }
@@ -84,20 +87,20 @@ impl KnowledgeGraph for SqliteKnowledgeGraph {
             .bind(type_)
             .execute(&self.pool)
             .await?;
-            
+
         // Return existing ID if duplicate
         let row = sqlx::query("SELECT id FROM entities WHERE name = ?")
             .bind(name)
             .fetch_one(&self.pool)
             .await?;
-            
+
         Ok(row.get("id"))
     }
 
     async fn add_relation(&self, source: &str, target: &str, relation: &str) -> Result<()> {
         let source_id = self.add_entity(source, "concept").await?;
         let target_id = self.add_entity(target, "concept").await?;
-        
+
         let id = Uuid::new_v4().to_string();
         sqlx::query("INSERT OR IGNORE INTO relations (id, source_id, target_id, relation) VALUES (?, ?, ?, ?)")
             .bind(id)
@@ -106,7 +109,7 @@ impl KnowledgeGraph for SqliteKnowledgeGraph {
             .bind(relation)
             .execute(&self.pool)
             .await?;
-            
+
         Ok(())
     }
 
@@ -119,7 +122,7 @@ impl KnowledgeGraph for SqliteKnowledgeGraph {
             JOIN relations r ON source.id = r.source_id
             JOIN entities e ON r.target_id = e.id
             WHERE source.name = ?
-            "#
+            "#,
         )
         .bind(entity_name)
         .fetch_all(&self.pool)
@@ -133,39 +136,46 @@ impl KnowledgeGraph for SqliteKnowledgeGraph {
             JOIN relations r ON target.id = r.target_id
             JOIN entities e ON r.source_id = e.id
             WHERE target.name = ?
-            "#
+            "#,
         )
         .bind(entity_name)
         .fetch_all(&self.pool)
         .await?;
 
         let mut results = Vec::new();
-        
+
         for row in outgoing {
             results.push((
-                "->".to_string(), 
-                row.get::<String, _>("relation"), 
-                row.get::<String, _>("target_name")
+                "->".to_string(),
+                row.get::<String, _>("relation"),
+                row.get::<String, _>("target_name"),
             ));
         }
 
         for row in incoming {
             results.push((
-                "<-".to_string(), 
-                row.get::<String, _>("relation"), 
-                row.get::<String, _>("source_name")
+                "<-".to_string(),
+                row.get::<String, _>("relation"),
+                row.get::<String, _>("source_name"),
             ));
         }
 
         Ok(results)
     }
 
-    async fn find_related_batch(&self, entity_names: &[String]) -> Result<HashMap<String, Vec<(String, String, String)>>> {
+    async fn find_related_batch(
+        &self,
+        entity_names: &[String],
+    ) -> Result<HashMap<String, Vec<(String, String, String)>>> {
         if entity_names.is_empty() {
             return Ok(HashMap::new());
         }
 
-        let placeholders = entity_names.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let placeholders = entity_names
+            .iter()
+            .map(|_| "?")
+            .collect::<Vec<_>>()
+            .join(",");
 
         // Find outgoing relations for all entities
         let outgoing_query = format!(
@@ -220,7 +230,7 @@ impl KnowledgeGraph for SqliteKnowledgeGraph {
 
             results
                 .entry(entity_name)
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(("->".to_string(), relation, target_name));
         }
 
@@ -232,7 +242,7 @@ impl KnowledgeGraph for SqliteKnowledgeGraph {
 
             results
                 .entry(entity_name)
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(("<-".to_string(), relation, source_name));
         }
 
@@ -243,23 +253,23 @@ impl KnowledgeGraph for SqliteKnowledgeGraph {
         if names.is_empty() {
             return Ok(Vec::new());
         }
-        
+
         let placeholders = names.iter().map(|_| "?").collect::<Vec<_>>().join(",");
-        let query = format!("SELECT name, type FROM entities WHERE name IN ({})", placeholders);
-        
+        let query = format!(
+            "SELECT name, type FROM entities WHERE name IN ({})",
+            placeholders
+        );
+
         let mut query_builder = sqlx::query(&query);
         for name in names {
             query_builder = query_builder.bind(name);
         }
-        
+
         let rows = query_builder.fetch_all(&self.pool).await?;
-        
+
         let mut results = Vec::new();
         for row in rows {
-            results.push((
-                row.get("name"),
-                row.get("type"),
-            ));
+            results.push((row.get("name"), row.get("type")));
         }
         Ok(results)
     }
@@ -268,18 +278,18 @@ impl KnowledgeGraph for SqliteKnowledgeGraph {
         let entities = sqlx::query("SELECT name, type FROM entities")
             .fetch_all(&self.pool)
             .await?;
-            
+
         let relations = sqlx::query(
             r#"
             SELECT s.name as source, t.name as target, r.relation 
             FROM relations r
             JOIN entities s ON r.source_id = s.id
             JOIN entities t ON r.target_id = t.id
-            "#
+            "#,
         )
         .fetch_all(&self.pool)
         .await?;
-        
+
         let mut nodes = Vec::new();
         for row in entities {
             nodes.push(D3Node {
@@ -287,7 +297,7 @@ impl KnowledgeGraph for SqliteKnowledgeGraph {
                 group: 1, // Default group
             });
         }
-        
+
         let mut links = Vec::new();
         for row in relations {
             links.push(D3Link {
@@ -297,7 +307,7 @@ impl KnowledgeGraph for SqliteKnowledgeGraph {
                 label: row.get("relation"),
             });
         }
-        
+
         let graph = D3Graph { nodes, links };
         Ok(serde_json::to_string_pretty(&graph)?)
     }
@@ -312,7 +322,9 @@ pub struct Neo4jKnowledgeGraph {
 impl Neo4jKnowledgeGraph {
     pub async fn new(uri: &str, user: &str, pass: &str) -> Result<Self> {
         let graph = Graph::new(uri, user, pass).await?;
-        Ok(Self { graph: Arc::new(graph) })
+        Ok(Self {
+            graph: Arc::new(graph),
+        })
     }
 }
 
@@ -321,10 +333,11 @@ impl Neo4jKnowledgeGraph {
 impl KnowledgeGraph for Neo4jKnowledgeGraph {
     async fn add_entity(&self, name: &str, type_: &str) -> Result<String> {
         // MERGE (n:Entity {name: $name}) SET n.type = $type RETURN elementId(n)
-        let q = query("MERGE (n:Entity {name: $name}) SET n.type = $type RETURN elementId(n) as id")
-            .param("name", name)
-            .param("type", type_);
-            
+        let q =
+            query("MERGE (n:Entity {name: $name}) SET n.type = $type RETURN elementId(n) as id")
+                .param("name", name)
+                .param("type", type_);
+
         let mut stream = self.graph.execute(q).await?;
         if let Some(row) = stream.next().await? {
             // elementId is string in recent neo4j
@@ -335,15 +348,17 @@ impl KnowledgeGraph for Neo4jKnowledgeGraph {
     }
 
     async fn add_relation(&self, source: &str, target: &str, relation: &str) -> Result<()> {
-        let q = query("
+        let q = query(
+            "
             MERGE (s:Entity {name: $source})
             MERGE (t:Entity {name: $target})
             MERGE (s)-[r:RELATED {type: $relation}]->(t)
-        ")
+        ",
+        )
         .param("source", source)
         .param("target", target)
         .param("relation", relation);
-        
+
         self.graph.run(q).await?;
         Ok(())
     }
@@ -354,23 +369,32 @@ impl KnowledgeGraph for Neo4jKnowledgeGraph {
             RETURN type(r) as rel_type, r.type as rel_name, startNode(r) = n as is_outgoing, m.name as other_name
         ")
         .param("name", entity_name);
-        
+
         let mut stream = self.graph.execute(q).await?;
         let mut results = Vec::new();
-        
+
         while let Some(row) = stream.next().await? {
-            let rel_name: String = row.get("rel_name").unwrap_or_else(|_| "RELATED".to_string());
+            let rel_name: String = row
+                .get("rel_name")
+                .unwrap_or_else(|_| "RELATED".to_string());
             let is_outgoing: bool = row.get("is_outgoing").unwrap_or(true);
             let other_name: String = row.get("other_name").unwrap_or_default();
-            
-            let dir = if is_outgoing { "->".to_string() } else { "<-".to_string() };
+
+            let dir = if is_outgoing {
+                "->".to_string()
+            } else {
+                "<-".to_string()
+            };
             results.push((dir, rel_name, other_name));
         }
-        
+
         Ok(results)
     }
 
-    async fn find_related_batch(&self, entity_names: &[String]) -> Result<HashMap<String, Vec<(String, String, String)>>> {
+    async fn find_related_batch(
+        &self,
+        entity_names: &[String],
+    ) -> Result<HashMap<String, Vec<(String, String, String)>>> {
         if entity_names.is_empty() {
             return Ok(HashMap::new());
         }
@@ -381,7 +405,7 @@ impl KnowledgeGraph for Neo4jKnowledgeGraph {
             WHERE n.name IN $names
             RETURN n.name as entity_name, type(r) as rel_type, r.type as rel_name,
                    startNode(r) = n as is_outgoing, m.name as other_name
-            "#
+            "#,
         )
         .param("names", entity_names.to_vec());
 
@@ -395,11 +419,17 @@ impl KnowledgeGraph for Neo4jKnowledgeGraph {
 
         while let Some(row) = stream.next().await? {
             let entity_name: String = row.get("entity_name").unwrap_or_default();
-            let rel_name: String = row.get("rel_name").unwrap_or_else(|_| "RELATED".to_string());
+            let rel_name: String = row
+                .get("rel_name")
+                .unwrap_or_else(|_| "RELATED".to_string());
             let is_outgoing: bool = row.get("is_outgoing").unwrap_or(true);
             let other_name: String = row.get("other_name").unwrap_or_default();
 
-            let dir = if is_outgoing { "->".to_string() } else { "<-".to_string() };
+            let dir = if is_outgoing {
+                "->".to_string()
+            } else {
+                "<-".to_string()
+            };
 
             results
                 .entry(entity_name)
@@ -411,9 +441,10 @@ impl KnowledgeGraph for Neo4jKnowledgeGraph {
     }
 
     async fn find_entities_batch(&self, names: &[String]) -> Result<Vec<(String, String)>> {
-        let q = query("MATCH (n:Entity) WHERE n.name IN $names RETURN n.name as name, n.type as type")
-            .param("names", names.to_vec());
-        
+        let q =
+            query("MATCH (n:Entity) WHERE n.name IN $names RETURN n.name as name, n.type as type")
+                .param("names", names.to_vec());
+
         let mut stream = self.graph.execute(q).await?;
         let mut results = Vec::new();
         while let Some(row) = stream.next().await? {
@@ -426,13 +457,16 @@ impl KnowledgeGraph for Neo4jKnowledgeGraph {
 
     async fn export_d3_json(&self) -> Result<String> {
         // Get all nodes
-        let mut stream = self.graph.execute(query("MATCH (n:Entity) RETURN n.name as name")).await?;
+        let mut stream = self
+            .graph
+            .execute(query("MATCH (n:Entity) RETURN n.name as name"))
+            .await?;
         let mut nodes = Vec::new();
         while let Some(row) = stream.next().await? {
             let name: String = row.get("name").unwrap_or_default();
             nodes.push(D3Node { id: name, group: 1 });
         }
-        
+
         // Get all links
         let mut stream = self.graph.execute(query("MATCH (s:Entity)-[r]->(t:Entity) RETURN s.name as source, t.name as target, r.type as relation")).await?;
         let mut links = Vec::new();
@@ -440,7 +474,7 @@ impl KnowledgeGraph for Neo4jKnowledgeGraph {
             let source: String = row.get("source").unwrap_or_default();
             let target: String = row.get("target").unwrap_or_default();
             let relation: String = row.get("relation").unwrap_or_default();
-            
+
             links.push(D3Link {
                 source,
                 target,
@@ -448,7 +482,7 @@ impl KnowledgeGraph for Neo4jKnowledgeGraph {
                 label: relation,
             });
         }
-        
+
         let graph = D3Graph { nodes, links };
         Ok(serde_json::to_string_pretty(&graph)?)
     }

@@ -1,55 +1,58 @@
-use crate::error::Result;
-use crate::tools::bash::BashPlugin;
-use crate::tools::file::FilePlugin;
-use crate::tools::search::WebSearchPlugin;
-use crate::tools::http::HttpPlugin;
-use crate::tools::vision::VisionPlugin;
-use crate::cognitive::llm::{LlmClient, OpenAiClient, OllamaClient};
 use crate::cognitive::llm::cache::CachedLlmClient;
-use crate::safety::oracle::{SafetyOracle, SafetyLevel};
-use crate::types::{Message, TraceStep};
-use crate::memory::semantic::KnowledgeGraph;
+use crate::cognitive::llm::{LlmClient, OllamaClient, OpenAiClient};
+use crate::error::Result;
 #[cfg(feature = "knowledge")]
 use crate::knowledge::vector_store::VectorStore;
-use tracing::{info, warn};
-use std::sync::Arc;
+use crate::memory::semantic::KnowledgeGraph;
+use crate::safety::oracle::{SafetyLevel, SafetyOracle};
+use crate::tools::bash::BashPlugin;
+use crate::tools::file::FilePlugin;
+use crate::tools::http::HttpPlugin;
+use crate::tools::search::WebSearchPlugin;
+use crate::tools::vision::VisionPlugin;
+use crate::types::{Message, TraceStep};
 use std::env;
+use std::sync::Arc;
+use tracing::{info, warn};
 
 use crate::skills::SkillRegistry;
 use tokio::sync::RwLock;
 
 use crate::cognitive::planner::TaskPlanner;
+use crate::cognitive::react_observable::ObservableReActEngine;
+use crate::cognitive::CognitiveSystem;
+use crate::config::Config;
 #[cfg(feature = "knowledge")]
 use crate::memory::consolidator::MemoryConsolidator;
 use crate::memory::episodic::EpisodicMemory;
-use crate::cognitive::react_observable::ObservableReActEngine;
-use crate::observability::{ObservabilityManager, InMemoryStorage};
+use crate::observability::{InMemoryStorage, ObservabilityManager};
 use crate::skills::watcher::SkillWatcher;
-use crate::config::Config;
-use crate::tools::manager::SkillManagerTool;
-use crate::tools::management_plugin::{InstallSkillPlugin, CreateSkillPlugin};
-use crate::tools::demo::{WeatherPlugin, CalculatorPlugin};
-use crate::tools::mcp_plugins::{McpResourcePlugin, McpPromptPlugin};
 use crate::tools::browser::BrowserPlugin;
-use crate::cognitive::CognitiveSystem;
+use crate::tools::demo::{CalculatorPlugin, WeatherPlugin};
+use crate::tools::management_plugin::{CreateSkillPlugin, InstallSkillPlugin};
+use crate::tools::manager::SkillManagerTool;
+use crate::tools::mcp_plugins::{McpPromptPlugin, McpResourcePlugin};
 use async_trait::async_trait;
 
-use crate::cognitive::middleware::{MiddlewarePipeline, MiddlewareState, PlanningMiddleware, RagMiddleware, SkillContextMiddleware, SafetyMiddleware, RoutingMiddleware, CostGuardMiddleware, SemanticCacheMiddleware};
+use crate::cognitive::middleware::{
+    CostGuardMiddleware, MiddlewarePipeline, MiddlewareState, PlanningMiddleware, RagMiddleware,
+    RoutingMiddleware, SafetyMiddleware, SemanticCacheMiddleware, SkillContextMiddleware,
+};
 use crate::events::EventBus;
 
 use crate::cognitive::classifier::Classifier;
+use crate::cognitive::mcts_tot::{MCTSConfig, MCTSTreeOfThoughts};
+use crate::cognitive::tot::{SearchStrategy, TotConfig, TreeOfThoughts};
 use crate::error::CrabletError;
-use crate::cognitive::tot::{TreeOfThoughts, TotConfig, SearchStrategy};
-use crate::cognitive::mcts_tot::{MCTSTreeOfThoughts, MCTSConfig};
 use crate::events::AgentEvent;
+#[cfg(feature = "knowledge")]
+use crate::knowledge::graph_rag::EntityExtractorMode;
 use serde::Serialize;
 #[cfg(feature = "knowledge")]
 use std::str::FromStr;
-#[cfg(feature = "knowledge")]
-use crate::knowledge::graph_rag::EntityExtractorMode;
 
-pub mod multimodal;
 pub mod canvas;
+pub mod multimodal;
 pub mod post_process;
 
 #[derive(Clone)]
@@ -111,21 +114,24 @@ pub struct HierarchicalReasoningStats {
 impl System2 {
     pub async fn new(event_bus: Arc<EventBus>) -> Self {
         // Read model from env, default to qwen-plus
-        let model = env::var("OPENAI_MODEL_NAME")
-            .unwrap_or_else(|_| "qwen-plus".to_string());
-            
+        let model = env::var("OPENAI_MODEL_NAME").unwrap_or_else(|_| "qwen-plus".to_string());
+
         let llm_inner: Box<dyn LlmClient> = match OpenAiClient::new(&model) {
             Ok(client) => {
                 info!("System 2 initialized with OpenAI (model: {})", model);
                 Box::new(client)
             }
             Err(_) => {
-                let ollama_model = env::var("OLLAMA_MODEL").unwrap_or_else(|_| "llama3".to_string());
-                warn!("OpenAI API key not found, falling back to Ollama ({})", ollama_model);
+                let ollama_model =
+                    env::var("OLLAMA_MODEL").unwrap_or_else(|_| "llama3".to_string());
+                warn!(
+                    "OpenAI API key not found, falling back to Ollama ({})",
+                    ollama_model
+                );
                 Box::new(OllamaClient::new(&ollama_model))
             }
         };
-        
+
         // Wrap with Cache (Optimization 1)
         let llm: Box<dyn LlmClient> = Box::new(CachedLlmClient::new(llm_inner, 100));
         let llm_arc = Arc::new(llm);
@@ -134,39 +140,38 @@ impl System2 {
         let oracle = SafetyOracle::new(SafetyLevel::Strict);
 
         // --- Dynamic Model Selection (System 2) ---
-        
+
         let planner = Arc::new(TaskPlanner::new(llm_arc.clone()));
 
         let skills = Arc::new(RwLock::new(SkillRegistry::new()));
-        
+
         // Use configured skills dir or default
         let skills_dir = std::path::PathBuf::from("skills");
         let skill_manager = Arc::new(SkillManagerTool::new(&skills_dir));
 
         // Register Native Plugins
-        Self::register_plugins(skills.clone(), skill_manager.clone(), oracle.clone(), llm_arc.clone()).await;
+        Self::register_plugins(
+            skills.clone(),
+            skill_manager.clone(),
+            oracle.clone(),
+            llm_arc.clone(),
+        )
+        .await;
 
         // Initialize observability
         let storage = Arc::new(InMemoryStorage::new());
         let observability = Arc::new(ObservabilityManager::new(storage));
-        
+
         let react_engine = Arc::new(ObservableReActEngine::new(
-            llm_arc.clone(), 
-            skills.clone(), 
+            llm_arc.clone(),
+            skills.clone(),
             event_bus.clone(),
             observability.tracer(),
-            observability.breakpoint_manager()
+            observability.breakpoint_manager(),
         ));
 
-        // Initialize Middleware Pipeline
-        let pipeline = MiddlewarePipeline::new()
-            .with_middleware(SafetyMiddleware)
-            .with_middleware(CostGuardMiddleware::new()) // Add CostGuard early
-            .with_middleware(SemanticCacheMiddleware::new(0.92)) // Add Cache early
-            .with_middleware(PlanningMiddleware)
-            .with_middleware(RagMiddleware)
-            .with_middleware(SkillContextMiddleware);
-        let pipeline = Arc::new(pipeline);
+        // Initialize Middleware Pipeline (shared canonical stack)
+        let pipeline = Arc::new(Self::build_default_pipeline(&llm_arc));
 
         Self {
             llm: llm_arc,
@@ -190,8 +195,30 @@ impl System2 {
             observability,
         }
     }
-    
-    async fn register_plugins(skills: Arc<RwLock<SkillRegistry>>, skill_manager: Arc<SkillManagerTool>, oracle: SafetyOracle, llm_arc: Arc<Box<dyn LlmClient>>) {
+
+    /// Build the canonical System 2 middleware pipeline.
+    ///
+    /// Centralizing pipeline construction guarantees that both `new()` (cloud)
+    /// and `with_client()` (local/custom) share an identical middleware stack,
+    /// including `RoutingMiddleware`, which was previously only registered on
+    /// the local path.
+    fn build_default_pipeline(llm_arc: &Arc<Box<dyn LlmClient>>) -> MiddlewarePipeline {
+        MiddlewarePipeline::new()
+            .with_middleware(SafetyMiddleware)
+            .with_middleware(CostGuardMiddleware::new())
+            .with_middleware(SemanticCacheMiddleware::new(0.92))
+            .with_middleware(RoutingMiddleware::new(llm_arc.clone()))
+            .with_middleware(PlanningMiddleware)
+            .with_middleware(RagMiddleware)
+            .with_middleware(SkillContextMiddleware)
+    }
+
+    async fn register_plugins(
+        skills: Arc<RwLock<SkillRegistry>>,
+        skill_manager: Arc<SkillManagerTool>,
+        oracle: SafetyOracle,
+        llm_arc: Arc<Box<dyn LlmClient>>,
+    ) {
         let mut registry = skills.write().await;
         registry.register_plugin(Box::new(WebSearchPlugin::new()));
         registry.register_plugin(Box::new(HttpPlugin));
@@ -201,14 +228,14 @@ impl System2 {
         // Management Plugins
         registry.register_plugin(Box::new(InstallSkillPlugin::new(skill_manager.clone())));
         registry.register_plugin(Box::new(CreateSkillPlugin::new(skill_manager.clone())));
-        
+
         // Browser Plugin
         registry.register_plugin(Box::new(BrowserPlugin {}));
-        
+
         // Demo Plugins
         registry.register_plugin(Box::new(WeatherPlugin));
         registry.register_plugin(Box::new(CalculatorPlugin));
-        
+
         // MCP Meta Plugins
         registry.register_plugin(Box::new(McpResourcePlugin::new(skills.clone())));
         registry.register_plugin(Box::new(McpPromptPlugin::new(skills.clone())));
@@ -220,11 +247,11 @@ impl System2 {
         // We should recreate React Engine or update its reference.
         // Recreating is safer.
         self.react_engine = Arc::new(ObservableReActEngine::new(
-            self.llm.clone(), 
-            self.skills.clone(), 
+            self.llm.clone(),
+            self.skills.clone(),
             self.event_bus.clone(),
             self.observability.tracer(),
-            self.observability.breakpoint_manager()
+            self.observability.breakpoint_manager(),
         ));
         self
     }
@@ -239,39 +266,61 @@ impl System2 {
             cfg.mcts_simulations = config.mcts_simulations;
             cfg.mcts_exploration_weight = config.mcts_exploration_weight;
         }
-        
+
         if load_mcp {
             // Load MCP servers
             let skills = self.skills.clone();
             let mcp_servers = config.mcp_servers.clone();
-            
+
             tokio::spawn(async move {
                 for (name, server_config) in mcp_servers {
                     info!("Initializing MCP server: {}", name);
-                    match crate::tools::mcp::McpClient::new(&server_config.command, &server_config.args).await {
+                    match crate::tools::mcp::McpClient::new(
+                        &server_config.command,
+                        &server_config.args,
+                    )
+                    .await
+                    {
                         Ok(client) => {
                             let client_arc = Arc::new(client);
                             match client_arc.list_tools().await {
                                 Ok(tools) => {
                                     let mut registry = skills.write().await;
                                     for tool in tools {
-                                        info!("Registering MCP tool: {} (from server {})", tool.name, name);
-                                        registry.register_mcp_tool(tool.name, client_arc.clone(), tool.description, tool.input_schema);
+                                        info!(
+                                            "Registering MCP tool: {} (from server {})",
+                                            tool.name, name
+                                        );
+                                        registry.register_mcp_tool(
+                                            tool.name,
+                                            client_arc.clone(),
+                                            tool.description,
+                                            tool.input_schema,
+                                        );
                                     }
                                 }
-                                Err(e) => warn!("Failed to list tools from MCP server {}: {}", name, e),
+                                Err(e) => {
+                                    warn!("Failed to list tools from MCP server {}: {}", name, e)
+                                }
                             }
-                            
+
                             // Register Resources
                             match client_arc.list_resources().await {
                                 Ok(resources) => {
                                     let mut registry = skills.write().await;
                                     for resource in resources {
-                                        info!("Registering MCP resource: {} (from server {})", resource.name, name);
-                                        registry.register_mcp_resource(resource, client_arc.clone());
+                                        info!(
+                                            "Registering MCP resource: {} (from server {})",
+                                            resource.name, name
+                                        );
+                                        registry
+                                            .register_mcp_resource(resource, client_arc.clone());
                                     }
                                 }
-                                Err(e) => warn!("Failed to list resources from MCP server {}: {}", name, e),
+                                Err(e) => warn!(
+                                    "Failed to list resources from MCP server {}: {}",
+                                    name, e
+                                ),
                             }
 
                             // Register Prompts
@@ -279,11 +328,16 @@ impl System2 {
                                 Ok(prompts) => {
                                     let mut registry = skills.write().await;
                                     for prompt in prompts {
-                                        info!("Registering MCP prompt: {} (from server {})", prompt.name, name);
+                                        info!(
+                                            "Registering MCP prompt: {} (from server {})",
+                                            prompt.name, name
+                                        );
                                         registry.register_mcp_prompt(prompt, client_arc.clone());
                                     }
                                 }
-                                Err(e) => warn!("Failed to list prompts from MCP server {}: {}", name, e),
+                                Err(e) => {
+                                    warn!("Failed to list prompts from MCP server {}: {}", name, e)
+                                }
                             }
                         }
                         Err(e) => warn!("Failed to connect to MCP server {}: {}", name, e),
@@ -291,7 +345,7 @@ impl System2 {
                 }
             });
         }
-        
+
         self
     }
 
@@ -307,20 +361,23 @@ impl System2 {
         }
         self
     }
-    
+
     pub fn with_knowledge(
-        mut self, 
+        mut self,
         kg: Option<Arc<dyn KnowledgeGraph>>,
-        #[cfg(feature = "knowledge")]
-        vector_store: Option<Arc<VectorStore>>
+        #[cfg(feature = "knowledge")] vector_store: Option<Arc<VectorStore>>,
     ) -> Self {
         self.kg = kg;
-        
+
         #[cfg(feature = "knowledge")]
         {
             self.vector_store = vector_store.clone();
             if let Some(vs) = vector_store {
-                self.consolidator = Some(Arc::new(MemoryConsolidator::new(self.llm.clone(), Some(vs), Some(self.event_bus.clone()))));
+                self.consolidator = Some(Arc::new(MemoryConsolidator::new(
+                    self.llm.clone(),
+                    Some(vs),
+                    Some(self.event_bus.clone()),
+                )));
             }
         }
         self
@@ -330,7 +387,7 @@ impl System2 {
         // Wrap with Cache
         let llm: Box<dyn LlmClient> = Box::new(CachedLlmClient::new(llm_inner, 100));
         let llm_arc = Arc::new(llm);
-        
+
         let skills = Arc::new(RwLock::new(SkillRegistry::new()));
         let oracle = SafetyOracle::new(SafetyLevel::Strict);
 
@@ -338,39 +395,30 @@ impl System2 {
 
         let skill_manager = Arc::new(SkillManagerTool::new(&std::path::PathBuf::from("skills")));
 
-        // Register Native Plugins
-        {
-            let mut registry = skills.write().await;
-            registry.register_plugin(Box::new(WebSearchPlugin::new()));
-            registry.register_plugin(Box::new(HttpPlugin));
-            registry.register_plugin(Box::new(VisionPlugin::new(llm_arc.clone())));
-            registry.register_plugin(Box::new(BashPlugin::new(oracle.clone())));
-            registry.register_plugin(Box::new(FilePlugin::new(oracle.clone())));
-            registry.register_plugin(Box::new(InstallSkillPlugin::new(skill_manager.clone())));
-            registry.register_plugin(Box::new(CreateSkillPlugin::new(skill_manager.clone())));
-        }
+        // Register Native Plugins (shared with `new()` so both code paths expose
+        // the same toolset: browser, demo and MCP meta plugins included).
+        Self::register_plugins(
+            skills.clone(),
+            skill_manager.clone(),
+            oracle.clone(),
+            llm_arc.clone(),
+        )
+        .await;
 
         // Initialize observability
         let storage = Arc::new(InMemoryStorage::new());
         let observability = Arc::new(ObservabilityManager::new(storage));
-        
+
         let react_engine = Arc::new(ObservableReActEngine::new(
-            llm_arc.clone(), 
-            skills.clone(), 
+            llm_arc.clone(),
+            skills.clone(),
             event_bus.clone(),
             observability.tracer(),
-            observability.breakpoint_manager()
+            observability.breakpoint_manager(),
         ));
 
-        // Initialize Middleware Pipeline
-        let pipeline = Arc::new(MiddlewarePipeline::new()
-            .with_middleware(SafetyMiddleware)
-            .with_middleware(CostGuardMiddleware::new()) // Add CostGuard early
-            .with_middleware(SemanticCacheMiddleware::new(0.92)) // Add Cache early
-            .with_middleware(RoutingMiddleware::new(llm_arc.clone()))
-            .with_middleware(PlanningMiddleware)
-            .with_middleware(RagMiddleware)
-            .with_middleware(SkillContextMiddleware));
+        // Initialize Middleware Pipeline (shared canonical stack)
+        let pipeline = Arc::new(Self::build_default_pipeline(&llm_arc));
 
         Self {
             llm: llm_arc,
@@ -395,11 +443,15 @@ impl System2 {
         }
     }
 
-    pub async fn consolidate_memory(&self, _memory: &EpisodicMemory, _session_id: &str) -> Result<()> {
+    pub async fn consolidate_memory(
+        &self,
+        _memory: &EpisodicMemory,
+        _session_id: &str,
+    ) -> Result<()> {
         #[cfg(feature = "knowledge")]
         {
             if let Some(consolidator) = &self.consolidator {
-                 consolidator.consolidate(_memory, _session_id).await?;
+                consolidator.consolidate(_memory, _session_id).await?;
             }
         }
         Ok(())
@@ -424,9 +476,10 @@ impl System2 {
     pub async fn set_graph_rag_entity_mode(&self, _mode: &str) {
         #[cfg(feature = "knowledge")]
         {
-        let parsed = EntityExtractorMode::from_str(_mode).unwrap_or(EntityExtractorMode::Hybrid);
-        let mut cfg = self.graph_rag_entity_mode.write().await;
-        *cfg = parsed;
+            let parsed =
+                EntityExtractorMode::from_str(_mode).unwrap_or(EntityExtractorMode::Hybrid);
+            let mut cfg = self.graph_rag_entity_mode.write().await;
+            *cfg = parsed;
         }
     }
 }
@@ -456,13 +509,17 @@ impl CognitiveSystem for System2 {
 
         // 2. Execute Middleware Pipeline
         let mut final_context = context.to_vec();
-        
+
         // Use helper for multimodal injection
         multimodal::inject_vision_content(input, &mut final_context).await;
-        
-        match self.pipeline.execute(input, &mut final_context, &state).await {
+
+        match self
+            .pipeline
+            .execute(input, &mut final_context, &state)
+            .await
+        {
             Ok(Some(result)) => return Ok(result),
-            Ok(None) => {}, // Continue
+            Ok(None) => {} // Continue
             Err(e) => {
                 warn!("Middleware Error: {}", e);
                 // Wrap in CrabletError
@@ -472,7 +529,7 @@ impl CognitiveSystem for System2 {
 
         // 3. Calculate dynamic steps based on complexity
         let complexity = Classifier::assess_complexity(input);
-        // Base: 5 steps. 
+        // Base: 5 steps.
         // Low complexity (<0.3) -> 3 steps.
         // High complexity (>0.8) -> 10 steps.
         let max_steps = if complexity < 0.3 {
@@ -482,8 +539,11 @@ impl CognitiveSystem for System2 {
         } else {
             5
         };
-        
-        info!("Dynamic ReAct Config: Complexity={:.2}, MaxSteps={}", complexity, max_steps);
+
+        info!(
+            "Dynamic ReAct Config: Complexity={:.2}, MaxSteps={}",
+            complexity, max_steps
+        );
         {
             let mut stats = self.hierarchical_stats.write().await;
             stats.total_requests += 1;
@@ -495,7 +555,9 @@ impl CognitiveSystem for System2 {
             meta_traces.push(step);
         }
         if hierarchical_cfg.enabled && complexity >= hierarchical_cfg.meta_threshold {
-            self.event_bus.publish(AgentEvent::CognitiveLayerChanged { layer: "meta_reasoning".to_string() });
+            self.event_bus.publish(AgentEvent::CognitiveLayerChanged {
+                layer: "meta_reasoning".to_string(),
+            });
             {
                 let mut stats = self.hierarchical_stats.write().await;
                 stats.meta_activations += 1;
@@ -510,7 +572,10 @@ impl CognitiveSystem for System2 {
                 },
             );
             if let Ok(guidance) = mcts.solve(input).await {
-                final_context.push(Message::system(format!("Meta reasoning guidance (MCTS): {}", guidance)));
+                final_context.push(Message::system(format!(
+                    "Meta reasoning guidance (MCTS): {}",
+                    guidance
+                )));
                 meta_traces.push(TraceStep {
                     step: 0,
                     thought: "Layer3 Meta-Reasoning".to_string(),
@@ -520,8 +585,14 @@ impl CognitiveSystem for System2 {
                 });
             }
         } else if hierarchical_cfg.enabled && complexity >= hierarchical_cfg.deliberate_threshold {
-            self.event_bus.publish(AgentEvent::CognitiveLayerChanged { layer: "deliberate_reasoning".to_string() });
-            let strategy = if should_use_dfs(input) { SearchStrategy::DFS } else { SearchStrategy::BFS };
+            self.event_bus.publish(AgentEvent::CognitiveLayerChanged {
+                layer: "deliberate_reasoning".to_string(),
+            });
+            let strategy = if should_use_dfs(input) {
+                SearchStrategy::DFS
+            } else {
+                SearchStrategy::BFS
+            };
             {
                 let mut stats = self.hierarchical_stats.write().await;
                 stats.deliberate_activations += 1;
@@ -539,7 +610,10 @@ impl CognitiveSystem for System2 {
                 },
             );
             if let Ok(guidance) = tot.solve(input).await {
-                final_context.push(Message::system(format!("Deliberate reasoning guidance (ToT): {}", guidance)));
+                final_context.push(Message::system(format!(
+                    "Deliberate reasoning guidance (ToT): {}",
+                    guidance
+                )));
                 meta_traces.push(TraceStep {
                     step: 0,
                     thought: "Layer2 Deliberate-Reasoning".to_string(),
@@ -552,22 +626,34 @@ impl CognitiveSystem for System2 {
 
         // Generate execution ID for observability
         let execution_id = uuid::Uuid::new_v4().to_string();
-        
+
         // Start trace session
-        self.observability.start_session(execution_id.clone(), "system2".to_string()).await;
-        
+        self.observability
+            .start_session(execution_id.clone(), "system2".to_string())
+            .await;
+
         // ReAct Loop (Execution Engine)
-        let result = match self.react_engine.execute(&execution_id, &final_context, max_steps).await {
+        let result = match self
+            .react_engine
+            .execute(&execution_id, &final_context, max_steps)
+            .await
+        {
             Ok((response, traces)) => {
                 if hierarchical_cfg.enabled && needs_meta_switch(&response, &traces) {
-                    self.event_bus.publish(AgentEvent::CognitiveLayerChanged { layer: "meta_reasoning_switch".to_string() });
+                    self.event_bus.publish(AgentEvent::CognitiveLayerChanged {
+                        layer: "meta_reasoning_switch".to_string(),
+                    });
                     {
                         let mut stats = self.hierarchical_stats.write().await;
                         stats.strategy_switches += 1;
                     }
                     let mut retry_context = final_context.clone();
                     retry_context.push(Message::system("当前策略效果不佳，请切换思路：避免重复工具调用，优先综合已有观察给出结论。"));
-                    match self.react_engine.execute(&execution_id, &retry_context, (max_steps + 2).min(12)).await {
+                    match self
+                        .react_engine
+                        .execute(&execution_id, &retry_context, (max_steps + 2).min(12))
+                        .await
+                    {
                         Ok((retry_response, mut retry_traces)) => {
                             let mut combined = meta_traces.clone();
                             combined.extend(traces);
@@ -576,18 +662,31 @@ impl CognitiveSystem for System2 {
                                 thought: "Layer3 Strategy Switch".to_string(),
                                 action: Some("react_retry".to_string()),
                                 action_input: None,
-                                observation: Some("Switched from initial ReAct run to revised strategy".to_string()),
+                                observation: Some(
+                                    "Switched from initial ReAct run to revised strategy"
+                                        .to_string(),
+                                ),
                             });
                             combined.append(&mut retry_traces);
                             #[cfg(feature = "knowledge")]
-                            post_process::update_semantic_cache(input, &retry_response, &self.vector_store).await;
+                            post_process::update_semantic_cache(
+                                input,
+                                &retry_response,
+                                &self.vector_store,
+                            )
+                            .await;
                             Ok((retry_response, combined))
                         }
                         Err(_) => {
                             let mut combined = meta_traces.clone();
                             combined.extend(traces);
                             #[cfg(feature = "knowledge")]
-                            post_process::update_semantic_cache(input, &response, &self.vector_store).await;
+                            post_process::update_semantic_cache(
+                                input,
+                                &response,
+                                &self.vector_store,
+                            )
+                            .await;
                             Ok((response, combined))
                         }
                     }
@@ -598,7 +697,7 @@ impl CognitiveSystem for System2 {
                     post_process::update_semantic_cache(input, &response, &self.vector_store).await;
                     Ok((response, combined))
                 }
-            },
+            }
             Err(e) => {
                 warn!("ReAct Engine Critical Failure: {}", e);
                 Err(CrabletError::Unknown(e.to_string()))
@@ -609,16 +708,18 @@ impl CognitiveSystem for System2 {
         if let Ok((response, _)) = &result {
             canvas::detect_and_publish_canvas(response, &self.event_bus);
         }
-        
+
         result
     }
 }
 
 fn should_use_dfs(input: &str) -> bool {
     let lower = input.to_lowercase();
-    ["debug", "fix", "repair", "trace", "定位", "修复", "排查", "实现"]
-        .iter()
-        .any(|k| lower.contains(k))
+    [
+        "debug", "fix", "repair", "trace", "定位", "修复", "排查", "实现",
+    ]
+    .iter()
+    .any(|k| lower.contains(k))
 }
 
 fn needs_meta_switch(response: &str, traces: &[TraceStep]) -> bool {
@@ -639,7 +740,10 @@ fn needs_meta_switch(response: &str, traces: &[TraceStep]) -> bool {
     repeat_count >= 2
 }
 
-async fn build_rag_trace_step(input: &str, rag_trace: &Arc<RwLock<Option<crate::cognitive::middleware::RagTracePayload>>>) -> Option<TraceStep> {
+async fn build_rag_trace_step(
+    input: &str,
+    rag_trace: &Arc<RwLock<Option<crate::cognitive::middleware::RagTracePayload>>>,
+) -> Option<TraceStep> {
     let payload = rag_trace.read().await.clone()?;
     let refs_count = payload.refs.len();
     let observation = serde_json::json!({

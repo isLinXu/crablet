@@ -1,10 +1,10 @@
-use std::sync::Arc;
-use std::collections::VecDeque;
-use anyhow::{Result, anyhow};
 use crate::cognitive::llm::LlmClient;
 use crate::types::Message;
+use anyhow::{anyhow, Result};
 use serde::Serialize;
-use tracing::{info, debug};
+use std::collections::VecDeque;
+use std::sync::Arc;
+use tracing::{debug, info};
 
 #[derive(Clone, Debug)]
 pub struct TotConfig {
@@ -70,7 +70,9 @@ impl TreeOfThoughts {
             if node.depth >= self.config.max_depth {
                 continue;
             }
-            let candidates = self.generate_thoughts(&node, self.config.branching_factor).await?;
+            let candidates = self
+                .generate_thoughts(&node, self.config.branching_factor)
+                .await?;
             for mut candidate in candidates {
                 let score = self.evaluate_thought(&candidate).await?;
                 candidate.score = score;
@@ -84,7 +86,9 @@ impl TreeOfThoughts {
                 }
             }
         }
-        best_solution.map(|n| n.content).ok_or_else(|| anyhow!("Failed to find a solution with ToT BFS"))
+        best_solution
+            .map(|n| n.content)
+            .ok_or_else(|| anyhow!("Failed to find a solution with ToT BFS"))
     }
 
     async fn solve_dfs(&self, problem: &str) -> Result<String> {
@@ -96,7 +100,9 @@ impl TreeOfThoughts {
             if node.depth >= self.config.max_depth {
                 continue;
             }
-            let candidates = self.generate_thoughts(&node, self.config.branching_factor).await?;
+            let candidates = self
+                .generate_thoughts(&node, self.config.branching_factor)
+                .await?;
             let mut scored = Vec::new();
             for mut candidate in candidates {
                 let score = self.evaluate_thought(&candidate).await?;
@@ -110,12 +116,18 @@ impl TreeOfThoughts {
                     scored.push(candidate);
                 }
             }
-            scored.sort_by(|a, b| a.score.partial_cmp(&b.score).unwrap_or(std::cmp::Ordering::Equal));
+            scored.sort_by(|a, b| {
+                a.score
+                    .partial_cmp(&b.score)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
             for candidate in scored {
                 stack.push(candidate);
             }
         }
-        best_solution.map(|n| n.content).ok_or_else(|| anyhow!("Failed to find a solution with ToT DFS"))
+        best_solution
+            .map(|n| n.content)
+            .ok_or_else(|| anyhow!("Failed to find a solution with ToT DFS"))
     }
 
     async fn solve_beam(&self, problem: &str) -> Result<String> {
@@ -130,7 +142,9 @@ impl TreeOfThoughts {
                 if node.depth >= self.config.max_depth {
                     continue;
                 }
-                let candidates = self.generate_thoughts(&node, self.config.branching_factor).await?;
+                let candidates = self
+                    .generate_thoughts(&node, self.config.branching_factor)
+                    .await?;
                 for mut candidate in candidates {
                     let score = self.evaluate_thought(&candidate).await?;
                     candidate.score = score;
@@ -144,13 +158,22 @@ impl TreeOfThoughts {
                     }
                 }
             }
-            next_frontier.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
-            frontier = next_frontier.into_iter().take(self.config.beam_width).collect();
+            next_frontier.sort_by(|a, b| {
+                b.score
+                    .partial_cmp(&a.score)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+            frontier = next_frontier
+                .into_iter()
+                .take(self.config.beam_width)
+                .collect();
             if frontier.is_empty() {
                 break;
             }
         }
-        best_solution.map(|n| n.content).ok_or_else(|| anyhow!("Failed to find a solution with ToT Beam"))
+        best_solution
+            .map(|n| n.content)
+            .ok_or_else(|| anyhow!("Failed to find a solution with ToT Beam"))
     }
 
     fn root(problem: &str) -> ThoughtNode {
@@ -172,25 +195,32 @@ impl TreeOfThoughts {
              Generate {} distinct next steps or thoughts to advance towards the solution. \
              Each thought should be concise. \
              Output format: JSON list of strings.",
-             if parent.parent_id.is_none() { "Start" } else { "..." }, 
-             parent.content, 
-             n
+            if parent.parent_id.is_none() {
+                "Start"
+            } else {
+                "..."
+            },
+            parent.content,
+            n
         );
 
         let response = self.llm.chat_complete(&[Message::user(&prompt)]).await?;
-        
+
         // Naive JSON extraction
         let json_str = extract_json(&response).unwrap_or("[]");
         let thoughts_text: Vec<String> = serde_json::from_str(json_str).unwrap_or_default();
-        
-        let nodes = thoughts_text.into_iter().map(|content| ThoughtNode {
-            id: uuid::Uuid::new_v4().to_string(),
-            content,
-            parent_id: Some(parent.id.clone()),
-            score: 0.0, // To be evaluated
-            depth: parent.depth + 1,
-            children_ids: Vec::new(),
-        }).collect();
+
+        let nodes = thoughts_text
+            .into_iter()
+            .map(|content| ThoughtNode {
+                id: uuid::Uuid::new_v4().to_string(),
+                content,
+                parent_id: Some(parent.id.clone()),
+                score: 0.0, // To be evaluated
+                depth: parent.depth + 1,
+                children_ids: Vec::new(),
+            })
+            .collect();
 
         Ok(nodes)
     }
@@ -202,19 +232,20 @@ impl TreeOfThoughts {
              \n\
              Rate it from 0.0 to 1.0 based on correctness, feasibility, and progress.\n\
              Output ONLY the float number (e.g., 0.85).",
-             node.content
+            node.content
         );
 
         let response = self.llm.chat_complete(&[Message::user(&prompt)]).await?;
-        
+
         // Extract float robustly
         // Try to find a floating point number in the string
-        let score = response.chars()
+        let score = response
+            .chars()
             .filter(|c| c.is_numeric() || *c == '.')
             .collect::<String>()
             .parse::<f32>()
             .unwrap_or(0.5);
-            
+
         Ok(score.clamp(0.0, 1.0))
     }
 }

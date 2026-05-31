@@ -1,14 +1,18 @@
+use super::types::{RpcError, RpcRequest, RpcResponse};
+use serde_json::Value;
 use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
-use serde_json::Value;
-use super::types::{RpcRequest, RpcResponse, RpcError};
 use tokio::sync::RwLock;
 
 // Define a type for async RPC handlers
 // Handlers take optional params and return a Future that resolves to a Result
-type RpcHandler = Box<dyn Fn(Option<Value>) -> Pin<Box<dyn Future<Output = Result<Option<Value>, RpcError>> + Send>> + Send + Sync>;
+type RpcHandler = Box<
+    dyn Fn(Option<Value>) -> Pin<Box<dyn Future<Output = Result<Option<Value>, RpcError>> + Send>>
+        + Send
+        + Sync,
+>;
 
 #[derive(Clone)]
 pub struct RpcDispatcher {
@@ -34,7 +38,10 @@ impl RpcDispatcher {
         Fut: Future<Output = Result<Option<Value>, RpcError>> + Send + 'static,
     {
         let mut map = self.handlers.write().await;
-        map.insert(method.to_string(), Box::new(move |params| Box::pin(handler(params))));
+        map.insert(
+            method.to_string(),
+            Box::new(move |params| Box::pin(handler(params))),
+        );
     }
 
     pub async fn dispatch(&self, req: RpcRequest) -> RpcResponse {
@@ -45,7 +52,11 @@ impl RpcDispatcher {
                 Err(e) => RpcResponse::new(req.id, None, Some(e)),
             }
         } else {
-            RpcResponse::new(req.id, None, Some(RpcError::new(-32601, "Method not found", None)))
+            RpcResponse::new(
+                req.id,
+                None,
+                Some(RpcError::new(-32601, "Method not found", None)),
+            )
         }
     }
 }
@@ -57,9 +68,9 @@ mod tests {
     #[tokio::test]
     async fn test_register_and_dispatch() {
         let dispatcher = RpcDispatcher::new();
-        dispatcher.register("echo", |params| async {
-            Ok(params)
-        }).await;
+        dispatcher
+            .register("echo", |params| async { Ok(params) })
+            .await;
 
         let req = RpcRequest {
             jsonrpc: "2.0".to_string(),
@@ -85,15 +96,22 @@ mod tests {
         let resp = dispatcher.dispatch(req).await;
         assert!(resp.result.is_none());
         assert!(resp.error.is_some());
-        assert_eq!(resp.error.unwrap().code, -32601);
+        assert_eq!(
+            resp.error
+                .expect("unknown method should return an RPC error")
+                .code,
+            -32601
+        );
     }
 
     #[tokio::test]
     async fn test_dispatch_handler_error() {
         let dispatcher = RpcDispatcher::new();
-        dispatcher.register("fail", |_params| async {
-            Err(RpcError::new(-32000, "Custom error", None))
-        }).await;
+        dispatcher
+            .register("fail", |_params| async {
+                Err(RpcError::new(-32000, "Custom error", None))
+            })
+            .await;
 
         let req = RpcRequest {
             jsonrpc: "2.0".to_string(),
@@ -103,7 +121,12 @@ mod tests {
         };
         let resp = dispatcher.dispatch(req).await;
         assert!(resp.result.is_none());
-        assert_eq!(resp.error.unwrap().code, -32000);
+        assert_eq!(
+            resp.error
+                .expect("handler failure should return an RPC error")
+                .code,
+            -32000
+        );
     }
 
     #[tokio::test]

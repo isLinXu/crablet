@@ -8,10 +8,10 @@
 
 use anyhow::Result;
 use regex::Regex;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
-use crate::types::{Message, ContentPart};
+use crate::types::{ContentPart, Message};
 
 /// 复杂度级别
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -65,31 +65,90 @@ impl Default for ComplexityAnalyzer {
 impl ComplexityAnalyzer {
     pub fn new() -> Self {
         let mut technical_terms = HashSet::new();
-        technical_terms.extend(vec![
-            "算法", "模型", "架构", "协议", "接口", "组件",
-            "优化", "并发", "异步", "同步", "线程", "进程",
-            "神经网络", "深度学习", "机器学习", "人工智能",
-            "区块链", "加密", "哈希", "签名", "证书",
-            "量子", "纠缠", "叠加", "观测", "坍缩",
-            "微分", "积分", "矩阵", "向量", "张量",
-            "概率", "统计", "分布", "假设", "检验",
-        ].iter().map(|s| s.to_string()));
+        technical_terms.extend(
+            vec![
+                "算法",
+                "模型",
+                "架构",
+                "协议",
+                "接口",
+                "组件",
+                "优化",
+                "并发",
+                "异步",
+                "同步",
+                "线程",
+                "进程",
+                "神经网络",
+                "深度学习",
+                "机器学习",
+                "人工智能",
+                "区块链",
+                "加密",
+                "哈希",
+                "签名",
+                "证书",
+                "量子",
+                "纠缠",
+                "叠加",
+                "观测",
+                "坍缩",
+                "微分",
+                "积分",
+                "矩阵",
+                "向量",
+                "张量",
+                "概率",
+                "统计",
+                "分布",
+                "假设",
+                "检验",
+            ]
+            .iter()
+            .map(|s| s.to_string()),
+        );
 
         let mut domain_keywords = HashSet::new();
-        domain_keywords.extend(vec![
-            "医学", "法律", "金融", "工程", "科学", "艺术",
-            "哲学", "历史", "文学", "音乐", "体育", "教育",
-            "计算机", "物理", "化学", "生物", "数学", "经济",
-            "心理学", "社会学", "政治学", "人类学", "考古学",
-        ].iter().map(|s| s.to_string()));
+        domain_keywords.extend(
+            vec![
+                "医学",
+                "法律",
+                "金融",
+                "工程",
+                "科学",
+                "艺术",
+                "哲学",
+                "历史",
+                "文学",
+                "音乐",
+                "体育",
+                "教育",
+                "计算机",
+                "物理",
+                "化学",
+                "生物",
+                "数学",
+                "经济",
+                "心理学",
+                "社会学",
+                "政治学",
+                "人类学",
+                "考古学",
+            ]
+            .iter()
+            .map(|s| s.to_string()),
+        );
 
         let mut creativity_keywords = HashSet::new();
-        creativity_keywords.extend(vec![
-            "创作", "设计", "发明", "创新", "想象", "构思",
-            "艺术", "文学", "诗歌", "故事", "小说", "绘画",
-            "音乐", "作曲", "编曲", "演奏", "表演", "导演",
-            "创意", "灵感", "独特", "原创", "新颖", "突破",
-        ].iter().map(|s| s.to_string()));
+        creativity_keywords.extend(
+            vec![
+                "创作", "设计", "发明", "创新", "想象", "构思", "艺术", "文学", "诗歌", "故事",
+                "小说", "绘画", "音乐", "作曲", "编曲", "演奏", "表演", "导演", "创意", "灵感",
+                "独特", "原创", "新颖", "突破",
+            ]
+            .iter()
+            .map(|s| s.to_string()),
+        );
 
         Self {
             technical_terms,
@@ -102,13 +161,15 @@ impl ComplexityAnalyzer {
     pub fn analyze(&self, messages: &[Message]) -> Result<Complexity> {
         let characteristics = self.extract_characteristics(messages)?;
         let complexity = self.calculate_complexity(&characteristics);
-        
+
         tracing::debug!(
             "Complexity analysis: {:?} (words: {}, terms: {}, questions: {})",
-            complexity, characteristics.word_count, 
-            characteristics.technical_terms, characteristics.question_count
+            complexity,
+            characteristics.word_count,
+            characteristics.technical_terms,
+            characteristics.question_count
         );
-        
+
         Ok(complexity)
     }
 
@@ -124,13 +185,16 @@ impl ComplexityAnalyzer {
         let mut detected_domains = Vec::new();
 
         // 中文分词正则 (简化版)
-        let word_regex = Regex::new(r"[\u4e00-\u9fa5]+|[a-zA-Z]+|\d+").unwrap();
+        let word_regex = Regex::new(r"[\u4e00-\u9fa5]+|[a-zA-Z]+|\d+")?;
         // 句子结束符
-        let sentence_regex = Regex::new(r"[。！？.!?]+").unwrap();
+        let sentence_regex = Regex::new(r"[。！？.!?]+")?;
         // 问句检测
-        let question_regex = Regex::new(r"[？?]|(?:什么|为什么|如何|怎么|哪里|谁|何时|多少|是否|能否|可以吗)").unwrap();
+        let question_regex =
+            Regex::new(r"[？?]|(?:什么|为什么|如何|怎么|哪里|谁|何时|多少|是否|能否|可以吗)")?;
         // 指令检测
-        let instruction_regex = Regex::new(r"(?:请|帮我|给我|需要|要求|请分析|请解释|请总结|请列出|请描述|请比较|请评估)").unwrap();
+        let instruction_regex = Regex::new(
+            r"(?:请|帮我|给我|需要|要求|请分析|请解释|请总结|请列出|请描述|请比较|请评估)",
+        )?;
 
         for message in messages {
             if let Some(content) = &message.content {
@@ -138,38 +202,42 @@ impl ComplexityAnalyzer {
                     if let ContentPart::Text { text } = part {
                         total_text.push_str(text);
                         total_text.push(' ');
-                        
+
                         // 词数统计
                         let words: Vec<_> = word_regex.find_iter(text).collect();
                         word_count += words.len();
-                        
+
                         // 句子数统计
                         let sentences: Vec<_> = sentence_regex.find_iter(text).collect();
                         sentence_count += sentences.len().max(1); // 至少1句
-                        
+
                         // 专业术语检测
                         for term in &self.technical_terms {
                             if text.to_lowercase().contains(&term.to_lowercase()) {
                                 technical_terms += 1;
                             }
                         }
-                        
+
                         // 问句检测
                         let questions: Vec<_> = question_regex.find_iter(text).collect();
                         question_count += questions.len();
-                        
+
                         // 指令检测
                         let instructions: Vec<_> = instruction_regex.find_iter(text).collect();
                         instruction_count += instructions.len();
-                        
+
                         // 创造性评分
                         for keyword in &self.creativity_keywords {
                             if text.contains(keyword) {
                                 creativity_score += 0.2;
                             }
                         }
-                        creativity_score = if creativity_score > 1.0 { 1.0 } else { creativity_score };
-                        
+                        creativity_score = if creativity_score > 1.0 {
+                            1.0
+                        } else {
+                            creativity_score
+                        };
+
                         // 领域检测
                         for domain in &self.domain_keywords {
                             if text.contains(domain) && !detected_domains.contains(domain) {
@@ -195,7 +263,7 @@ impl ComplexityAnalyzer {
     /// 根据特征计算复杂度
     pub fn calculate_complexity(&self, chars: &TaskCharacteristics) -> Complexity {
         let score = self.calculate_complexity_score(chars);
-        
+
         // 根据总分确定复杂度
         match score {
             s if s < 3.5 => Complexity::Simple,
@@ -207,7 +275,7 @@ impl ComplexityAnalyzer {
     /// 计算复杂度分数 (0.0 - 10.0+)
     pub fn calculate_complexity_score(&self, chars: &TaskCharacteristics) -> f32 {
         let mut score = 0.0f32;
-        
+
         // 1. 规模评分 (权重: 2.0)
         if chars.word_count > 500 {
             score += 2.0;
@@ -216,7 +284,7 @@ impl ComplexityAnalyzer {
         } else if chars.word_count > 50 {
             score += 0.5;
         }
-        
+
         // 2. 专业性评分 (权重: 3.0)
         let term_density = if chars.word_count > 0 {
             chars.technical_terms as f32 / chars.word_count as f32
@@ -230,7 +298,7 @@ impl ComplexityAnalyzer {
         } else if term_density > 0.03 {
             score += 0.8;
         }
-        
+
         // 3. 推理深度评分 (权重: 2.5)
         if chars.question_count >= 5 {
             score += 2.5;
@@ -239,14 +307,14 @@ impl ComplexityAnalyzer {
         } else if chars.question_count >= 1 {
             score += 0.6;
         }
-        
+
         // 4. 结构复杂度评分 (权重: 1.5)
         if chars.sentence_count > 10 {
             score += 1.5;
         } else if chars.sentence_count > 5 {
             score += 0.8;
         }
-        
+
         // 5. 创造性与领域多样性 (权重: 1.0)
         if chars.creativity_score > 0.6 {
             score += 0.6;
@@ -256,7 +324,7 @@ impl ComplexityAnalyzer {
         } else if !chars.detected_domains.is_empty() {
             score += 0.2;
         }
-        
+
         score
     }
 }
@@ -268,15 +336,15 @@ mod tests {
     #[test]
     fn test_simple_complexity() {
         let analyzer = ComplexityAnalyzer::new();
-        
+
         let messages = vec![Message {
             role: "user".to_string(),
-            content: Some(vec![ContentPart::Text { 
-                text: "Hello, how are you?".to_string() 
+            content: Some(vec![ContentPart::Text {
+                text: "Hello, how are you?".to_string(),
             }]),
             ..Default::default()
         }];
-        
+
         let complexity = analyzer.analyze(&messages).unwrap();
         assert_eq!(complexity, Complexity::Simple);
     }
@@ -284,10 +352,10 @@ mod tests {
     #[test]
     fn test_complex_complexity() {
         let analyzer = ComplexityAnalyzer::new();
-        
+
         let messages = vec![Message {
             role: "user".to_string(),
-            content: Some(vec![ContentPart::Text { 
+            content: Some(vec![ContentPart::Text {
                 text: r#"
                 请详细分析量子计算对现代密码学的影响，包括：
                 1. 量子算法（如Shor算法）如何威胁RSA和椭圆曲线加密
@@ -295,11 +363,12 @@ mod tests {
                 3. 当前NIST后量子密码标准的进展和评估
                 4. 企业和政府应该如何准备迁移到后量子密码系统
                 请提供具体的数学原理说明、实际案例分析和时间线预测。
-                "#.to_string() 
+                "#
+                .to_string(),
             }]),
             ..Default::default()
         }];
-        
+
         let complexity = analyzer.analyze(&messages).unwrap();
         assert_ne!(complexity, Complexity::Simple);
     }

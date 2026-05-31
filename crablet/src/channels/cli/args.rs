@@ -246,7 +246,7 @@ pub enum Commands {
         session: Option<String>,
     },
     /// Run a single prompt
-    Run { 
+    Run {
         /// The prompt to execute
         prompt: String,
         /// Session ID (optional)
@@ -257,7 +257,7 @@ pub enum Commands {
     Status,
     /// Configuration management
     Config,
-    /// Start the server (Telegram bot, API gateway)
+    /// Start channel connectors and bots
     Serve,
     /// Knowledge Management
     #[cfg(feature = "knowledge")]
@@ -282,11 +282,11 @@ pub enum Commands {
         /// Path to Lua script
         path: String,
     },
-    /// Web UI
+    /// Start the unified Web UI + API gateway (defaults to token auth)
     #[cfg(feature = "web")]
     ServeWeb {
         /// Port to listen on
-        #[arg(long, default_value = "3000")]
+        #[arg(long, default_value = "18790")]
         port: u16,
     },
     /// Skill Development Tools
@@ -295,7 +295,7 @@ pub enum Commands {
         subcmd: SkillSubcommands,
     },
 
-    /// Start the Crablet Gateway
+    /// Start the unified Crablet gateway with explicit runtime controls
     #[cfg(feature = "web")]
     Gateway {
         /// Host to bind to
@@ -304,8 +304,44 @@ pub enum Commands {
         /// Port to listen on
         #[arg(long, default_value = "18790")]
         port: u16,
+        /// Authentication mode for the gateway
+        #[arg(long)]
+        auth_mode: Option<String>,
+        /// Enable distributed harness coordination
+        #[arg(long, default_value_t = false)]
+        distributed: bool,
+        /// Distributed node identifier
+        #[arg(long)]
+        distributed_node_id: Option<String>,
+        /// Distributed node address advertised to peers
+        #[arg(long)]
+        distributed_node_address: Option<String>,
+        /// Distributed node port advertised to peers
+        #[arg(long)]
+        distributed_node_port: Option<u16>,
+        /// Distributed backend type (redis, memory, etcd, consul)
+        #[arg(long)]
+        distributed_backend: Option<String>,
+        /// Distributed backend connection string
+        #[arg(long)]
+        distributed_backend_uri: Option<String>,
+        /// Distributed lock TTL in seconds
+        #[arg(long)]
+        distributed_lock_ttl_secs: Option<u64>,
+        /// Distributed heartbeat interval in seconds
+        #[arg(long)]
+        distributed_heartbeat_interval_secs: Option<u64>,
+        /// Distributed node timeout in seconds
+        #[arg(long)]
+        distributed_node_timeout_secs: Option<u64>,
+        /// Distributed RPC path exposed by the gateway
+        #[arg(long)]
+        distributed_rpc_path: Option<String>,
+        /// Bearer token forwarded to remote gateway RPC calls
+        #[arg(long)]
+        distributed_rpc_bearer_token: Option<String>,
     },
-    
+
     /// Deep Research Mode
     Research {
         /// Topic to research
@@ -314,14 +350,14 @@ pub enum Commands {
         #[arg(short, long, default_value = "3")]
         depth: usize,
     },
-    
+
     /// Debug a session
     Debug {
         /// Session ID to replay
         #[arg(index = 1)]
         session_id: String,
     },
-    
+
     /// Perform a security audit on a codebase
     Audit {
         /// Path to the codebase
@@ -336,31 +372,35 @@ pub enum Commands {
         /// Path to the data file
         path: String,
         /// Goal of the analysis
-        #[arg(short, long, default_value = "Analyze the data distribution and summary statistics")]
+        #[arg(
+            short,
+            long,
+            default_value = "Analyze the data distribution and summary statistics"
+        )]
         goal: String,
     },
-    
+
     /// Auto-Working Task Management
     #[cfg(feature = "auto-working")]
     Task {
         #[command(subcommand)]
         subcmd: TaskSubcommands,
     },
-    
+
     /// Workflow Management
     #[cfg(feature = "auto-working")]
     Workflow {
         #[command(subcommand)]
         subcmd: WorkflowSubcommands,
     },
-    
+
     /// Connector Management
     #[cfg(feature = "auto-working")]
     Connector {
         #[command(subcommand)]
         subcmd: ConnectorSubcommands,
     },
-    
+
     /// RPA Automation
     #[cfg(feature = "auto-working")]
     Rpa {

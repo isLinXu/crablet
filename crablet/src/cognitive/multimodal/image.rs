@@ -1,10 +1,10 @@
-use anyhow::{Result, Context};
 use crate::cognitive::llm::{LlmClient, OpenAiClient};
-use crate::types::{Message, ContentPart};
-use std::sync::Arc;
+use crate::types::{ContentPart, Message};
+use anyhow::{Context, Result};
+use base64::{engine::general_purpose, Engine as _};
 use std::env;
 use std::fs;
-use base64::{Engine as _, engine::general_purpose};
+use std::sync::Arc;
 
 pub struct ImageProcessor {
     llm: Arc<Box<dyn LlmClient>>,
@@ -31,9 +31,11 @@ impl ImageProcessor {
         let message = Message {
             role: "user".to_string(),
             content: Some(vec![
-                ContentPart::Text { text: "Please describe this image in detail.".to_string() },
-                ContentPart::ImageUrl { 
-                    image_url: crate::types::ImageUrl { url: data_url } 
+                ContentPart::Text {
+                    text: "Please describe this image in detail.".to_string(),
+                },
+                ContentPart::ImageUrl {
+                    image_url: crate::types::ImageUrl { url: data_url },
                 },
             ]),
             tool_calls: None,
@@ -42,11 +44,16 @@ impl ImageProcessor {
 
         self.llm.chat_complete(&[message]).await
     }
-    
+
     fn guess_mime_type(path: &str) -> &'static str {
-        if path.ends_with(".png") { "image/png" }
-        else if path.ends_with(".jpg") || path.ends_with(".jpeg") { "image/jpeg" }
-        else if path.ends_with(".webp") { "image/webp" }
-        else { "image/jpeg" } // Default fallback
+        if path.ends_with(".png") {
+            "image/png"
+        } else if path.ends_with(".jpg") || path.ends_with(".jpeg") {
+            "image/jpeg"
+        } else if path.ends_with(".webp") {
+            "image/webp"
+        } else {
+            "image/jpeg"
+        } // Default fallback
     }
 }

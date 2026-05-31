@@ -169,6 +169,11 @@ export interface TaskGraph {
   nodes: Record<string, TaskNode>;
   status?: 'Active' | 'Paused' | 'Completed' | 'Failed';
   id?: string;
+  goal?: string;
+  running_tasks?: number;
+  cancelled_tasks?: number;
+  recoverable_tasks?: number;
+  is_draining?: boolean;
 }
 
 export interface TaskNode {
@@ -178,14 +183,76 @@ export interface TaskNode {
   dependencies: string[];
   status: TaskStatus;
   result?: string;
+  logs?: string[];
 }
 
 export type TaskStatus =
   | 'Pending'
   | { Running: { started_at: number } }
   | { Paused: { paused_at: number } }
+  | { Cancelled: { cancelled_at: number; reason: string } }
   | { Completed: { duration: number } }
   | { Failed: { error: string; retries: number } };
+
+export type TaskStatusKey =
+  | 'Pending'
+  | 'Running'
+  | 'Paused'
+  | 'Cancelled'
+  | 'Completed'
+  | 'Failed';
+
+export const getTaskStatusKey = (status: TaskStatus): TaskStatusKey => {
+  if (typeof status === 'string') {
+    return status;
+  }
+
+  return Object.keys(status)[0] as Exclude<TaskStatusKey, 'Pending'>;
+};
+
+export const createTaskStatus = (
+  status: string,
+  timestamp = Date.now(),
+): TaskStatus => {
+  switch (status) {
+    case 'Running':
+      return { Running: { started_at: timestamp } };
+    case 'Paused':
+      return { Paused: { paused_at: timestamp } };
+    case 'Cancelled':
+      return { Cancelled: { cancelled_at: timestamp, reason: '' } };
+    case 'Completed':
+      return { Completed: { duration: 0 } };
+    case 'Failed':
+      return { Failed: { error: '', retries: 0 } };
+    case 'Pending':
+    default:
+      return 'Pending';
+  }
+};
+
+export interface SwarmTimelineEntry {
+  timestamp: number;
+  graph_id: string;
+  task_id?: string | null;
+  event_type: string;
+  message_type: string;
+  status?: string | null;
+  from?: string | null;
+  to?: string | null;
+  content: string;
+}
+
+export interface SwarmReplaySnapshot {
+  graph_id: string;
+  goal: string;
+  status: string;
+  at: number;
+  source: string;
+  focus_node_id?: string | null;
+  nodes: Record<string, TaskNode>;
+  timeline_len: number;
+}
 
 export interface Pagination {
   page: number;

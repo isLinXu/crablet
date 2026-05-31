@@ -1,47 +1,52 @@
 use crablet::memory::manager::MemoryManager;
 use crablet::memory::working::WorkingMemory;
+use proptest::prelude::*;
 use std::time::Duration;
 use tokio::time::sleep;
-use proptest::prelude::*;
 
 #[tokio::test]
 async fn test_ttl_cleanup_with_fast_interval() {
     // ✅ Use configurable cleanup interval
     let manager = MemoryManager::with_clean_interval(
-        None, 10, 
-        Duration::from_millis(50),   // TTL = 50ms
-        Duration::from_millis(20),   // Interval = 20ms
+        None,
+        10,
+        Duration::from_millis(50), // TTL = 50ms
+        Duration::from_millis(20), // Interval = 20ms
     );
-    
+
     manager.save_message("session1", "user", "hello").await;
     assert_eq!(manager.working_store.len(), 1);
-    
+
     // Wait for TTL + Interval
     sleep(Duration::from_millis(100)).await;
-    
-    assert_eq!(manager.working_store.len(), 0, "Expired sessions should be cleaned");
+
+    assert_eq!(
+        manager.working_store.len(),
+        0,
+        "Expired sessions should be cleaned"
+    );
 }
 
 #[tokio::test]
 async fn test_lru_eviction_deterministic() {
     let manager = MemoryManager::new(None, 2, Duration::from_secs(3600));
-    
+
     // Create and access in order
     manager.save_message("oldest", "user", "1").await;
     sleep(Duration::from_millis(10)).await;
-    
+
     manager.save_message("middle", "user", "2").await;
     sleep(Duration::from_millis(10)).await;
-    
+
     // Access oldest to make it recent
     let _ = manager.get_context("oldest").await;
     sleep(Duration::from_millis(10)).await;
-    
+
     // Trigger eviction by accessing/creating "newest"
     // Since we fixed save_message_atomic to use get_or_create_working_memory,
     // save_message will trigger eviction logic.
     manager.save_message("newest", "user", "3").await;
-    
+
     assert_eq!(manager.working_store.len(), 2);
     assert!(manager.working_store.contains_key("newest"));
     assert!(manager.working_store.contains_key("oldest")); // oldest accessed recently
@@ -60,13 +65,13 @@ proptest! {
             for msg in &messages {
                 wm.add_message("user", msg);
                 let limit = std::cmp::max(capacity, 5); // preserve_recent logic
-                assert!(wm.get_context().len() <= limit + 1, 
-                    "Working memory exceeded capacity: {} > {}", 
+                assert!(wm.get_context().len() <= limit + 1,
+                    "Working memory exceeded capacity: {} > {}",
                     wm.get_context().len(), limit);
             }
         });
     }
-    
+
     #[test]
     fn memory_manager_never_exceeds_max_entries(
         session_count in 10usize..50,
@@ -79,7 +84,7 @@ proptest! {
                 let session_id = format!("session-{}", i);
                 manager.save_message(&session_id, "user", "hello").await;
                 assert!(manager.working_store.len() <= max_entries,
-                    "Memory entries {} exceeded max {}", 
+                    "Memory entries {} exceeded max {}",
                     manager.working_store.len(), max_entries);
             }
         });

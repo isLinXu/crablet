@@ -3,9 +3,9 @@ use async_trait::async_trait;
 use crate::types::Message;
 // use anyhow::Result;
 // use tracing::info;
-use std::sync::Arc;
-use crate::cognitive::llm::LlmClient;
 use crate::agent::swarm::{AgentId, SwarmAgent, SwarmMessage};
+use crate::cognitive::llm::LlmClient;
+use std::sync::Arc;
 
 pub struct CoderAgent {
     id: AgentId,
@@ -23,26 +23,35 @@ impl CoderAgent {
 
 #[async_trait]
 impl SwarmAgent for CoderAgent {
-    fn id(&self) -> &AgentId { &self.id }
-    fn name(&self) -> &str { "coder" }
-    
+    fn id(&self) -> &AgentId {
+        &self.id
+    }
+    fn name(&self) -> &str {
+        "coder"
+    }
+
     async fn receive(&mut self, message: SwarmMessage, _sender: AgentId) -> Option<SwarmMessage> {
-        if let SwarmMessage::Task { task_id, description, .. } = message {
+        if let SwarmMessage::Task {
+            task_id,
+            description,
+            ..
+        } = message
+        {
             let prompt = format!(
                 "You are an expert software engineer. Please write code for the following task:\n{}\n\nRequirements:\n1. Code must be complete and runnable\n2. Include necessary comments\n3. Handle potential errors",
                 description
             );
-            
+
             let messages = vec![Message::new("user", prompt)];
             match self.llm.chat_complete(&messages).await {
-                Ok(response) => Some(SwarmMessage::Result { 
-                    task_id, 
+                Ok(response) => Some(SwarmMessage::Result {
+                    task_id,
                     content: response,
-                    payload: None 
+                    payload: None,
                 }),
-                Err(e) => Some(SwarmMessage::Error { 
-                    task_id, 
-                    error: format!("Error generating code: {}", e) 
+                Err(e) => Some(SwarmMessage::Error {
+                    task_id,
+                    error: format!("Error generating code: {}", e),
                 }),
             }
         } else {

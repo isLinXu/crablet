@@ -597,11 +597,11 @@ crablet chat
 # Single task execution
 crablet run "Analyze this Rust code for performance bottlenecks"
 
-# Web UI server
-crablet serve-web --port 3000
+# Unified Web UI + API gateway
+crablet serve-web --port 18790
 
-# WebSocket + JSON-RPC gateway
-crablet gateway --port 18789
+# Explicit gateway launch (same unified control plane)
+crablet gateway --port 18790
 
 # Vision / multimodal
 crablet vision --image ./screenshot.png --query "Describe this diagram"

@@ -2,6 +2,7 @@ use anyhow::{anyhow, Result};
 use std::process::Stdio;
 use tokio::process::Command;
 use tracing::{info, warn};
+use uuid::Uuid;
 /// 安全的 Docker 执行器
 /// 提供完全隔离的执行环境
 pub struct DockerExecutor {
@@ -61,29 +62,33 @@ impl DockerExecutor {
         self
     }
 
-    /// 在 Docker 容器中执行命令
-    pub async fn execute(&self, image: &str, cmd: &[&str]) -> Result<ExecutionResult> {
-        // 检查 Docker 是否可用
-        if !self.is_docker_available().await {
-            return Err(anyhow!("Docker is not available. Please ensure Docker is installed and running."));
-        }
+    fn sandbox_container_name() -> String {
+        format!("crablet-sandbox-{}", Uuid::new_v4())
+    }
 
+    fn build_run_args(&self, container_name: &str, image: &str, cmd: &[&str]) -> Vec<String> {
         let mut docker_args = vec![
             "run".to_string(),
-            "--rm".to_string(),           // 自动删除容器
+            "--rm".to_string(), // 自动删除容器
+            "--name".to_string(),
+            container_name.to_string(),
             "--network".to_string(),
-            if self.network_enabled { "bridge".to_string() } else { "none".to_string() },
+            if self.network_enabled {
+                "bridge".to_string()
+            } else {
+                "none".to_string()
+            },
             "--memory".to_string(),
             format!("{}m", self.memory_limit),
             "--cpus".to_string(),
             self.cpu_limit.to_string(),
-            "--read-only".to_string(),     // 只读根文件系统
-            "--tmpfs".to_string(),         // 临时文件系统
+            "--read-only".to_string(), // 只读根文件系统
+            "--tmpfs".to_string(),     // 临时文件系统
             "/tmp:noexec,nosuid,size=50m".to_string(),
             "--security-opt".to_string(),
-            "no-new-privileges:true".to_string(),  // 禁止提升权限
+            "no-new-privileges:true".to_string(), // 禁止提升权限
             "--cap-drop".to_string(),
-            "ALL".to_string(),              // 丢弃所有能力
+            "ALL".to_string(), // 丢弃所有能力
         ];
 
         // 挂载工作目录（如果需要）
@@ -98,20 +103,61 @@ impl DockerExecutor {
 
         docker_args.push(image.to_string());
         docker_args.extend(cmd.iter().map(|s| s.to_string()));
+        docker_args
+    }
+
+    async fn force_remove_container(container_name: &str) {
+        let result = Command::new("docker")
+            .args(["rm", "-f", container_name])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .output()
+            .await;
+
+        if let Err(error) = result {
+            warn!(
+                "Failed to force-remove timed out sandbox container {}: {}",
+                container_name, error
+            );
+        }
+    }
+
+    /// 在 Docker 容器中执行命令
+    pub async fn execute(&self, image: &str, cmd: &[&str]) -> Result<ExecutionResult> {
+        // 检查 Docker 是否可用
+        if !self.is_docker_available().await {
+            return Err(anyhow!(
+                "Docker is not available. Please ensure Docker is installed and running."
+            ));
+        }
+
+        let container_name = Self::sandbox_container_name();
+        let docker_args = self.build_run_args(&container_name, image, cmd);
 
         info!("Executing Docker command: docker {:?}", docker_args);
 
-        let output = tokio::time::timeout(
+        let mut command = Command::new("docker");
+        command
+            .args(&docker_args)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .kill_on_drop(true);
+
+        let output = match tokio::time::timeout(
             tokio::time::Duration::from_secs(self.timeout_secs),
-            Command::new("docker")
-                .args(&docker_args)
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped())
-                .output(),
+            command.output(),
         )
         .await
-        .map_err(|_| anyhow!("Docker execution timed out after {} seconds", self.timeout_secs))?
-        .map_err(|e| anyhow!("Failed to execute Docker command: {}", e))?;
+        {
+            Ok(output) => output.map_err(|e| anyhow!("Failed to execute Docker command: {}", e))?,
+            Err(_) => {
+                Self::force_remove_container(&container_name).await;
+                return Err(anyhow!(
+                    "Docker execution timed out after {} seconds",
+                    self.timeout_secs
+                ));
+            }
+        };
 
         let stdout = String::from_utf8_lossy(&output.stdout).to_string();
         let stderr = String::from_utf8_lossy(&output.stderr).to_string();
@@ -140,7 +186,7 @@ impl DockerExecutor {
     /// 检查 Docker 是否可用
     async fn is_docker_available(&self) -> bool {
         match Command::new("docker")
-            .args(&["info", "--format", "{{.ServerVersion}}"])
+            .args(["info", "--format", "{{.ServerVersion}}"])
             .output()
             .await
         {
@@ -156,12 +202,8 @@ impl DockerExecutor {
         tokio::fs::write(&dockerfile_path, dockerfile).await?;
 
         let output = Command::new("docker")
-            .args(&[
-                "build",
-                "-t",
-                tag,
-                temp_dir.path().to_str().unwrap(),
-            ])
+            .args(["build", "-t", tag])
+            .arg(temp_dir.path())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output()
@@ -254,5 +296,31 @@ mod tests {
             stderr: "".to_string(),
         };
         assert!(!result_clean.contains_error_keywords());
+    }
+
+    #[test]
+    fn test_docker_run_args_include_container_name_and_hardening() {
+        let executor = DockerExecutor::strict().with_timeout(5);
+        let args =
+            executor.build_run_args("crablet-test-container", "alpine:latest", &["echo", "ok"]);
+
+        assert!(args
+            .windows(2)
+            .any(|pair| pair == ["--name", "crablet-test-container"]));
+        assert!(args.windows(2).any(|pair| pair == ["--network", "none"]));
+        assert!(args.contains(&"--read-only".to_string()));
+        assert!(args
+            .windows(2)
+            .any(|pair| pair == ["--security-opt", "no-new-privileges:true"]));
+        assert!(args.windows(2).any(|pair| pair == ["--cap-drop", "ALL"]));
+        assert_eq!(args.last().map(String::as_str), Some("ok"));
+    }
+
+    #[test]
+    fn test_docker_run_args_allow_network_when_configured() {
+        let executor = DockerExecutor::with_network();
+        let args = executor.build_run_args("crablet-test-container", "alpine:latest", &["true"]);
+
+        assert!(args.windows(2).any(|pair| pair == ["--network", "bridge"]));
     }
 }

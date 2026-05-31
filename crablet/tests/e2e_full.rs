@@ -1,7 +1,7 @@
 use anyhow::Result;
-use crablet::config::Config;
-use crablet::gateway::{CrabletGateway, types::GatewayConfig};
 use axum::extract::State;
+use crablet::config::Config;
+use crablet::gateway::{types::GatewayConfig, CrabletGateway};
 use std::sync::Arc;
 use tempfile::TempDir;
 
@@ -47,38 +47,42 @@ async fn test_e2e_full_flow() -> Result<()> {
 
     // 2. Initialize App Context
     let app = Arc::new(crablet::channels::cli::context::AppContext::new(config.clone()).await?);
-    
+
     // 3. Test Security Audit (CLI Command)
     // Create a dummy vulnerable file
     let vuln_file = config.skills_dir.join("vuln.py");
     tokio::fs::write(&vuln_file, "password = '123456' # Hardcoded password").await?;
-    
+
     // Run Audit Logic Directly (simulating CLI handler)
     println!("--- Testing Security Audit ---");
     crablet::channels::cli::handlers::audit::handle_audit(
-        &app.router, 
-        config.skills_dir.to_string_lossy().to_string(), 
-        "json".to_string()
-    ).await?;
-    
+        &app.router,
+        config.skills_dir.to_string_lossy().to_string(),
+        "json".to_string(),
+    )
+    .await?;
+
     // 4. Test Gateway handlers without binding a real socket
     println!("--- Testing Web API ---");
     let cancel_token = tokio_util::sync::CancellationToken::new();
-    let gateway = Arc::new(CrabletGateway::new(
-        GatewayConfig {
-            host: "127.0.0.1".to_string(),
-            port: config.port,
-            auth_mode: "off".to_string(),
-        },
-        app.router.clone(),
-        cancel_token.clone(),
-    ).await?);
+    let gateway = Arc::new(
+        CrabletGateway::new(
+            GatewayConfig {
+                host: "127.0.0.1".to_string(),
+                port: config.port,
+                auth_mode: "off".to_string(),
+            },
+            app.router.clone(),
+            cancel_token.clone(),
+        )
+        .await?,
+    );
 
     let json = crablet::gateway::web_handlers::get_dashboard_stats(State(gateway.clone()))
         .await
         .0;
     println!("Dashboard Response: {}", json);
-    
+
     assert_eq!(json["status"], "healthy");
     assert!(json["skills_count"].is_number());
 
@@ -88,6 +92,6 @@ async fn test_e2e_full_flow() -> Result<()> {
         .0;
     assert_eq!(docs["status"], "success");
     assert!(docs["documents"].is_array());
-    
+
     Ok(())
 }

@@ -199,12 +199,19 @@ impl ABTestManager {
         for (i, &split) in config.traffic_split.iter().enumerate() {
             cumulative += split;
             if random_value <= cumulative {
-                return config.variants[i].variant_id.clone();
+                if let Some(variant) = config.variants.get(i) {
+                    return variant.variant_id.clone();
+                }
+                break;
             }
         }
 
         // Fallback to last variant
-        config.variants.last().unwrap().variant_id.clone()
+        config
+            .variants
+            .last()
+            .map(|variant| variant.variant_id.clone())
+            .unwrap_or_default()
     }
 
     /// Create test assignment

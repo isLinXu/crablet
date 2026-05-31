@@ -1,13 +1,13 @@
 //! Learner - 从经验中学习并提取模式
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
-use serde::{Deserialize, Serialize};
 use tracing::{debug, info};
 
-use crate::error::Result;
 use crate::cognitive::meta_controller::monitor::ExecutionMetrics;
 use crate::cognitive::meta_controller::reflector::ProblemDiagnosis;
+use crate::error::Result;
 // use crate::cognitive::meta_controller::reflector::ProblemType; // Removed to avoid unused import
 
 /// 学习器
@@ -67,7 +67,7 @@ pub struct LearnedKnowledge {
 }
 
 /// 知识库
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 struct KnowledgeBase {
     /// 存储的知识条目
     knowledge: HashMap<String, LearnedKnowledge>,
@@ -75,16 +75,6 @@ struct KnowledgeBase {
     categories: HashMap<String, Vec<String>>,
     /// 知识关系图
     graph: HashMap<String, Vec<String>>,
-}
-
-impl Default for KnowledgeBase {
-    fn default() -> Self {
-        Self {
-            knowledge: HashMap::new(),
-            categories: HashMap::new(),
-            graph: HashMap::new(),
-        }
-    }
 }
 
 impl Learner {
@@ -121,7 +111,10 @@ impl Learner {
         }
 
         // 提取策略模式
-        if let Some(knowledge) = self.extract_strategy_pattern(task, metrics, diagnosis).await? {
+        if let Some(knowledge) = self
+            .extract_strategy_pattern(task, metrics, diagnosis)
+            .await?
+        {
             learned.push(knowledge);
         }
 
@@ -246,19 +239,20 @@ impl Learner {
     fn analyze_task_features(&self, task: &str) -> TaskFeatures {
         let lower = task.to_lowercase();
         let words: Vec<&str> = task.split_whitespace().collect();
-        
+
         // 分类任务
-        let category = if lower.contains("code") || lower.contains("function") || lower.contains("class") {
-            "coding"
-        } else if lower.contains("analyze") || lower.contains("research") {
-            "analysis"
-        } else if lower.contains("explain") || lower.contains("describe") {
-            "explanation"
-        } else if lower.contains("fix") || lower.contains("debug") {
-            "debugging"
-        } else {
-            "general"
-        };
+        let category =
+            if lower.contains("code") || lower.contains("function") || lower.contains("class") {
+                "coding"
+            } else if lower.contains("analyze") || lower.contains("research") {
+                "analysis"
+            } else if lower.contains("explain") || lower.contains("describe") {
+                "explanation"
+            } else if lower.contains("fix") || lower.contains("debug") {
+                "debugging"
+            } else {
+                "general"
+            };
 
         // 计算复杂度
         let complexity = (words.len() as f32 / 50.0).min(1.0);
@@ -281,10 +275,15 @@ impl Learner {
     /// 查找类似模式
     async fn find_similar_pattern(&self, features: &TaskFeatures) -> Option<Pattern> {
         let patterns = self.patterns.read().await;
-        patterns.iter().find(|p| {
-            p.pattern_type == PatternType::TaskPattern
-                && p.trigger_conditions.iter().any(|c| c.contains(&features.category))
-        }).cloned()
+        patterns
+            .iter()
+            .find(|p| {
+                p.pattern_type == PatternType::TaskPattern
+                    && p.trigger_conditions
+                        .iter()
+                        .any(|c| c.contains(&features.category))
+            })
+            .cloned()
     }
 
     /// 更新模式
@@ -293,25 +292,27 @@ impl Learner {
         if let Some(pattern) = patterns.iter_mut().find(|p| p.id == pattern_id) {
             pattern.usage_count += 1;
             pattern.updated_at = chrono::Utc::now().to_rfc3339();
-            
+
             // 更新成功率
             let total = pattern.usage_count as f32;
-            pattern.success_rate = (pattern.success_rate * (total - 1.0) + if success { 1.0 } else { 0.0 }) / total;
+            pattern.success_rate =
+                (pattern.success_rate * (total - 1.0) + if success { 1.0 } else { 0.0 }) / total;
         }
     }
 
     /// 添加知识
     async fn add_knowledge(&self, knowledge: LearnedKnowledge) {
         let mut kb = self.knowledge_base.write().await;
-        
-        kb.knowledge.insert(knowledge.knowledge_id.clone(), knowledge.clone());
-        
+
+        kb.knowledge
+            .insert(knowledge.knowledge_id.clone(), knowledge.clone());
+
         // 添加到分类
         kb.categories
             .entry(knowledge.knowledge_type.clone())
             .or_insert_with(Vec::new)
             .push(knowledge.knowledge_id.clone());
-        
+
         // 建立关系
         for related in &knowledge.related_patterns {
             kb.graph
@@ -330,13 +331,13 @@ impl Learner {
     pub async fn find_relevant_patterns(&self, task: &str) -> Vec<Pattern> {
         let features = self.analyze_task_features(task);
         let patterns = self.patterns.read().await;
-        
+
         patterns
             .iter()
             .filter(|p| {
-                p.trigger_conditions.iter().any(|c| {
-                    c.contains(&features.category) || c.contains(&format!("complexity"))
-                })
+                p.trigger_conditions
+                    .iter()
+                    .any(|c| c.contains(&features.category) || c.contains("complexity"))
             })
             .cloned()
             .collect()
@@ -397,22 +398,27 @@ mod tests {
     #[tokio::test]
     async fn test_extract_task_pattern() {
         let learner = Learner::new(100);
-        
+
         let metrics = ExecutionMetrics {
             success: true,
             confidence: 0.9,
             ..Default::default()
         };
-        
+
         let diagnosis = ProblemDiagnosis {
-            problem_type: crate::cognitive::meta_controller::reflector::ProblemType::Other("test".into()),
+            problem_type: crate::cognitive::meta_controller::reflector::ProblemType::Other(
+                "test".into(),
+            ),
             description: "test".into(),
             severity: 0.5,
             root_cause: None,
             suggested_actions: vec![],
         };
-        
-        let knowledge = learner.extract_task_pattern("write a function", &metrics, &diagnosis).await.expect("Failed to extract task pattern");
+
+        let knowledge = learner
+            .extract_task_pattern("write a function", &metrics, &diagnosis)
+            .await
+            .expect("Failed to extract task pattern");
         assert!(knowledge.is_some());
     }
 

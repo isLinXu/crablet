@@ -74,7 +74,9 @@ impl SkillPerformance {
     fn sample_thompson(&self) -> f64 {
         let alpha = (self.successes as f64).max(1.0);
         let beta = (self.failures as f64).max(1.0);
-        let dist = Beta::new(alpha, beta).unwrap();
+        let Ok(dist) = Beta::new(alpha, beta) else {
+            return self.success_rate();
+        };
         let mut rng = rand::thread_rng();
         dist.sample(&mut rng)
     }

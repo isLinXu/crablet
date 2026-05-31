@@ -1,14 +1,20 @@
-use async_trait::async_trait;
-use anyhow::Result;
 use crate::cognitive::llm::LlmClient;
-use crate::types::{Message, ContentPart};
-use std::sync::Arc;
+use crate::types::{ContentPart, Message};
+use anyhow::Result;
+use async_trait::async_trait;
 use parking_lot::Mutex;
+use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct MockLlmClient {
     pub responses: Arc<Mutex<Vec<String>>>,
     pub last_prompt: Arc<Mutex<String>>,
+}
+
+impl Default for MockLlmClient {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl MockLlmClient {
@@ -23,7 +29,7 @@ impl MockLlmClient {
         self.responses.lock().push(response.to_string());
         self
     }
-    
+
     pub fn get_last_prompt(&self) -> String {
         self.last_prompt.lock().clone()
     }
@@ -33,13 +39,18 @@ impl MockLlmClient {
 impl LlmClient for MockLlmClient {
     async fn chat_complete(&self, messages: &[Message]) -> Result<String> {
         // Record prompt
-        let prompt = messages.iter()
+        let prompt = messages
+            .iter()
             .map(|m| {
                 if let Some(parts) = &m.content {
-                    parts.iter().map(|p| match p {
-                        ContentPart::Text { text } => text.clone(),
-                        _ => String::new(),
-                    }).collect::<Vec<_>>().join("")
+                    parts
+                        .iter()
+                        .map(|p| match p {
+                            ContentPart::Text { text } => text.clone(),
+                            _ => String::new(),
+                        })
+                        .collect::<Vec<_>>()
+                        .join("")
                 } else {
                     String::new()
                 }
@@ -57,7 +68,11 @@ impl LlmClient for MockLlmClient {
         }
     }
 
-    async fn chat_complete_with_tools(&self, messages: &[Message], _tools: &[serde_json::Value]) -> Result<Message> {
+    async fn chat_complete_with_tools(
+        &self,
+        messages: &[Message],
+        _tools: &[serde_json::Value],
+    ) -> Result<Message> {
         let content = self.chat_complete(messages).await?;
         Ok(Message::new("assistant", &content))
     }

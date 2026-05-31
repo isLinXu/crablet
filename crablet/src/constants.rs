@@ -1,7 +1,7 @@
 pub mod limits {
-    pub const MAX_INPUT_SIZE: usize = 10 * 1024;      // 10KB
-    pub const MAX_OUTPUT_SIZE: usize = 10 * 1024;      // 10KB 
-    pub const MAX_FILE_SIZE: usize = 10 * 1024 * 1024;  // 10MB
+    pub const MAX_INPUT_SIZE: usize = 10 * 1024; // 10KB
+    pub const MAX_OUTPUT_SIZE: usize = 10 * 1024; // 10KB
+    pub const MAX_FILE_SIZE: usize = 10 * 1024 * 1024; // 10MB
     pub const BASH_TIMEOUT_SECS: u64 = 10;
     pub const LLM_TIMEOUT_SECS: u64 = 120;
     pub const SWARM_MSG_TIMEOUT_SECS: u64 = 30;
@@ -22,7 +22,17 @@ pub mod react {
 }
 
 pub mod complexity {
-    pub const TEMPORAL_KEYWORDS: &[&str] = &["yesterday", "tomorrow", "schedule", "timeline", "future", "past"];
-    pub const DOMAIN_KEYWORDS: &[&str] = &["code", "function", "error", "debug", "api", "database", "sql", "rust", "python"];
-    pub const ANALYTICAL_KEYWORDS: &[&str] = &["analyze", "compare", "evaluate", "assess", "pros", "cons"];
+    pub const TEMPORAL_KEYWORDS: &[&str] = &[
+        "yesterday",
+        "tomorrow",
+        "schedule",
+        "timeline",
+        "future",
+        "past",
+    ];
+    pub const DOMAIN_KEYWORDS: &[&str] = &[
+        "code", "function", "error", "debug", "api", "database", "sql", "rust", "python",
+    ];
+    pub const ANALYTICAL_KEYWORDS: &[&str] =
+        &["analyze", "compare", "evaluate", "assess", "pros", "cons"];
 }

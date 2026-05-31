@@ -2,17 +2,17 @@
 //!
 //! Handles router configuration, routing reports, and system settings.
 
-use std::sync::Arc;
-use std::fs;
 use axum::{
-    extract::{State, Json, Query, Path},
+    extract::{Json, Path, Query, State},
     http::StatusCode,
 };
 use serde::{Deserialize, Serialize};
+use std::fs;
+use std::sync::Arc;
 
-use crate::gateway::server::CrabletGateway;
 use crate::cognitive::router::RouterConfig;
 use crate::gateway::auth::ApiKeyInfo;
+use crate::gateway::server::CrabletGateway;
 
 use super::handlers_shared::resolve_env_file_path;
 
@@ -76,13 +76,17 @@ pub async fn update_routing_settings(
     State(gateway): State<Arc<CrabletGateway>>,
     Json(req): Json<UpdateRoutingSettingsRequest>,
 ) -> Result<Json<RoutingSettingsResponse>, StatusCode> {
-    if !(0.0..=1.0).contains(&req.system2_threshold) || !(0.0..=1.0).contains(&req.system3_threshold) {
+    if !(0.0..=1.0).contains(&req.system2_threshold)
+        || !(0.0..=1.0).contains(&req.system3_threshold)
+    {
         return Err(StatusCode::BAD_REQUEST);
     }
     if !(0.05..=2.0).contains(&req.bandit_exploration) {
         return Err(StatusCode::BAD_REQUEST);
     }
-    if !(0.0..=1.0).contains(&req.deliberate_threshold) || !(0.0..=1.0).contains(&req.meta_reasoning_threshold) {
+    if !(0.0..=1.0).contains(&req.deliberate_threshold)
+        || !(0.0..=1.0).contains(&req.meta_reasoning_threshold)
+    {
         return Err(StatusCode::BAD_REQUEST);
     }
     if req.mcts_simulations == 0 || req.mcts_simulations > 512 {
@@ -195,7 +199,7 @@ pub async fn get_system_config(
                     if config.openai_api_key.is_none() {
                         config.openai_api_key = Some(val);
                     }
-                },
+                }
                 "OPENAI_API_BASE" => config.openai_api_base = Some(val),
                 "OPENAI_MODEL_NAME" => config.openai_model_name = Some(val),
                 "OLLAMA_MODEL" => config.ollama_model = Some(val),
@@ -248,7 +252,11 @@ pub async fn update_system_config(
     }
 
     let new_content = lines.join("\n");
-    let final_content = if new_content.ends_with('\n') { new_content } else { new_content + "\n" };
+    let final_content = if new_content.ends_with('\n') {
+        new_content
+    } else {
+        new_content + "\n"
+    };
 
     fs::write(&path, final_content).map_err(|e| {
         tracing::error!("Failed to write .env: {}", e);

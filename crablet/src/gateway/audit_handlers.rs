@@ -2,15 +2,15 @@
 //!
 //! Handles audit logs and security event tracking.
 
-use std::sync::Arc;
 use axum::{
-    extract::{State, Json, Query},
+    extract::{Json, Query, State},
     http::StatusCode,
 };
 use serde::Deserialize;
+use std::sync::Arc;
 
-use crate::gateway::server::CrabletGateway;
 use crate::audit::AuditLog;
+use crate::gateway::server::CrabletGateway;
 
 #[derive(Deserialize)]
 pub struct LogsQuery {

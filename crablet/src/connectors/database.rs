@@ -46,7 +46,10 @@ use tokio::task::JoinHandle;
 use tokio::time::{interval, Duration};
 use tracing::{debug, error, info};
 
-use crate::connectors::{Connector, ConnectorConfig, ConnectorError, ConnectorEvent, ConnectorHealth, ConnectorResult, DbOperation, HealthStatus};
+use crate::connectors::{
+    Connector, ConnectorConfig, ConnectorError, ConnectorEvent, ConnectorHealth, ConnectorResult,
+    DbOperation, HealthStatus,
+};
 
 /// Database connector configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -107,17 +110,19 @@ pub struct DatabaseConnector {
 
 impl DatabaseConnector {
     pub fn new(config: ConnectorConfig) -> ConnectorResult<Self> {
-        let db_config: DatabaseConfig = serde_json::from_value(config.settings.clone())
-            .map_err(|e| ConnectorError::ConfigurationError(format!("Invalid database config: {}", e)))?;
-        
+        let db_config: DatabaseConfig =
+            serde_json::from_value(config.settings.clone()).map_err(|e| {
+                ConnectorError::ConfigurationError(format!("Invalid database config: {}", e))
+            })?;
+
         if db_config.connection_string.is_empty() {
             return Err(ConnectorError::ConfigurationError(
-                "Connection string is required".to_string()
+                "Connection string is required".to_string(),
             ));
         }
-        
+
         let (event_tx, event_rx) = mpsc::channel(1000);
-        
+
         Ok(Self {
             id: uuid::Uuid::new_v4().to_string(),
             config,
@@ -130,7 +135,7 @@ impl DatabaseConnector {
             last_check_times: HashMap::new(),
         })
     }
-    
+
     /// Start polling for database changes
     async fn start_polling(&mut self) -> ConnectorResult<()> {
         let poll_interval = Duration::from_secs(self.db_config.poll_interval_seconds);
@@ -138,11 +143,11 @@ impl DatabaseConnector {
         let event_tx = self.event_tx.clone();
         let triggers = self.db_config.triggers.clone();
         let db_type = self.db_config.db_type.clone();
-        
+
         let handle = tokio::spawn(async move {
             loop {
                 interval.tick().await;
-                
+
                 for trigger in &triggers {
                     if let Err(e) = Self::check_trigger(&db_type, trigger, &event_tx).await {
                         debug!("Trigger check error: {}", e);
@@ -150,11 +155,11 @@ impl DatabaseConnector {
                 }
             }
         });
-        
+
         self.poller_handle = Some(handle);
         Ok(())
     }
-    
+
     async fn check_trigger(
         db_type: &DatabaseType,
         trigger: &DbTrigger,
@@ -164,9 +169,12 @@ impl DatabaseConnector {
         // 1. Query the database for changes since last check
         // 2. Compare with previous state
         // 3. Emit events for detected changes
-        
-        debug!("Checking trigger for table: {} ({:?})", trigger.table, db_type);
-        
+
+        debug!(
+            "Checking trigger for table: {} ({:?})",
+            trigger.table, db_type
+        );
+
         // Simulate detecting a change
         let event = ConnectorEvent::DatabaseChange {
             connector_id: "database".to_string(),
@@ -179,23 +187,26 @@ impl DatabaseConnector {
             })),
             timestamp: Utc::now(),
         };
-        
+
         if let Err(e) = event_tx.send(event).await {
             error!("Failed to send database event: {}", e);
         }
-        
+
         Ok(())
     }
-    
+
     /// Execute a query and return results
-    pub async fn execute_query(&self, _query: &str) -> ConnectorResult<Vec<HashMap<String, serde_json::Value>>> {
+    pub async fn execute_query(
+        &self,
+        _query: &str,
+    ) -> ConnectorResult<Vec<HashMap<String, serde_json::Value>>> {
         if !self.connected {
             return Err(ConnectorError::NotConnected);
         }
-        
+
         // In a real implementation, this would execute the query
         // and return the results as JSON
-        
+
         Ok(vec![])
     }
 }
@@ -205,84 +216,84 @@ impl Connector for DatabaseConnector {
     fn id(&self) -> &str {
         &self.id
     }
-    
+
     fn name(&self) -> &str {
         &self.config.name
     }
-    
+
     fn connector_type(&self) -> &str {
         "database"
     }
-    
+
     fn is_connected(&self) -> bool {
         self.connected
     }
-    
+
     async fn connect(&mut self) -> ConnectorResult<()> {
         info!("Connecting to database: {:?}", self.db_config.db_type);
-        
+
         // In a real implementation, this would:
         // 1. Parse connection string
         // 2. Create connection pool
         // 3. Test connection
-        
+
         self.connected = true;
         info!("Database connector '{}' connected", self.config.name);
         Ok(())
     }
-    
+
     async fn disconnect(&mut self) -> ConnectorResult<()> {
         self.running = false;
         self.connected = false;
-        
+
         if let Some(handle) = self.poller_handle.take() {
             handle.abort();
         }
-        
+
         info!("Database connector '{}' disconnected", self.config.name);
         Ok(())
     }
-    
+
     async fn start(&mut self) -> ConnectorResult<()> {
         if !self.connected {
             return Err(ConnectorError::NotConnected);
         }
-        
+
         if !self.db_config.triggers.is_empty() {
             self.start_polling().await?;
         }
-        
+
         self.running = true;
         info!("Database connector '{}' started", self.config.name);
         Ok(())
     }
-    
+
     async fn stop(&mut self) -> ConnectorResult<()> {
         self.running = false;
-        
+
         if let Some(handle) = self.poller_handle.take() {
             handle.abort();
         }
-        
+
         info!("Database connector '{}' stopped", self.config.name);
         Ok(())
     }
-    
+
     fn event_receiver(&mut self) -> Option<mpsc::Receiver<ConnectorEvent>> {
         self.event_rx.take()
     }
-    
+
     async fn test(&self) -> ConnectorResult<()> {
         if !self.connected {
             return Err(ConnectorError::NotConnected);
         }
-        
+
         // Test connection by executing a simple query
         info!("Testing database connection for '{}'", self.config.name);
-        
+
         Ok(())
     }
-    
+
     async fn health(&self) -> ConnectorHealth {
         ConnectorHealth {
             status: if self.connected {

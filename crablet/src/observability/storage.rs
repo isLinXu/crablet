@@ -2,10 +2,10 @@
 //!
 //! Storage backends for execution traces.
 
-use super::{TraceSession, AgentSpan, ExecutionRecording};
-use async_trait::async_trait;
+use super::{AgentSpan, ExecutionRecording, TraceSession};
 use anyhow::Result;
-use sqlx::{Row, sqlite::SqliteRow};
+use async_trait::async_trait;
+use sqlx::{sqlite::SqliteRow, Row};
 use std::collections::HashMap;
 
 use tokio::sync::RwLock;
@@ -15,25 +15,25 @@ use tokio::sync::RwLock;
 pub trait TraceStorage: Send + Sync {
     /// Store a trace session
     async fn store_session(&self, session: &TraceSession) -> Result<()>;
-    
+
     /// Retrieve a trace session
     async fn get_session(&self, execution_id: &str) -> Result<Option<TraceSession>>;
-    
+
     /// Store spans for a session
     async fn store_spans(&self, execution_id: &str, spans: &[AgentSpan]) -> Result<()>;
-    
+
     /// Retrieve spans for a session
     async fn get_spans(&self, execution_id: &str) -> Result<Vec<AgentSpan>>;
-    
+
     /// Store a complete recording
     async fn store_recording(&self, recording: &ExecutionRecording) -> Result<()>;
-    
+
     /// Retrieve a complete recording
     async fn get_recording(&self, execution_id: &str) -> Result<Option<ExecutionRecording>>;
-    
+
     /// List all sessions
     async fn list_sessions(&self) -> Result<Vec<TraceSession>>;
-    
+
     /// Delete a session and its spans
     async fn delete_session(&self, execution_id: &str) -> Result<()>;
 }
@@ -43,6 +43,12 @@ pub struct InMemoryStorage {
     sessions: RwLock<HashMap<String, TraceSession>>,
     spans: RwLock<HashMap<String, Vec<AgentSpan>>>,
     recordings: RwLock<HashMap<String, ExecutionRecording>>,
+}
+
+impl Default for InMemoryStorage {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl InMemoryStorage {
@@ -58,7 +64,10 @@ impl InMemoryStorage {
 #[async_trait]
 impl TraceStorage for InMemoryStorage {
     async fn store_session(&self, session: &TraceSession) -> Result<()> {
-        self.sessions.write().await.insert(session.execution_id.clone(), session.clone());
+        self.sessions
+            .write()
+            .await
+            .insert(session.execution_id.clone(), session.clone());
         Ok(())
     }
 
@@ -67,16 +76,28 @@ impl TraceStorage for InMemoryStorage {
     }
 
     async fn store_spans(&self, execution_id: &str, spans: &[AgentSpan]) -> Result<()> {
-        self.spans.write().await.insert(execution_id.to_string(), spans.to_vec());
+        self.spans
+            .write()
+            .await
+            .insert(execution_id.to_string(), spans.to_vec());
         Ok(())
     }
 
     async fn get_spans(&self, execution_id: &str) -> Result<Vec<AgentSpan>> {
-        Ok(self.spans.read().await.get(execution_id).cloned().unwrap_or_default())
+        Ok(self
+            .spans
+            .read()
+            .await
+            .get(execution_id)
+            .cloned()
+            .unwrap_or_default())
     }
 
     async fn store_recording(&self, recording: &ExecutionRecording) -> Result<()> {
-        self.recordings.write().await.insert(recording.session.execution_id.clone(), recording.clone());
+        self.recordings
+            .write()
+            .await
+            .insert(recording.session.execution_id.clone(), recording.clone());
         Ok(())
     }
 
@@ -104,7 +125,7 @@ pub struct PersistentStorage {
 impl PersistentStorage {
     pub async fn new(database_url: &str) -> Result<Self> {
         let pool = sqlx::sqlite::SqlitePool::connect(database_url).await?;
-        
+
         // Initialize schema
         sqlx::query(
             r#"
@@ -116,7 +137,7 @@ impl PersistentStorage {
                 status TEXT NOT NULL,
                 metadata TEXT
             )
-            "#
+            "#,
         )
         .execute(&pool)
         .await?;
@@ -132,7 +153,7 @@ impl PersistentStorage {
                 timestamp INTEGER NOT NULL,
                 FOREIGN KEY (execution_id) REFERENCES trace_sessions(execution_id)
             )
-            "#
+            "#,
         )
         .execute(&pool)
         .await?;
@@ -145,13 +166,13 @@ impl PersistentStorage {
 impl TraceStorage for PersistentStorage {
     async fn store_session(&self, session: &TraceSession) -> Result<()> {
         let metadata = serde_json::to_string(&session.metadata)?;
-        
+
         sqlx::query(
             r#"
             INSERT OR REPLACE INTO trace_sessions 
             (execution_id, workflow_id, started_at, ended_at, status, metadata)
             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
-            "#
+            "#,
         )
         .bind(&session.execution_id)
         .bind(&session.workflow_id)
@@ -161,34 +182,33 @@ impl TraceStorage for PersistentStorage {
         .bind(metadata)
         .execute(&self.pool)
         .await?;
-        
+
         Ok(())
     }
 
     async fn get_session(&self, execution_id: &str) -> Result<Option<TraceSession>> {
-        let row = sqlx::query_as::<_, SessionRow>(
-            "SELECT * FROM trace_sessions WHERE execution_id = ?1"
-        )
-        .bind(execution_id)
-        .fetch_optional(&self.pool)
-        .await?;
+        let row =
+            sqlx::query_as::<_, SessionRow>("SELECT * FROM trace_sessions WHERE execution_id = ?1")
+                .bind(execution_id)
+                .fetch_optional(&self.pool)
+                .await?;
 
         Ok(row.map(|r| r.into()))
     }
 
     async fn store_spans(&self, execution_id: &str, spans: &[AgentSpan]) -> Result<()> {
         let mut tx = self.pool.begin().await?;
-        
+
         for (index, span) in spans.iter().enumerate() {
             let (span_type, content) = serialize_span(span);
             let timestamp = get_span_timestamp(span);
-            
+
             sqlx::query(
                 r#"
                 INSERT INTO trace_spans 
                 (execution_id, span_index, span_type, content, timestamp)
                 VALUES (?1, ?2, ?3, ?4, ?5)
-                "#
+                "#,
             )
             .bind(execution_id)
             .bind(index as i64)
@@ -198,14 +218,14 @@ impl TraceStorage for PersistentStorage {
             .execute(&mut *tx)
             .await?;
         }
-        
+
         tx.commit().await?;
         Ok(())
     }
 
     async fn get_spans(&self, execution_id: &str) -> Result<Vec<AgentSpan>> {
         let rows = sqlx::query_as::<_, SpanRow>(
-            "SELECT * FROM trace_spans WHERE execution_id = ?1 ORDER BY span_index"
+            "SELECT * FROM trace_spans WHERE execution_id = ?1 ORDER BY span_index",
         )
         .bind(execution_id)
         .fetch_all(&self.pool)
@@ -219,17 +239,18 @@ impl TraceStorage for PersistentStorage {
     async fn store_recording(&self, recording: &ExecutionRecording) -> Result<()> {
         // Store session
         self.store_session(&recording.session).await?;
-        
+
         // Store spans
-        self.store_spans(&recording.session.execution_id, &recording.spans).await?;
-        
+        self.store_spans(&recording.session.execution_id, &recording.spans)
+            .await?;
+
         Ok(())
     }
 
     async fn get_recording(&self, execution_id: &str) -> Result<Option<ExecutionRecording>> {
         let session = self.get_session(execution_id).await?;
         let spans = self.get_spans(execution_id).await?;
-        
+
         Ok(session.map(|s| ExecutionRecording {
             session: s,
             spans,
@@ -246,7 +267,7 @@ impl TraceStorage for PersistentStorage {
 
     async fn list_sessions(&self) -> Result<Vec<TraceSession>> {
         let rows = sqlx::query_as::<_, SessionRow>(
-            "SELECT * FROM trace_sessions ORDER BY started_at DESC"
+            "SELECT * FROM trace_sessions ORDER BY started_at DESC",
         )
         .fetch_all(&self.pool)
         .await?;
@@ -256,17 +277,17 @@ impl TraceStorage for PersistentStorage {
 
     async fn delete_session(&self, execution_id: &str) -> Result<()> {
         let mut tx = self.pool.begin().await?;
-        
+
         sqlx::query("DELETE FROM trace_spans WHERE execution_id = ?1")
             .bind(execution_id)
             .execute(&mut *tx)
             .await?;
-        
+
         sqlx::query("DELETE FROM trace_sessions WHERE execution_id = ?1")
             .bind(execution_id)
             .execute(&mut *tx)
             .await?;
-        
+
         tx.commit().await?;
         Ok(())
     }
@@ -349,7 +370,7 @@ fn deserialize_span(_span_type: &str, content: &str, timestamp: u64) -> Result<A
     // For simplicity, just deserialize the full JSON
     // In production, you might want more controlled deserialization
     let mut span: AgentSpan = serde_json::from_str(content)?;
-    
+
     // Ensure timestamp is correct
     match &mut span {
         AgentSpan::Thought { timestamp: t, .. } => *t = timestamp,
@@ -360,7 +381,7 @@ fn deserialize_span(_span_type: &str, content: &str, timestamp: u64) -> Result<A
         AgentSpan::LoopDetected { timestamp: t, .. } => *t = timestamp,
         AgentSpan::Error { timestamp: t, .. } => *t = timestamp,
     }
-    
+
     Ok(span)
 }
 

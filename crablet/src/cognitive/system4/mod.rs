@@ -6,38 +6,38 @@
 //! - 知识蒸馏（将复杂执行转化为可复用知识）
 //! - 系统架构自优化
 
+pub mod evolution_engine;
+pub mod knowledge_distiller;
 pub mod performance_analyzer;
 pub mod skill_discoverer;
-pub mod knowledge_distiller;
-pub mod evolution_engine;
 
-use std::sync::Arc;
 use async_trait::async_trait;
 use chrono::Utc;
+use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, info};
 
-use crate::cognitive::CognitiveSystem;
-use crate::cognitive::system4::skill_discoverer::{
-    SkillDiscoverer, ExecutionRecord, SkillDiscoveryConfig
+use crate::cognitive::llm::LlmClient;
+use crate::cognitive::system4::evolution_engine::{
+    EvolutionConfig, EvolutionEngine, ImprovementProposal, SystemConfiguration,
 };
 use crate::cognitive::system4::knowledge_distiller::{
-    KnowledgeDistiller, DistillationTask, ExecutionTrace
+    DistillationTask, ExecutionTrace, KnowledgeDistiller,
 };
-use crate::cognitive::system4::evolution_engine::{
-    EvolutionEngine, EvolutionConfig, ImprovementProposal, SystemConfiguration
+use crate::cognitive::system4::skill_discoverer::{
+    ExecutionRecord, SkillDiscoverer, SkillDiscoveryConfig,
 };
-use crate::cognitive::llm::LlmClient;
+use crate::cognitive::CognitiveSystem;
+use crate::error::{CrabletError, Result};
 use crate::types::{Message, TraceStep};
-use crate::error::{Result, CrabletError};
 
-pub use performance_analyzer::{
-    PerformanceAnalyzer, ExecutionMetrics, CognitiveSystemType as SystemType, PerformanceReport,
-    PerformanceStats, BottleneckAnalysis, TrendDirection
-};
-pub use skill_discoverer::{SkillCandidate, ExecutionPattern};
+pub use evolution_engine::{ChangeSeverity, ProposalStatus, ProposalType};
 pub use knowledge_distiller::{DistillationResult, DistilledKnowledge, ExtractedSkill};
-pub use evolution_engine::{ProposalType, ChangeSeverity, ProposalStatus};
+pub use performance_analyzer::{
+    BottleneckAnalysis, CognitiveSystemType as SystemType, ExecutionMetrics, PerformanceAnalyzer,
+    PerformanceReport, PerformanceStats, TrendDirection,
+};
+pub use skill_discoverer::{ExecutionPattern, SkillCandidate};
 
 /// System4 配置
 #[derive(Debug, Clone)]
@@ -64,16 +64,16 @@ impl Default for System4Config {
 /// System4 - 自我进化认知系统
 pub struct System4 {
     config: Arc<RwLock<System4Config>>,
-    
+
     // 核心引擎
     performance_analyzer: Arc<PerformanceAnalyzer>,
     skill_discoverer: Arc<SkillDiscoverer>,
     knowledge_distiller: Arc<KnowledgeDistiller>,
     evolution_engine: Arc<EvolutionEngine>,
-    
+
     // 执行历史（用于技能发现）
     execution_history: Arc<RwLock<Vec<ExecutionRecord>>>,
-    
+
     // LLM 客户端
     llm: Arc<Box<dyn LlmClient>>,
 }
@@ -101,12 +101,10 @@ impl System4 {
     }
 
     /// 使用配置创建
-    pub async fn with_config(
-        llm: Arc<Box<dyn LlmClient>>,
-        config: System4Config,
-    ) -> Self {
+    pub async fn with_config(llm: Arc<Box<dyn LlmClient>>, config: System4Config) -> Self {
         let perf_analyzer = Arc::new(PerformanceAnalyzer::with_capacity(config.max_history_size));
-        let skill_discoverer = Arc::new(SkillDiscoverer::with_config(SkillDiscoveryConfig::default()));
+        let skill_discoverer =
+            Arc::new(SkillDiscoverer::with_config(SkillDiscoveryConfig::default()));
         let knowledge_distiller = Arc::new(KnowledgeDistiller::with_capacity(
             llm.clone(),
             config.max_history_size,
@@ -149,13 +147,9 @@ impl System4 {
     }
 
     /// 记录 System1 执行
-    pub async fn record_system1_execution(
-        &self,
-        query: &str,
-        latency_ms: u64,
-        success: bool,
-    ) {
-        self.record_execution(SystemType::System1, query, None, latency_ms, success, 0, 0).await;
+    pub async fn record_system1_execution(&self, query: &str, latency_ms: u64, success: bool) {
+        self.record_execution(SystemType::System1, query, None, latency_ms, success, 0, 0)
+            .await;
     }
 
     /// 记录 System2 执行
@@ -176,7 +170,8 @@ impl System4 {
             success,
             token_count,
             tool_calls,
-        ).await;
+        )
+        .await;
     }
 
     /// 记录 System3 执行
@@ -197,13 +192,17 @@ impl System4 {
             success,
             0,
             agent_count,
-        ).await;
+        )
+        .await;
 
         // 对于 System3，还尝试进行知识蒸馏
         if let Some(trace) = execution_trace {
             if success {
                 let task = DistillationTask {
-                    id: format!("distill_{}", uuid::Uuid::new_v4().to_string()[..8].to_string()),
+                    id: {
+                        let task_id = uuid::Uuid::new_v4().to_string();
+                        format!("distill_{}", &task_id[..8])
+                    },
                     source_system: knowledge_distiller::DistillationSourceSystem::System3,
                     input: query.to_string(),
                     output: output.unwrap_or("").to_string(),
@@ -216,7 +215,10 @@ impl System4 {
                 tokio::spawn(async move {
                     let result = distiller.distill(task).await;
                     if result.success {
-                        debug!("Knowledge distillation completed for task {}", result.task_id);
+                        debug!(
+                            "Knowledge distillation completed for task {}",
+                            result.task_id
+                        );
                     }
                 });
             }
@@ -241,8 +243,16 @@ impl System4 {
             latency_ms,
             success,
             token_count,
-            tool_calls: if system_type == SystemType::System2 { tool_or_agent_count } else { 0 },
-            agent_count: if system_type == SystemType::System3 { tool_or_agent_count } else { 1 },
+            tool_calls: if system_type == SystemType::System2 {
+                tool_or_agent_count
+            } else {
+                0
+            },
+            agent_count: if system_type == SystemType::System3 {
+                tool_or_agent_count
+            } else {
+                1
+            },
             timestamp: Utc::now(),
             context_length: query.len(),
             retry_count: 0,
@@ -272,9 +282,12 @@ impl System4 {
     /// 手动触发技能发现
     pub async fn discover_skills(&self) -> Vec<SkillCandidate> {
         let history = self.execution_history.read().await.clone();
-        
+
         if history.len() < 10 {
-            info!("Not enough execution history for skill discovery (need 10, have {})", history.len());
+            info!(
+                "Not enough execution history for skill discovery (need 10, have {})",
+                history.len()
+            );
             return Vec::new();
         }
 
@@ -287,12 +300,14 @@ impl System4 {
         self.evolution_engine
             .run_evolution_cycle()
             .await
-            .map_err(|e| CrabletError::Other(e.into()))
+            .map_err(|e| CrabletError::Other(e))
     }
 
     /// 生成性能报告
     pub async fn generate_performance_report(&self, window_hours: u32) -> PerformanceReport {
-        self.performance_analyzer.generate_report(window_hours).await
+        self.performance_analyzer
+            .generate_report(window_hours)
+            .await
     }
 
     /// 获取待处理的改进提案
@@ -305,7 +320,7 @@ impl System4 {
         self.evolution_engine
             .approve_proposal(proposal_id)
             .await
-            .map_err(|e| CrabletError::Other(e.into()))
+            .map_err(|e| CrabletError::Other(e))
     }
 
     /// 拒绝改进提案
@@ -313,7 +328,7 @@ impl System4 {
         self.evolution_engine
             .reject_proposal(proposal_id)
             .await
-            .map_err(|e| CrabletError::Other(e.into()))
+            .map_err(|e| CrabletError::Other(e))
     }
 
     /// 获取当前系统配置
@@ -346,13 +361,19 @@ impl System4 {
         let config = self.config.read().await;
         let history = self.execution_history.read().await;
         let proposals = self.evolution_engine.get_all_proposals().await;
-        
+
         System4StatusReport {
             enabled: config.enabled,
             auto_evolution: config.auto_evolution,
             total_executions_recorded: history.len(),
-            pending_proposals: proposals.iter().filter(|p| p.status == ProposalStatus::Pending).count(),
-            applied_changes: proposals.iter().filter(|p| p.status == ProposalStatus::Applied).count(),
+            pending_proposals: proposals
+                .iter()
+                .filter(|p| p.status == ProposalStatus::Pending)
+                .count(),
+            applied_changes: proposals
+                .iter()
+                .filter(|p| p.status == ProposalStatus::Applied)
+                .count(),
             extracted_skills_count: self.knowledge_distiller.get_extracted_skills().await.len(),
             distilled_knowledge_count: self.knowledge_distiller.query_knowledge("").await.len(),
         }
@@ -368,7 +389,7 @@ impl CognitiveSystem for System4 {
     async fn process(&self, input: &str, _context: &[Message]) -> Result<(String, Vec<TraceStep>)> {
         // System4 主要作为元层运行，不直接处理用户输入
         // 但可以响应特定的管理命令
-        
+
         let response = match input.to_lowercase().as_str() {
             cmd if cmd.contains("status") || cmd.contains("状态") => {
                 let report = self.get_status_report().await;
@@ -422,12 +443,11 @@ impl CognitiveSystem for System4 {
                     response
                 }
             }
-            _ => {
-                "System4 is the self-evolution layer. Available commands:\n\
+            _ => "System4 is the self-evolution layer. Available commands:\n\
                 - status: Show System4 status\n\
                 - report: Show performance report\n\
-                - proposals: List pending proposals".to_string()
-            }
+                - proposals: List pending proposals"
+                .to_string(),
         };
 
         let traces = vec![TraceStep {
@@ -474,14 +494,16 @@ mod tests {
 
         // 记录一些执行
         for i in 0..5 {
-            system4.record_system2_execution(
-                &format!("test query {}", i),
-                Some("test output"),
-                1000,
-                true,
-                100,
-                2,
-            ).await;
+            system4
+                .record_system2_execution(
+                    &format!("test query {}", i),
+                    Some("test output"),
+                    1000,
+                    true,
+                    100,
+                    2,
+                )
+                .await;
         }
 
         let report = system4.get_status_report().await;

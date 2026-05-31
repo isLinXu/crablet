@@ -45,7 +45,10 @@ use tokio::sync::{mpsc, RwLock};
 use tokio::task::JoinHandle;
 use tracing::{debug, error, info, warn};
 
-use crate::connectors::{Connector, ConnectorConfig, ConnectorError, ConnectorEvent, ConnectorHealth, ConnectorResult, HealthStatus};
+use crate::connectors::{
+    Connector, ConnectorConfig, ConnectorError, ConnectorEvent, ConnectorHealth, ConnectorResult,
+    HealthStatus,
+};
 
 /// Webhook connector configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -152,15 +155,19 @@ pub struct WebhookConnector {
 impl WebhookConnector {
     pub fn new(config: ConnectorConfig) -> ConnectorResult<Self> {
         let webhook_config: WebhookConfig = serde_json::from_value(config.settings.clone())
-            .map_err(|e| ConnectorError::ConfigurationError(format!("Invalid webhook config: {}", e)))?;
-        
+            .map_err(|e| {
+                ConnectorError::ConfigurationError(format!("Invalid webhook config: {}", e))
+            })?;
+
         let (event_tx, event_rx) = mpsc::channel(1000);
-        
+
         let http_client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(webhook_config.timeout_seconds))
+            .timeout(std::time::Duration::from_secs(
+                webhook_config.timeout_seconds,
+            ))
             .build()
             .map_err(|e| ConnectorError::Other(format!("Failed to create HTTP client: {}", e)))?;
-        
+
         Ok(Self {
             id: uuid::Uuid::new_v4().to_string(),
             config,
@@ -174,7 +181,7 @@ impl WebhookConnector {
             http_client,
         })
     }
-    
+
     /// Register a new webhook endpoint for outgoing webhooks
     pub async fn register_endpoint(&self, endpoint: WebhookEndpoint) -> ConnectorResult<()> {
         let endpoint_id = endpoint.id.clone();
@@ -183,7 +190,7 @@ impl WebhookConnector {
         info!("Registered webhook endpoint: {}", endpoint_id);
         Ok(())
     }
-    
+
     /// Unregister a webhook endpoint
     pub async fn unregister_endpoint(&self, endpoint_id: &str) -> ConnectorResult<()> {
         let mut endpoints = self.endpoints.write().await;
@@ -191,7 +198,7 @@ impl WebhookConnector {
         info!("Unregistered webhook endpoint: {}", endpoint_id);
         Ok(())
     }
-    
+
     /// Send a webhook to a registered endpoint
     pub async fn send_webhook(
         &self,
@@ -199,14 +206,13 @@ impl WebhookConnector {
         payload: serde_json::Value,
     ) -> ConnectorResult<WebhookResponse> {
         let endpoints = self.endpoints.read().await;
-        let endpoint = endpoints.get(endpoint_id)
-            .ok_or_else(|| ConnectorError::ConfigurationError(
-                format!("Endpoint {} not found", endpoint_id)
-            ))?;
-        
+        let endpoint = endpoints.get(endpoint_id).ok_or_else(|| {
+            ConnectorError::ConfigurationError(format!("Endpoint {} not found", endpoint_id))
+        })?;
+
         self.send_to_endpoint(endpoint, payload).await
     }
-    
+
     /// Send webhook to any URL
     pub async fn send_webhook_to_url(
         &self,
@@ -216,38 +222,45 @@ impl WebhookConnector {
         payload: serde_json::Value,
         secret: Option<&str>,
     ) -> ConnectorResult<WebhookResponse> {
-        let mut request_builder = self.http_client
+        let mut request_builder = self
+            .http_client
             .request(
-                method.parse().map_err(|_| ConnectorError::ConfigurationError("Invalid method".to_string()))?,
+                method.parse().map_err(|_| {
+                    ConnectorError::ConfigurationError("Invalid method".to_string())
+                })?,
                 url,
             )
             .json(&payload);
-        
+
         // Add headers
         for (key, value) in headers {
             request_builder = request_builder.header(&key, value);
         }
-        
+
         // Add signature if secret is provided
         if let Some(secret) = secret {
             let signature = self.generate_signature(&payload, secret);
             request_builder = request_builder.header("X-Webhook-Signature", signature);
         }
-        
-        let response = request_builder.send().await
+
+        let response = request_builder
+            .send()
+            .await
             .map_err(|e| ConnectorError::ConnectionError(format!("HTTP request failed: {}", e)))?;
-        
+
         let status = response.status();
-        let body = response.text().await
+        let body = response
+            .text()
+            .await
             .map_err(|e| ConnectorError::ParseError(format!("Failed to read response: {}", e)))?;
-        
+
         Ok(WebhookResponse {
             status_code: status.as_u16(),
             body,
             success: status.is_success(),
         })
     }
-    
+
     async fn send_to_endpoint(
         &self,
         endpoint: &WebhookEndpoint,
@@ -255,18 +268,24 @@ impl WebhookConnector {
     ) -> ConnectorResult<WebhookResponse> {
         let mut last_error = None;
         let mut delay_ms = endpoint.retry_policy.retry_delay_ms;
-        
+
         for attempt in 0..=endpoint.retry_policy.max_retries {
-            match self.send_webhook_to_url(
-                &endpoint.url,
-                &endpoint.method,
-                endpoint.headers.clone(),
-                payload.clone(),
-                endpoint.secret.as_deref(),
-            ).await {
+            match self
+                .send_webhook_to_url(
+                    &endpoint.url,
+                    &endpoint.method,
+                    endpoint.headers.clone(),
+                    payload.clone(),
+                    endpoint.secret.as_deref(),
+                )
+                .await
+            {
                 Ok(response) if response.success => return Ok(response),
                 Ok(response) => {
-                    warn!("Webhook failed with status {}: {}", response.status_code, response.body);
+                    warn!(
+                        "Webhook failed with status {}: {}",
+                        response.status_code, response.body
+                    );
                     last_error = Some(format!("HTTP {}", response.status_code));
                 }
                 Err(e) => {
@@ -274,55 +293,57 @@ impl WebhookConnector {
                     last_error = Some(e.to_string());
                 }
             }
-            
+
             if attempt < endpoint.retry_policy.max_retries {
                 tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms)).await;
                 delay_ms = (delay_ms as f64 * endpoint.retry_policy.backoff_multiplier) as u64;
             }
         }
-        
-        Err(ConnectorError::ConnectionError(
-            format!("Webhook failed after {} retries: {:?}", 
-                endpoint.retry_policy.max_retries, 
-                last_error
-            )
-        ))
+
+        Err(ConnectorError::ConnectionError(format!(
+            "Webhook failed after {} retries: {:?}",
+            endpoint.retry_policy.max_retries, last_error
+        )))
     }
-    
+
     fn generate_signature(&self, payload: &serde_json::Value, secret: &str) -> String {
         let payload_str = payload.to_string();
         type HmacSha256 = Hmac<Sha256>;
-        let mut mac = HmacSha256::new_from_slice(secret.as_bytes())
-            .expect("HMAC can take key of any size");
+        let mut mac =
+            HmacSha256::new_from_slice(secret.as_bytes()).expect("HMAC can take key of any size");
         mac.update(payload_str.as_bytes());
         let result = mac.finalize();
         let code_bytes = result.into_bytes();
         format!("sha256={}", data_encoding::HEXLOWER.encode(&code_bytes))
     }
-    
+
     fn verify_signature(&self, payload: &str, signature: &str, secret: &str) -> bool {
         let expected = self.generate_signature(&serde_json::json!(payload), secret);
         // Constant-time comparison to prevent timing attacks
-        signature.len() == expected.len() && 
-            signature.bytes().zip(expected.bytes()).all(|(a, b)| a == b)
+        signature.len() == expected.len()
+            && signature.bytes().zip(expected.bytes()).all(|(a, b)| a == b)
     }
-    
+
     /// Start the webhook server
     async fn start_server(&mut self) -> ConnectorResult<()> {
-        let addr: SocketAddr = format!("{}:{}", self.webhook_config.bind_address, self.webhook_config.port)
-            .parse()
-            .map_err(|e| ConnectorError::ConfigurationError(format!("Invalid address: {}", e)))?;
-        
-        let listener = TcpListener::bind(addr).await
+        let addr: SocketAddr = format!(
+            "{}:{}",
+            self.webhook_config.bind_address, self.webhook_config.port
+        )
+        .parse()
+        .map_err(|e| ConnectorError::ConfigurationError(format!("Invalid address: {}", e)))?;
+
+        let listener = TcpListener::bind(addr)
+            .await
             .map_err(|e| ConnectorError::ConnectionError(format!("Failed to bind: {}", e)))?;
-        
+
         info!("Webhook server listening on {}", addr);
-        
+
         let event_tx = self.event_tx.clone();
         let path = self.webhook_config.path.clone();
         let secret = self.webhook_config.secret.clone();
         let max_body_size = self.webhook_config.max_body_size;
-        
+
         let handle = tokio::spawn(async move {
             loop {
                 match listener.accept().await {
@@ -330,16 +351,18 @@ impl WebhookConnector {
                         let event_tx = event_tx.clone();
                         let path = path.clone();
                         let secret = secret.clone();
-                        
+
                         tokio::spawn(async move {
                             if let Err(e) = Self::handle_connection(
-                                stream, 
-                                peer_addr, 
-                                event_tx, 
+                                stream,
+                                peer_addr,
+                                event_tx,
                                 path,
                                 secret,
                                 max_body_size,
-                            ).await {
+                            )
+                            .await
+                            {
                                 debug!("Connection handler error: {}", e);
                             }
                         });
@@ -350,11 +373,11 @@ impl WebhookConnector {
                 }
             }
         });
-        
+
         self.server_handle = Some(handle);
         Ok(())
     }
-    
+
     async fn handle_connection(
         mut stream: tokio::net::TcpStream,
         peer_addr: SocketAddr,
@@ -364,35 +387,37 @@ impl WebhookConnector {
         max_body_size: usize,
     ) -> ConnectorResult<()> {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
-        
+
         let mut buffer = vec![0u8; max_body_size];
-        let n = stream.read(&mut buffer).await
+        let n = stream
+            .read(&mut buffer)
+            .await
             .map_err(|e| ConnectorError::IoError(e))?;
-        
+
         buffer.truncate(n);
         let request = String::from_utf8_lossy(&buffer);
-        
+
         // Parse HTTP request (simplified)
         let lines: Vec<&str> = request.lines().collect();
         if lines.is_empty() {
             return Ok(());
         }
-        
+
         let parts: Vec<&str> = lines[0].split_whitespace().collect();
         if parts.len() < 2 {
             return Ok(());
         }
-        
+
         let method = parts[0];
         let path = parts[1];
-        
+
         // Check path
         if path != expected_path {
             let response = "HTTP/1.1 404 Not Found\r\n\r\n";
             stream.write_all(response.as_bytes()).await.ok();
             return Ok(());
         }
-        
+
         // Parse headers
         let mut headers = HashMap::new();
         let mut i = 1;
@@ -404,11 +429,14 @@ impl WebhookConnector {
             }
             i += 1;
         }
-        
+
         // Get body
-        let body_start = request.find("\r\n\r\n").map(|p| p + 4).unwrap_or(request.len());
+        let body_start = request
+            .find("\r\n\r\n")
+            .map(|p| p + 4)
+            .unwrap_or(request.len());
         let body = &request[body_start..];
-        
+
         // Verify signature if secret is configured
         if let Some(ref _secret) = secret {
             if let Some(_signature) = headers.get("x-webhook-signature") {
@@ -416,11 +444,11 @@ impl WebhookConnector {
                 debug!("Verifying webhook signature from {}", peer_addr);
             }
         }
-        
+
         // Parse body as JSON
-        let body_json: serde_json::Value = serde_json::from_str(body)
-            .unwrap_or_else(|_| serde_json::json!({ "raw": body }));
-        
+        let body_json: serde_json::Value =
+            serde_json::from_str(body).unwrap_or_else(|_| serde_json::json!({ "raw": body }));
+
         // Create event
         let event = ConnectorEvent::WebhookReceived {
             connector_id: "webhook".to_string(),
@@ -431,16 +459,17 @@ impl WebhookConnector {
             body: body_json,
             timestamp: Utc::now(),
         };
-        
+
         // Send event
         if let Err(e) = event_tx.send(event).await {
             error!("Failed to send webhook event: {}", e);
         }
-        
+
         // Send response
-        let response = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n{\"status\":\"ok\"}";
+        let response =
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n{\"status\":\"ok\"}";
         stream.write_all(response.as_bytes()).await.ok();
-        
+
         Ok(())
     }
 }
@@ -450,85 +479,88 @@ impl Connector for WebhookConnector {
     fn id(&self) -> &str {
         &self.id
     }
-    
+
     fn name(&self) -> &str {
         &self.config.name
     }
-    
+
     fn connector_type(&self) -> &str {
         "webhook"
     }
-    
+
     fn is_connected(&self) -> bool {
         self.connected
     }
-    
+
     async fn connect(&mut self) -> ConnectorResult<()> {
         info!("Initializing webhook connector: {}", self.config.name);
         self.connected = true;
         Ok(())
     }
-    
+
     async fn disconnect(&mut self) -> ConnectorResult<()> {
         self.running = false;
         self.connected = false;
-        
+
         if let Some(handle) = self.server_handle.take() {
             handle.abort();
         }
-        
+
         info!("Webhook connector '{}' disconnected", self.config.name);
         Ok(())
     }
-    
+
     async fn start(&mut self) -> ConnectorResult<()> {
         if !self.connected {
             return Err(ConnectorError::NotConnected);
         }
-        
+
         self.start_server().await?;
         self.running = true;
-        
-        info!("Webhook connector '{}' started on port {}", 
-            self.config.name, 
-            self.webhook_config.port
+
+        info!(
+            "Webhook connector '{}' started on port {}",
+            self.config.name, self.webhook_config.port
         );
         Ok(())
     }
-    
+
     async fn stop(&mut self) -> ConnectorResult<()> {
         self.running = false;
-        
+
         if let Some(handle) = self.server_handle.take() {
             handle.abort();
         }
-        
+
         info!("Webhook connector '{}' stopped", self.config.name);
         Ok(())
     }
-    
+
     fn event_receiver(&mut self) -> Option<mpsc::Receiver<ConnectorEvent>> {
         self.event_rx.take()
     }
-    
+
     async fn test(&self) -> ConnectorResult<()> {
         // Test by checking if we can bind to the port
-        let addr: SocketAddr = format!("{}:{}", self.webhook_config.bind_address, self.webhook_config.port)
-            .parse()
-            .map_err(|e| ConnectorError::ConfigurationError(format!("Invalid address: {}", e)))?;
-        
+        let addr: SocketAddr = format!(
+            "{}:{}",
+            self.webhook_config.bind_address, self.webhook_config.port
+        )
+        .parse()
+        .map_err(|e| ConnectorError::ConfigurationError(format!("Invalid address: {}", e)))?;
+
         match TcpListener::bind(addr).await {
             Ok(_) => {
                 info!("Webhook port {} is available", self.webhook_config.port);
                 Ok(())
             }
-            Err(e) => {
-                Err(ConnectorError::ConnectionError(format!("Port {} is not available: {}", 
-                    self.webhook_config.port, e)))
-            }
+            Err(e) => Err(ConnectorError::ConnectionError(format!(
+                "Port {} is not available: {}",
+                self.webhook_config.port, e
+            ))),
         }
     }
-    
+
     async fn health(&self) -> ConnectorHealth {
         ConnectorHealth {
             status: if self.connected {
@@ -574,27 +606,27 @@ impl WebhookBuilder {
             secret: None,
         }
     }
-    
+
     pub fn method(mut self, method: impl Into<String>) -> Self {
         self.method = method.into();
         self
     }
-    
+
     pub fn header(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
         self.headers.insert(key.into(), value.into());
         self
     }
-    
+
     pub fn payload(mut self, payload: serde_json::Value) -> Self {
         self.payload = Some(payload);
         self
     }
-    
+
     pub fn secret(mut self, secret: impl Into<String>) -> Self {
         self.secret = Some(secret.into());
         self
     }
-    
+
     pub fn build(self) -> OutgoingWebhook {
         OutgoingWebhook {
             url: self.url,

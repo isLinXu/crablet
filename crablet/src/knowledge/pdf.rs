@@ -1,4 +1,4 @@
-use anyhow::{Result, Context};
+use anyhow::{Context, Result};
 use std::path::Path;
 
 pub struct PdfParser;
@@ -10,11 +10,10 @@ impl PdfParser {
             return Err(anyhow::anyhow!("File not found: {:?}", path));
         }
 
-        let content = pdf_extract::extract_text(path)
-            .context("Failed to extract text from PDF")?;
-            
+        let content = pdf_extract::extract_text(path).context("Failed to extract text from PDF")?;
+
         Ok(content)
     }
-    
+
     // Future: Add method to extract images and metadata
 }

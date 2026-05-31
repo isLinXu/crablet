@@ -503,7 +503,7 @@ impl MemoryDecayManager {
         due.sort_by(|a, b| {
             let a_score = a.retention * 0.7 + a.current_importance * 0.3;
             let b_score = b.retention * 0.7 + b.current_importance * 0.3;
-            b_score.partial_cmp(&a_score).unwrap()
+            b_score.partial_cmp(&a_score).unwrap_or(std::cmp::Ordering::Equal)
         });
         
         due.truncate(limit);

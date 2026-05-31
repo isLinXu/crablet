@@ -1,6 +1,6 @@
+use anyhow::Result;
 use async_trait::async_trait;
 use serde_json::Value;
-use anyhow::Result;
 
 #[async_trait]
 pub trait Tool: Send + Sync {
@@ -11,14 +11,14 @@ pub trait Tool: Send + Sync {
 }
 
 pub mod bash;
+pub mod browser;
+pub mod demo;
 pub mod file;
 pub mod http;
+pub mod management_plugin;
+pub mod manager;
+pub mod mcp;
+pub mod mcp_plugins;
+pub mod memory_tools;
 pub mod search;
 pub mod vision;
-pub mod mcp;
-pub mod manager;
-pub mod management_plugin;
-pub mod demo;
-pub mod mcp_plugins;
-pub mod browser;
-pub mod memory_tools;

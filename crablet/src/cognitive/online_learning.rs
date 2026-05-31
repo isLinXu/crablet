@@ -46,6 +46,11 @@
 //! ```
 
 use std::collections::{BinaryHeap, HashMap, VecDeque};
+// NOTE: We use std::sync::RwLock intentionally. All lock guards are dropped
+// (via explicit block scope or local variable) before any `.await` point, so
+// there is no risk of holding a sync lock across an async suspension point.
+// If this code is ever refactored to hold locks across awaits, migrate to
+// tokio::sync::RwLock at that time.
 use std::sync::RwLock;
 use anyhow::{Result, anyhow};
 use serde::{Deserialize, Serialize};

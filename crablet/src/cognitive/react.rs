@@ -1,16 +1,16 @@
-use crate::types::{Message, TraceStep, ContentPart, ToolCall, FunctionCall};
+use crate::cognitive::llm::LlmClient;
 use crate::events::{AgentEvent, EventBus};
 use crate::skills::SkillRegistry;
-use crate::cognitive::llm::LlmClient;
-use anyhow::{Result, anyhow};
+use crate::types::{ContentPart, FunctionCall, Message, ToolCall, TraceStep};
+use anyhow::{anyhow, Result};
+use lazy_static::lazy_static;
+use regex::Regex;
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
-use std::collections::{HashSet, HashMap, VecDeque};
 use std::time::Duration;
 use tokio::sync::RwLock;
 use tokio::time::timeout;
-use tracing::{info, warn, error};
-use regex::Regex;
-use lazy_static::lazy_static;
+use tracing::{error, info, warn};
 // use uuid::Uuid;
 
 // --- 增强型循环检测器 ---
@@ -45,14 +45,18 @@ impl LoopDetector {
     fn is_looping(&mut self, tool: &str, args: &str) -> bool {
         // 1. 基础检测：如果参数完全一致，直接判定为循环
         // 允许最多 1 次重试，但第 2 次相同则报错
-        if self.exact_history.contains(&(tool.to_string(), args.to_string())) {
-             self.consecutive_repeats += 1;
-             if self.consecutive_repeats >= 2 {
-                 return true;
-             }
+        if self
+            .exact_history
+            .contains(&(tool.to_string(), args.to_string()))
+        {
+            self.consecutive_repeats += 1;
+            if self.consecutive_repeats >= 2 {
+                return true;
+            }
         } else {
             self.consecutive_repeats = 0;
-            self.exact_history.insert((tool.to_string(), args.to_string()));
+            self.exact_history
+                .insert((tool.to_string(), args.to_string()));
         }
 
         // 2. 资源级语义检测：针对多模态 'see' 工具
@@ -63,7 +67,7 @@ impl LoopDetector {
                     let counts = self.resource_usage.entry(tool.to_string()).or_default();
                     let count = counts.entry(path.to_string()).or_insert(0);
                     *count += 1;
-                    
+
                     // 如果对同一张图片操作超过 3 次，即使 Prompt 不同，也视为陷入语义循环
                     if *count > 3 {
                         warn!("Resource loop detected for path: {}", path);
@@ -72,13 +76,16 @@ impl LoopDetector {
                 }
             }
         }
-        
+
         // 3. 语义相似度检测 (Sliding Window)
         let action_str = format!("{} {}", tool, args);
-        
+
         for prev in &self.window {
             if self.similarity(prev, &action_str) > self.similarity_threshold {
-                warn!("Semantic loop detected: '{}' is similar to '{}'", action_str, prev);
+                warn!(
+                    "Semantic loop detected: '{}' is similar to '{}'",
+                    action_str, prev
+                );
                 // 同样允许少量相似重试
                 if self.consecutive_repeats >= 1 {
                     return true;
@@ -87,7 +94,7 @@ impl LoopDetector {
                 return false;
             }
         }
-        
+
         if self.window.len() >= self.max_window {
             self.window.pop_front();
         }
@@ -95,16 +102,18 @@ impl LoopDetector {
 
         false
     }
-    
+
     fn similarity(&self, s1: &str, s2: &str) -> f32 {
         // Jaccard Similarity on words (Simple Semantic Proxy)
         let set1: HashSet<&str> = s1.split_whitespace().collect();
         let set2: HashSet<&str> = s2.split_whitespace().collect();
-        
+
         let intersection = set1.intersection(&set2).count();
         let union = set1.union(&set2).count();
-        
-        if union == 0 { return 0.0; }
+
+        if union == 0 {
+            return 0.0;
+        }
         intersection as f32 / union as f32
     }
 }
@@ -120,7 +129,8 @@ impl ActionParser {
             // Updated regex to support multiline JSON args with dot matches newline (?s)
             static ref RE: Regex = Regex::new(r"(?is)Action:\s*(?:use\s+)?(?P<name>[\w\-]+)\s*(?P<args>\{[\s\S]*?\})").expect("Invalid regex pattern");
         }
-        RE.captures(text).map(|cap| (cap["name"].to_string(), cap["args"].trim().to_string()))
+        RE.captures(text)
+            .map(|cap| (cap["name"].to_string(), cap["args"].trim().to_string()))
     }
 }
 
@@ -150,7 +160,11 @@ impl ReActEngine {
         }
     }
 
-    pub async fn execute(&self, initial_context: &[Message], max_steps: usize) -> Result<(String, Vec<TraceStep>)> {
+    pub async fn execute(
+        &self,
+        initial_context: &[Message],
+        max_steps: usize,
+    ) -> Result<(String, Vec<TraceStep>)> {
         let mut current_context = initial_context.to_vec();
         let mut traces = Vec::with_capacity(max_steps);
         let mut loop_detector = LoopDetector::new();
@@ -171,19 +185,26 @@ impl ReActEngine {
             }
 
             // 2. 获取 LLM 响应
-            let response_msg = match self.llm.chat_complete_with_tools(&prompt_context, &tool_definitions).await {
+            let response_msg = match self
+                .llm
+                .chat_complete_with_tools(&prompt_context, &tool_definitions)
+                .await
+            {
                 Ok(msg) => msg,
                 Err(e) => {
                     warn!("LLM Error at step {}: {}", step_num, e);
                     self.event_bus.publish(AgentEvent::Error(e.to_string()));
-                    if step == 0 { return Err(anyhow!("LLM Initial Failure: {}", e)); }
+                    if step == 0 {
+                        return Err(anyhow!("LLM Initial Failure: {}", e));
+                    }
                     return Ok(("Thinking failed due to an LLM error.".to_string(), traces));
                 }
             };
 
             let thought = self.extract_thought(&response_msg);
             if !thought.is_empty() {
-                self.event_bus.publish(AgentEvent::ThoughtGenerated(thought.clone()));
+                self.event_bus
+                    .publish(AgentEvent::ThoughtGenerated(thought.clone()));
             }
 
             // 3. 动作识别
@@ -193,7 +214,10 @@ impl ReActEngine {
                     tool_calls.push(ToolCall {
                         id: format!("call_{}", uuid::Uuid::new_v4()),
                         r#type: "function".to_string(),
-                        function: FunctionCall { name, arguments: args },
+                        function: FunctionCall {
+                            name,
+                            arguments: args,
+                        },
                     });
                 }
             }
@@ -207,27 +231,38 @@ impl ReActEngine {
                 if max_steps > 3 && step > 1 {
                     info!("Triggering Self-Reflection on final answer...");
                     match self.reflect_on_result(&thought, &current_context).await {
-                         Ok(reflection) => {
-                             if reflection.confidence < 0.8 {
-                                 info!("Reflection confidence low ({}), revising...", reflection.confidence);
-                                 // Return revised response
-                                 let revised = format!("{} (Revised after reflection)", reflection.revised_response);
-                                 self.event_bus.publish(AgentEvent::ResponseGenerated(revised.clone()));
-                                 traces.push(TraceStep {
-                                     step: step_num,
-                                     thought: format!("Reflection: {}\nCritique: {}", thought, reflection.critique),
-                                     action: None,
-                                     action_input: None,
-                                     observation: None,
-                                 });
-                                 return Ok((revised, traces));
-                             }
-                         },
-                         Err(e) => warn!("Reflection failed: {}", e),
+                        Ok(reflection) => {
+                            if reflection.confidence < 0.8 {
+                                info!(
+                                    "Reflection confidence low ({}), revising...",
+                                    reflection.confidence
+                                );
+                                // Return revised response
+                                let revised = format!(
+                                    "{} (Revised after reflection)",
+                                    reflection.revised_response
+                                );
+                                self.event_bus
+                                    .publish(AgentEvent::ResponseGenerated(revised.clone()));
+                                traces.push(TraceStep {
+                                    step: step_num,
+                                    thought: format!(
+                                        "Reflection: {}\nCritique: {}",
+                                        thought, reflection.critique
+                                    ),
+                                    action: None,
+                                    action_input: None,
+                                    observation: None,
+                                });
+                                return Ok((revised, traces));
+                            }
+                        }
+                        Err(e) => warn!("Reflection failed: {}", e),
                     }
                 }
-                
-                self.event_bus.publish(AgentEvent::ResponseGenerated(thought.clone()));
+
+                self.event_bus
+                    .publish(AgentEvent::ResponseGenerated(thought.clone()));
                 traces.push(TraceStep {
                     step: step_num,
                     thought: thought.clone(),
@@ -248,7 +283,7 @@ impl ReActEngine {
             // 分组工具调用：根据依赖关系 (MVP: 简单地全部并行，除非有明确依赖，这里假设无依赖)
             // 如果工具有副作用或顺序依赖，应该在 Prompt 中要求 LLM 顺序调用或使用 Planner。
             // 这里我们使用 FuturesUnordered 或 tokio::join! 进行并行执行。
-            
+
             // 为了安全，限制最大并发数，例如 5
             let semaphore = Arc::new(tokio::sync::Semaphore::new(5));
             let mut tasks = Vec::new();
@@ -257,74 +292,91 @@ impl ReActEngine {
                 let func_name = tool_call.function.name.clone();
                 let args_str = tool_call.function.arguments.clone();
                 let tool_id = tool_call.id.clone();
-                
+
                 // 循环检测 (Pre-check)
                 // 注意：由于并行执行，resource_usage 可能需要锁，但这里 LoopDetector 是局部的且单线程访问
                 // 除非我们将 LoopDetector 放入任务中。
                 // 简单起见，我们在主线程做 check，如果通过则 spawn。
-                
+
                 if loop_detector.is_looping(&func_name, &args_str) {
-                    let loop_msg = format!("Loop detected: repeated or redundant use of '{}'.", func_name);
+                    let loop_msg = format!(
+                        "Loop detected: repeated or redundant use of '{}'.",
+                        func_name
+                    );
                     warn!("{}", loop_msg);
                     let obs = format!("System Warning: {}", loop_msg);
                     // Push a completed result immediately
-                    tasks.push(tokio::spawn(async move {
-                        (tool_id, func_name, args_str, obs)
-                    }));
+                    tasks.push(tokio::spawn(
+                        async move { (tool_id, func_name, args_str, obs) },
+                    ));
                     continue;
                 }
-                
+
                 // Clone necessary ARCs for the task
                 let skills_clone = self.skills.clone();
                 let bus_clone = self.event_bus.clone();
                 let timeout_duration = self.skill_timeout;
                 let sem_clone = semaphore.clone();
-                
+
                 tasks.push(tokio::spawn(async move {
                     // Use unwrap_or_default() or handle error gracefully instead of unwrap()
                     let _permit = match sem_clone.acquire().await {
                         Ok(p) => p,
                         Err(e) => {
                             error!("Semaphore acquire failed: {}", e);
-                            return (tool_id, func_name, args_str, format!("System Error: Failed to acquire concurrency permit: {}", e));
+                            return (
+                                tool_id,
+                                func_name,
+                                args_str,
+                                format!(
+                                    "System Error: Failed to acquire concurrency permit: {}",
+                                    e
+                                ),
+                            );
                         }
                     };
-                    
+
                     // Publish Start Event
                     bus_clone.publish(AgentEvent::ToolExecutionStarted {
                         tool: func_name.clone(),
                         args: args_str.clone(),
                     });
-                    
+
                     // Execute
                     let execution_future = async {
                         let registry = skills_clone.read().await;
                         match serde_json::from_str(&args_str) {
-                            Ok(parsed_json) => registry.execute(&func_name, parsed_json).await
+                            Ok(parsed_json) => registry
+                                .execute(&func_name, parsed_json)
+                                .await
                                 .unwrap_or_else(|e| format!("Skill execution failed: {}", e)),
                             Err(e) => format!("Parameter Error: {}. Please use valid JSON.", e),
                         }
                     };
-                    
+
                     let output = match timeout(timeout_duration, execution_future).await {
                         Ok(res) => res,
                         Err(_) => {
-                            let err = format!("Execution of '{}' timed out after {}s.", func_name, timeout_duration.as_secs());
+                            let err = format!(
+                                "Execution of '{}' timed out after {}s.",
+                                func_name,
+                                timeout_duration.as_secs()
+                            );
                             warn!("{}", err);
                             err
                         }
                     };
-                    
+
                     // Publish Finish Event
                     bus_clone.publish(AgentEvent::ToolExecutionFinished {
                         tool: func_name.clone(),
                         output: output.clone(),
                     });
-                    
+
                     (tool_id, func_name, args_str, output)
                 }));
             }
-            
+
             // Await all tasks
             let mut results = Vec::new();
             for task in tasks {
@@ -335,10 +387,10 @@ impl ReActEngine {
                     error!("A tool execution task panicked");
                 }
             }
-            
+
             // Process results in order (or any order, but we need to match tool_ids)
             // Since we collected them, we can just iterate.
-            
+
             for (tool_id, func_name, args_str, observation) in results {
                 traces.push(TraceStep {
                     step: step_num,
@@ -347,7 +399,7 @@ impl ReActEngine {
                     action_input: Some(args_str),
                     observation: Some(observation.clone()),
                 });
-                
+
                 current_context.push(Message::new_tool_response(&tool_id, &observation));
             }
         }
@@ -358,7 +410,7 @@ impl ReActEngine {
     }
 
     // --- 内部辅助函数 ---
-    
+
     // Scheme E: Self-Reflection Implementation
     async fn reflect_on_result(&self, result: &str, context: &[Message]) -> Result<ReflectionStep> {
         let critique_prompt = format!(
@@ -372,12 +424,12 @@ impl ReActEngine {
              {{ \"critique\": \"...\", \"revised_response\": \"...\", \"confidence\": 0.0-1.0 }}",
             result
         );
-        
+
         let mut reflection_context = context.to_vec();
         reflection_context.push(Message::new("user", &critique_prompt));
-        
+
         let response = self.llm.chat_complete(&reflection_context).await?;
-        
+
         // Parse JSON from response (naive parsing)
         // Try to find JSON block
         let json_str = if let Some(start) = response.find('{') {
@@ -389,10 +441,10 @@ impl ReActEngine {
         } else {
             &response
         };
-        
+
         let reflection: ReflectionStep = serde_json::from_str(json_str)
             .map_err(|e| anyhow!("Failed to parse reflection JSON: {}", e))?;
-            
+
         Ok(reflection)
     }
 
@@ -417,12 +469,19 @@ impl ReActEngine {
     // }
 
     fn extract_thought(&self, msg: &Message) -> String {
-        msg.content.as_ref().map(|parts| {
-            parts.iter().filter_map(|p| match p {
-                ContentPart::Text { text } => Some(text.as_str()),
-                _ => None,
-            }).collect::<Vec<_>>().join("")
-        }).unwrap_or_default()
+        msg.content
+            .as_ref()
+            .map(|parts| {
+                parts
+                    .iter()
+                    .filter_map(|p| match p {
+                        ContentPart::Text { text } => Some(text.as_str()),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>()
+                    .join("")
+            })
+            .unwrap_or_default()
     }
 
     fn format_limit_reached_msg(&self, traces: &[TraceStep]) -> String {

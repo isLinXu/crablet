@@ -1,8 +1,8 @@
 use async_trait::async_trait;
 use serde_json::Value;
 // use tracing::{info, warn};
-use anyhow::Result;
 use crate::plugins::Plugin;
+use anyhow::Result;
 
 pub struct BrowserPlugin;
 
@@ -21,7 +21,10 @@ impl Plugin for BrowserPlugin {
     }
 
     async fn execute(&self, _command: &str, _args: Value) -> Result<String> {
-        Ok("Browser tool is not yet implemented. Use 'search' for information retrieval.".to_string())
+        Ok(
+            "Browser tool is not yet implemented. Use 'search' for information retrieval."
+                .to_string(),
+        )
     }
 
     async fn shutdown(&mut self) -> Result<()> {

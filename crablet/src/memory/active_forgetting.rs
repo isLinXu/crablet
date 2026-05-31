@@ -377,7 +377,7 @@ impl ActiveForgettingEngine {
 
                 // Sort by value (lowest first)
                 let mut sorted: Vec<_> = scores.into_iter().enumerate().collect();
-                sorted.sort_by(|a, b| a.1.value.partial_cmp(&b.1.value).unwrap());
+                sorted.sort_by(|a, b| a.1.value.partial_cmp(&b.1.value).unwrap_or(std::cmp::Ordering::Equal));
 
                 // Mark excess low-value memories for forgetting
                 let to_forget = entries.len() - max_allowed;

@@ -2,14 +2,14 @@
 //!
 //! Handles session management, history, and deletion.
 
-use std::sync::Arc;
 use axum::{
-    extract::{State, Json, Path},
+    extract::{Json, Path, State},
     http::StatusCode,
 };
 use chrono::Utc;
 use serde::Deserialize;
 use sqlx::Row;
+use std::sync::Arc;
 
 use crate::gateway::server::CrabletGateway;
 
@@ -32,7 +32,11 @@ pub async fn delete_session(
             .execute(pool)
             .await
         {
-            tracing::error!("Failed to delete session messages for {}: {}", session_id, err);
+            tracing::error!(
+                "Failed to delete session messages for {}: {}",
+                session_id,
+                err
+            );
             return StatusCode::INTERNAL_SERVER_ERROR;
         }
 
@@ -54,8 +58,17 @@ pub async fn delete_session(
         }
     }
 
-    if let Err(err) = gateway.storage.session_context.delete_context(&session_id).await {
-        tracing::warn!("Failed to delete session context for {}: {}", session_id, err);
+    if let Err(err) = gateway
+        .storage
+        .session_context
+        .delete_context(&session_id)
+        .await
+    {
+        tracing::warn!(
+            "Failed to delete session context for {}: {}",
+            session_id,
+            err
+        );
     }
 
     StatusCode::NO_CONTENT
@@ -81,15 +94,13 @@ pub async fn get_session_history(
     }
 }
 
-pub async fn list_sessions(
-    State(gateway): State<Arc<CrabletGateway>>,
-) -> Json<serde_json::Value> {
+pub async fn list_sessions(State(gateway): State<Arc<CrabletGateway>>) -> Json<serde_json::Value> {
     if let Some(memory) = &gateway.router.memory_mgr.episodic {
         match sqlx::query(
             "SELECT id, created_at, last_active, message_count
              FROM sessions
              ORDER BY last_active DESC
-             LIMIT 100"
+             LIMIT 100",
         )
         .fetch_all(&memory.pool)
         .await
@@ -145,7 +156,12 @@ pub async fn compress_session(
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     let keep_recent = req.keep_recent.unwrap_or(10);
 
-    match gateway.storage.session_context.compress_context(&session_id, keep_recent).await {
+    match gateway
+        .storage
+        .session_context
+        .compress_context(&session_id, keep_recent)
+        .await
+    {
         Ok(true) => Ok(Json(serde_json::json!({
             "status": "success",
             "session_id": session_id,

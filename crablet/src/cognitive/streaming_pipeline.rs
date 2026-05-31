@@ -67,7 +67,11 @@ impl StreamContext {
 
 #[async_trait]
 pub trait StreamingMiddleware: Send + Sync {
-    async fn process_chunk(&self, chunk: StreamChunk, ctx: &mut StreamContext) -> Option<StreamChunk>;
+    async fn process_chunk(
+        &self,
+        chunk: StreamChunk,
+        ctx: &mut StreamContext,
+    ) -> Option<StreamChunk>;
     async fn finalize(&self, _ctx: &mut StreamContext) -> Option<Vec<StreamChunk>> {
         None
     }
@@ -118,7 +122,11 @@ pub struct MetricsMiddleware;
 
 #[async_trait]
 impl StreamingMiddleware for MetricsMiddleware {
-    async fn process_chunk(&self, chunk: StreamChunk, ctx: &mut StreamContext) -> Option<StreamChunk> {
+    async fn process_chunk(
+        &self,
+        chunk: StreamChunk,
+        ctx: &mut StreamContext,
+    ) -> Option<StreamChunk> {
         ctx.chunk_count += 1;
         if let Some(c) = &chunk.content {
             ctx.total_chars += c.chars().count();
@@ -131,7 +139,11 @@ pub struct EmptyDeltaFilterMiddleware;
 
 #[async_trait]
 impl StreamingMiddleware for EmptyDeltaFilterMiddleware {
-    async fn process_chunk(&self, chunk: StreamChunk, _ctx: &mut StreamContext) -> Option<StreamChunk> {
+    async fn process_chunk(
+        &self,
+        chunk: StreamChunk,
+        _ctx: &mut StreamContext,
+    ) -> Option<StreamChunk> {
         if chunk.chunk_type == "delta" && chunk.content.as_deref().unwrap_or("").is_empty() {
             return None;
         }
@@ -143,7 +155,11 @@ pub struct FinalizeSummaryMiddleware;
 
 #[async_trait]
 impl StreamingMiddleware for FinalizeSummaryMiddleware {
-    async fn process_chunk(&self, chunk: StreamChunk, _ctx: &mut StreamContext) -> Option<StreamChunk> {
+    async fn process_chunk(
+        &self,
+        chunk: StreamChunk,
+        _ctx: &mut StreamContext,
+    ) -> Option<StreamChunk> {
         Some(chunk)
     }
 

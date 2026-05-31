@@ -3,20 +3,20 @@
 //! Provides web browser automation using Chrome DevTools Protocol (CDP)
 //! via the chromiumoxide crate.
 
+use async_trait::async_trait;
+#[cfg(feature = "browser")]
+use futures::StreamExt;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
 use std::time::Duration;
-use async_trait::async_trait;
-use serde::{Deserialize, Serialize};
-#[cfg(feature = "browser")]
-use futures::StreamExt;
 
-use crate::error::Result;
 #[cfg(feature = "browser")]
 use crate::error::CrabletError;
-use crate::rpa::RpaResult;
+use crate::error::Result;
 #[cfg(feature = "browser")]
 use crate::rpa::RpaError;
+use crate::rpa::RpaResult;
 
 /// Browser configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -45,7 +45,10 @@ impl Default for BrowserConfig {
     fn default() -> Self {
         Self {
             headless: true,
-            viewport: Viewport { width: 1920, height: 1080 },
+            viewport: Viewport {
+                width: 1920,
+                height: 1080,
+            },
             user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36".to_string(),
             timeout: Duration::from_secs(30),
             slow_mo: 0,
@@ -84,18 +87,16 @@ impl BrowserAutomation {
         }
         #[cfg(not(feature = "browser"))]
         {
-            Ok(Self {
-                config,
-            })
+            Ok(Self { config })
         }
     }
-    
+
     /// Launch browser (requires 'browser' feature)
     #[cfg(feature = "browser")]
     async fn launch_browser(config: &BrowserConfig) -> Result<chromiumoxide::Browser> {
         use chromiumoxide::browser::{Browser, BrowserConfig as ChromiumConfig};
         use chromiumoxide::handler::viewport::Viewport as ChromiumViewport;
-        
+
         let viewport = ChromiumViewport {
             width: config.viewport.width,
             height: config.viewport.height,
@@ -104,15 +105,16 @@ impl BrowserAutomation {
             is_landscape: true,
             has_touch: false,
         };
-        
+
         let browser_config = ChromiumConfig::builder()
             .viewport(viewport)
             .build()
             .map_err(|e| CrabletError::Other(anyhow::anyhow!(e.to_string())))?;
 
-        let (browser, mut handler) = Browser::launch(browser_config).await
+        let (browser, mut handler) = Browser::launch(browser_config)
+            .await
             .map_err(|e| CrabletError::Other(anyhow::anyhow!(e.to_string())))?;
-        
+
         // Spawn handler task
         tokio::spawn(async move {
             while let Some(h) = handler.next().await {
@@ -121,84 +123,102 @@ impl BrowserAutomation {
                 }
             }
         });
-        
+
         Ok(browser)
     }
-    
+
     /// Execute a browser workflow
-    pub async fn execute_workflow(&self, workflow: &BrowserWorkflow) -> RpaResult<WorkflowExecutionResult> {
+    pub async fn execute_workflow(
+        &self,
+        workflow: &BrowserWorkflow,
+    ) -> RpaResult<WorkflowExecutionResult> {
         tracing::info!("Starting browser workflow: {}", workflow.name);
-        
+
         #[cfg(feature = "browser")]
         {
             let browser_lock = self.browser.read().await;
-            let browser = browser_lock.as_ref()
+            let browser = browser_lock
+                .as_ref()
                 .ok_or_else(|| RpaError::BrowserError("Browser not initialized".to_string()))?;
-            
+
             // Create new page
-            let page = browser.new_page("about:blank").await
+            let page = browser
+                .new_page("about:blank")
+                .await
                 .map_err(|e| RpaError::BrowserError(e.to_string()))?;
-            
+
             let start = std::time::Instant::now();
             let mut variables: HashMap<String, String> = HashMap::new();
             let mut screenshots: Vec<String> = vec![];
-            
+
             for (i, step) in workflow.steps.iter().enumerate() {
                 tracing::debug!("Executing step {}: {:?}", i + 1, step);
-                
+
                 // Apply slow motion
                 if self.config.slow_mo > 0 {
                     tokio::time::sleep(Duration::from_millis(self.config.slow_mo)).await;
                 }
-                
+
                 match step {
                     BrowserStep::Navigate { url } => {
                         let resolved_url = self.resolve_variables(url, &variables);
                         tracing::debug!("Navigating to: {}", resolved_url);
-                        
-                        page.goto(&resolved_url).await
+
+                        page.goto(&resolved_url)
+                            .await
                             .map_err(|e| RpaError::NavigationError(e.to_string()))?;
                     }
                     BrowserStep::Click { selector } => {
                         let resolved_selector = self.resolve_variables(selector, &variables);
                         tracing::debug!("Clicking: {}", resolved_selector);
-                        
-                        page.find_element(&resolved_selector).await
+
+                        page.find_element(&resolved_selector)
+                            .await
                             .map_err(|e| RpaError::ElementNotFound(e.to_string()))?
-                            .click().await
+                            .click()
+                            .await
                             .map_err(|e| RpaError::BrowserError(e.to_string()))?;
                     }
                     BrowserStep::Fill { selector, value } => {
                         let resolved_selector = self.resolve_variables(selector, &variables);
                         let resolved_value = self.resolve_variables(value, &variables);
                         tracing::debug!("Filling {} with: {}", resolved_selector, resolved_value);
-                        
-                        let element = page.find_element(&resolved_selector).await
+
+                        let element = page
+                            .find_element(&resolved_selector)
+                            .await
                             .map_err(|e| RpaError::ElementNotFound(e.to_string()))?;
-                        
-                        element.click().await
+
+                        element
+                            .click()
+                            .await
                             .map_err(|e| RpaError::BrowserError(e.to_string()))?;
-                        
+
                         // Clear existing text
-                        element.type_str("").await
+                        element
+                            .type_str("")
+                            .await
                             .map_err(|e| RpaError::BrowserError(e.to_string()))?;
-                        
+
                         // Type new value
-                        element.type_str(&resolved_value).await
+                        element
+                            .type_str(&resolved_value)
+                            .await
                             .map_err(|e| RpaError::BrowserError(e.to_string()))?;
                     }
                     BrowserStep::Select { selector, value } => {
                         let resolved_selector = self.resolve_variables(selector, &variables);
                         let resolved_value = self.resolve_variables(value, &variables);
                         tracing::debug!("Selecting {} in {}", resolved_value, resolved_selector);
-                        
+
                         // Execute JavaScript to select option
                         let script = format!(
                             r#"document.querySelector('{}').value = '{}';"#,
                             resolved_selector, resolved_value
                         );
-                        
-                        page.evaluate(script.as_str()).await
+
+                        page.evaluate(script.as_str())
+                            .await
                             .map_err(|e| RpaError::BrowserError(e.to_string()))?;
                     }
                     BrowserStep::Wait { seconds } => {
@@ -207,10 +227,14 @@ impl BrowserAutomation {
                     }
                     BrowserStep::WaitForElement { selector, timeout } => {
                         let resolved_selector = self.resolve_variables(selector, &variables);
-                        tracing::debug!("Waiting for element: {} (timeout: {}s)", resolved_selector, timeout);
-                        
+                        tracing::debug!(
+                            "Waiting for element: {} (timeout: {}s)",
+                            resolved_selector,
+                            timeout
+                        );
+
                         let timeout_duration = Duration::from_secs(*timeout);
-                        
+
                         match tokio::time::timeout(timeout_duration, async {
                             loop {
                                 match page.find_element(&resolved_selector).await {
@@ -218,43 +242,60 @@ impl BrowserAutomation {
                                     Err(_) => tokio::time::sleep(Duration::from_millis(100)).await,
                                 }
                             }
-                        }).await {
+                        })
+                        .await
+                        {
                             Ok(Ok(())) => {}
-                            _ => return Err(RpaError::TimeoutError(
-                                format!("Element {} not found within {}s", resolved_selector, timeout)
-                            )),
+                            _ => {
+                                return Err(RpaError::TimeoutError(format!(
+                                    "Element {} not found within {}s",
+                                    resolved_selector, timeout
+                                )))
+                            }
                         }
                     }
                     BrowserStep::Screenshot { path } => {
                         let resolved_path = self.resolve_variables(path, &variables);
                         tracing::debug!("Taking screenshot: {}", resolved_path);
-                        
-                        page.save_screenshot(chromiumoxide::page::ScreenshotParams::builder()
-                            .full_page(true)
-                            .build(), &resolved_path)
-                            .await
-                            .map_err(|e| RpaError::BrowserError(e.to_string()))?;
-                        
+
+                        page.save_screenshot(
+                            chromiumoxide::page::ScreenshotParams::builder()
+                                .full_page(true)
+                                .build(),
+                            &resolved_path,
+                        )
+                        .await
+                        .map_err(|e| RpaError::BrowserError(e.to_string()))?;
+
                         screenshots.push(resolved_path);
                     }
                     BrowserStep::Scroll { x, y } => {
                         tracing::debug!("Scrolling by ({}, {})", x, y);
-                        
+
                         let script = format!("window.scrollBy({}, {});", x, y);
-                        page.evaluate(script.as_str()).await
+                        page.evaluate(script.as_str())
+                            .await
                             .map_err(|e| RpaError::BrowserError(e.to_string()))?;
                     }
                     BrowserStep::ExecuteJs { script } => {
                         let resolved_script = self.resolve_variables(script, &variables);
-                        tracing::debug!("Executing JavaScript: {}", &resolved_script[..resolved_script.len().min(50)]);
-                        
-                        page.evaluate(resolved_script.as_str()).await
+                        tracing::debug!(
+                            "Executing JavaScript: {}",
+                            &resolved_script[..resolved_script.len().min(50)]
+                        );
+
+                        page.evaluate(resolved_script.as_str())
+                            .await
                             .map_err(|e| RpaError::BrowserError(e.to_string()))?;
                     }
-                    BrowserStep::Extract { selector, attribute, variable } => {
+                    BrowserStep::Extract {
+                        selector,
+                        attribute,
+                        variable,
+                    } => {
                         let resolved_selector = self.resolve_variables(selector, &variables);
                         tracing::debug!("Extracting {} from {}", variable, resolved_selector);
-                        
+
                         let script = if let Some(attr) = attribute {
                             format!(
                                 r#"document.querySelector('{}').getAttribute('{}')"#,
@@ -266,26 +307,30 @@ impl BrowserAutomation {
                                 resolved_selector
                             )
                         };
-                        
-                        let result = page.evaluate(script.as_str()).await
+
+                        let result = page
+                            .evaluate(script.as_str())
+                            .await
                             .map_err(|e| RpaError::BrowserError(e.to_string()))?;
-                        
-                        let value = result.into_value::<serde_json::Value>()
+
+                        let value = result
+                            .into_value::<serde_json::Value>()
                             .ok()
                             .and_then(|v| v.as_str().map(|s| s.to_string()))
                             .unwrap_or_default();
-                        
+
                         variables.insert(variable.clone(), value);
                     }
                 }
             }
-            
+
             // Close page
-            page.close().await
+            page.close()
+                .await
                 .map_err(|e| RpaError::BrowserError(e.to_string()))?;
-            
+
             tracing::info!("Browser workflow completed in {:?}", start.elapsed());
-            
+
             Ok(WorkflowExecutionResult {
                 success: true,
                 execution_time: start.elapsed(),
@@ -293,16 +338,16 @@ impl BrowserAutomation {
                 screenshots,
             })
         }
-        
+
         #[cfg(not(feature = "browser"))]
         {
             // Simulate execution without actual browser
             tracing::warn!("Browser feature not enabled, simulating workflow execution");
-            
+
             let start = std::time::Instant::now();
             let mut variables: HashMap<String, String> = HashMap::new();
             let screenshots: Vec<String> = vec![];
-            
+
             for step in &workflow.steps {
                 match step {
                     BrowserStep::Extract { variable, .. } => {
@@ -311,7 +356,7 @@ impl BrowserAutomation {
                     _ => {}
                 }
             }
-            
+
             Ok(WorkflowExecutionResult {
                 success: true,
                 execution_time: start.elapsed(),
@@ -320,7 +365,7 @@ impl BrowserAutomation {
             })
         }
     }
-    
+
     /// Resolve variables in a string
     fn resolve_variables(&self, text: &str, variables: &HashMap<String, String>) -> String {
         let mut result = text.to_string();
@@ -329,14 +374,16 @@ impl BrowserAutomation {
         }
         result
     }
-    
+
     /// Close browser
     pub async fn close(&self) -> Result<()> {
         #[cfg(feature = "browser")]
         {
             let mut browser_lock = self.browser.write().await;
             if let Some(mut browser) = browser_lock.take() {
-                browser.close().await
+                browser
+                    .close()
+                    .await
                     .map_err(|e| CrabletError::Other(anyhow::anyhow!(e.to_string())))?;
             }
         }
@@ -382,7 +429,11 @@ pub enum BrowserStep {
     /// Execute JavaScript
     ExecuteJs { script: String },
     /// Extract data from element
-    Extract { selector: String, attribute: Option<String>, variable: String },
+    Extract {
+        selector: String,
+        attribute: Option<String>,
+        variable: String,
+    },
 }
 
 /// Workflow execution result
@@ -418,7 +469,7 @@ pub trait BrowserDriver: Send + Sync {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_browser_config_default() {
         let config = BrowserConfig::default();
@@ -426,28 +477,35 @@ mod tests {
         assert_eq!(config.viewport.width, 1920);
         assert_eq!(config.viewport.height, 1080);
     }
-    
+
     #[test]
     fn test_browser_workflow_serialization() {
         let workflow = BrowserWorkflow {
             name: "Test Workflow".to_string(),
             steps: vec![
-                BrowserStep::Navigate { url: "https://example.com".to_string() },
-                BrowserStep::Click { selector: "#button".to_string() },
-                BrowserStep::Fill { selector: "#input".to_string(), value: "test".to_string() },
+                BrowserStep::Navigate {
+                    url: "https://example.com".to_string(),
+                },
+                BrowserStep::Click {
+                    selector: "#button".to_string(),
+                },
+                BrowserStep::Fill {
+                    selector: "#input".to_string(),
+                    value: "test".to_string(),
+                },
             ],
             headless: true,
             viewport: None,
             user_agent: None,
             variables: HashMap::new(),
         };
-        
+
         let yaml = serde_yaml::to_string(&workflow).unwrap();
         assert!(yaml.contains("Test Workflow"));
         assert!(yaml.contains("navigate"));
         assert!(yaml.contains("click"));
     }
-    
+
     #[tokio::test]
     async fn test_browser_automation_without_feature() {
         // Test that browser automation can be created without the browser feature

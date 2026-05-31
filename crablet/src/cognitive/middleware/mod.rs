@@ -1,34 +1,34 @@
-use async_trait::async_trait;
-use anyhow::Result;
-use crate::types::{Message, TraceStep};
-use std::sync::Arc;
-use tokio::sync::RwLock;
 use crate::cognitive::llm::LlmClient;
-use crate::skills::SkillRegistry;
-use crate::events::EventBus;
-use crate::memory::semantic::SharedKnowledgeGraph;
-#[cfg(feature = "knowledge")]
-use crate::knowledge::vector_store::VectorStore;
 use crate::cognitive::planner::TaskPlanner;
-use crate::tools::manager::SkillManagerTool;
+use crate::events::EventBus;
 #[cfg(feature = "knowledge")]
 use crate::knowledge::graph_rag::EntityExtractorMode;
+#[cfg(feature = "knowledge")]
+use crate::knowledge::vector_store::VectorStore;
+use crate::memory::semantic::SharedKnowledgeGraph;
+use crate::skills::SkillRegistry;
+use crate::tools::manager::SkillManagerTool;
+use crate::types::{Message, TraceStep};
+use anyhow::Result;
+use async_trait::async_trait;
+use std::sync::Arc;
+use tokio::sync::RwLock;
 
-pub mod safety;
 pub mod cost_guard;
-pub mod semantic_cache;
 pub mod planning;
 pub mod rag;
-pub mod skill_context;
 pub mod routing;
+pub mod safety;
+pub mod semantic_cache;
+pub mod skill_context;
 
-pub use safety::SafetyMiddleware;
 pub use cost_guard::CostGuardMiddleware;
-pub use semantic_cache::SemanticCacheMiddleware;
 pub use planning::PlanningMiddleware;
 pub use rag::RagMiddleware;
-pub use skill_context::SkillContextMiddleware;
 pub use routing::RoutingMiddleware;
+pub use safety::SafetyMiddleware;
+pub use semantic_cache::SemanticCacheMiddleware;
+pub use skill_context::SkillContextMiddleware;
 
 #[derive(Clone, Debug)]
 pub struct RagTraceItem {
@@ -64,8 +64,13 @@ pub trait CognitiveMiddleware: Send + Sync {
     /// Returns Ok(Some((response, traces))) if the request is handled and should return early.
     /// Returns Ok(None) to continue to the next middleware.
     /// Modifies `context` in place (e.g. injecting system prompts).
-    async fn execute(&self, input: &str, context: &mut Vec<Message>, state: &MiddlewareState) -> Result<Option<(String, Vec<TraceStep>)>>;
-    
+    async fn execute(
+        &self,
+        input: &str,
+        context: &mut Vec<Message>,
+        state: &MiddlewareState,
+    ) -> Result<Option<(String, Vec<TraceStep>)>>;
+
     fn name(&self) -> &str;
 }
 
@@ -106,7 +111,12 @@ impl MiddlewarePipeline {
         }
     }
 
-    pub async fn execute(&self, input: &str, context: &mut Vec<Message>, state: &MiddlewareState) -> Result<Option<(String, Vec<TraceStep>)>> {
+    pub async fn execute(
+        &self,
+        input: &str,
+        context: &mut Vec<Message>,
+        state: &MiddlewareState,
+    ) -> Result<Option<(String, Vec<TraceStep>)>> {
         for middleware in &self.middlewares {
             // tracing::info!("Executing middleware: {}", middleware.name());
             if let Some(result) = middleware.execute(input, context, state).await? {

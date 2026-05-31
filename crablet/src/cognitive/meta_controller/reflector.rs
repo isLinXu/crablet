@@ -1,12 +1,12 @@
 //! Reflector - 反思问题并生成改进建议
 
-use std::sync::Arc;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use tracing::{debug, warn};
 
-use crate::error::Result;
 use crate::cognitive::llm::LlmClient;
 use crate::cognitive::meta_controller::monitor::ExecutionMetrics;
+use crate::error::Result;
 
 /// 问题类型
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -59,9 +59,14 @@ pub enum ActionType {
     /// 切换策略
     SwitchStrategy { new_strategy: String },
     /// 更新知识
-    UpdateKnowledge { knowledge_id: String, content: String },
+    UpdateKnowledge {
+        knowledge_id: String,
+        content: String,
+    },
     /// 调整参数
-    AdjustParameters { parameters: std::collections::HashMap<String, serde_json::Value> },
+    AdjustParameters {
+        parameters: std::collections::HashMap<String, serde_json::Value>,
+    },
     /// 优化提示
     OptimizePrompt { new_prompt: String },
     /// 增加上下文
@@ -82,7 +87,11 @@ impl Reflector {
     }
 
     /// 诊断问题
-    pub async fn diagnose(&self, task: &str, metrics: &ExecutionMetrics) -> Result<ProblemDiagnosis> {
+    pub async fn diagnose(
+        &self,
+        task: &str,
+        metrics: &ExecutionMetrics,
+    ) -> Result<ProblemDiagnosis> {
         debug!("Diagnosing problem for task: {}", task);
 
         // 分析问题类型
@@ -95,10 +104,14 @@ impl Reflector {
         let severity = self.assess_severity(&problem_type, metrics);
 
         // 分析根本原因
-        let root_cause = self.analyze_root_cause(&problem_type, task, metrics).await?;
+        let root_cause = self
+            .analyze_root_cause(&problem_type, task, metrics)
+            .await?;
 
         // 生成改进建议
-        let suggested_actions = self.generate_improvements(&problem_type, &root_cause, task).await?;
+        let suggested_actions = self
+            .generate_improvements(&problem_type, &root_cause, task)
+            .await?;
 
         Ok(ProblemDiagnosis {
             problem_type,
@@ -125,7 +138,12 @@ impl Reflector {
     }
 
     /// 生成问题描述
-    fn generate_description(&self, problem_type: &ProblemType, task: &str, metrics: &ExecutionMetrics) -> String {
+    fn generate_description(
+        &self,
+        problem_type: &ProblemType,
+        task: &str,
+        metrics: &ExecutionMetrics,
+    ) -> String {
         match problem_type {
             ProblemType::ExecutionFailed => {
                 format!(
@@ -213,7 +231,7 @@ impl Reflector {
         );
 
         use crate::types::Message;
-        
+
         match self.llm.chat_complete(&[Message::user(&prompt)]).await {
             Ok(analysis) => Ok(Some(analysis)),
             Err(e) => {
@@ -239,7 +257,8 @@ impl Reflector {
                     action_type: ActionType::SwitchStrategy {
                         new_strategy: "enhanced".to_string(),
                     },
-                    description: "Switch to enhanced processing strategy with better error handling".into(),
+                    description:
+                        "Switch to enhanced processing strategy with better error handling".into(),
                     priority: 0.9,
                     expected_impact: "Reduce execution failures by improving error handling".into(),
                 });
@@ -308,7 +327,7 @@ impl Reflector {
             );
 
             use crate::types::Message;
-            
+
             match self.llm.chat_complete(&[Message::user(&prompt)]).await {
                 Ok(suggestions) => {
                     // 简单解析 LLM 返回的建议

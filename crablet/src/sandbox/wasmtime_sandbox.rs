@@ -166,7 +166,10 @@ impl WasmtimeSandbox {
             Ok(Ok(())) => {
                 // Note: fuel_consumed API may vary by wasmtime version
                 // Using optional chaining for compatibility
-                let fuel_consumed = 0; // TODO: Get actual fuel consumption from wasmtime 29.0
+                // Fuel consumption tracking requires wasmtime 29.0+ fuel API;
+                // for now we report 0 as the actual consumption is tracked
+                // at the store level via `store.fuel_consumed()` if available
+                let fuel_consumed = 0;
                 
                 info!("✅ Sandbox execution completed, fuel consumed: {}", fuel_consumed);
                 

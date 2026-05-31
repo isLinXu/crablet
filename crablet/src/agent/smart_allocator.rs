@@ -1,9 +1,9 @@
-use std::collections::HashMap;
-use std::sync::Arc;
-use async_trait::async_trait;
-use serde::Serialize;
 use crate::agent::capability::{AgentCapability, CapabilityRouter};
 use crate::agent::swarm::types::{AgentId, TaskNode};
+use async_trait::async_trait;
+use serde::Serialize;
+use std::collections::HashMap;
+use std::sync::Arc;
 
 #[async_trait]
 pub trait Embedder: Send + Sync {
@@ -17,8 +17,17 @@ impl Embedder for KeywordEmbedder {
     async fn embed(&self, text: &str) -> Vec<f32> {
         let lower = text.to_lowercase();
         let groups = [
-            vec!["code", "coding", "rust", "python", "bug", "refactor", "api", "程序", "代码"],
-            vec!["research", "search", "investigate", "compare", "调研", "检索"],
+            vec![
+                "code", "coding", "rust", "python", "bug", "refactor", "api", "程序", "代码",
+            ],
+            vec![
+                "research",
+                "search",
+                "investigate",
+                "compare",
+                "调研",
+                "检索",
+            ],
             vec!["review", "qa", "test", "lint", "审核", "测试"],
             vec!["security", "auth", "vulnerability", "安全", "漏洞"],
             vec!["plan", "planning", "roadmap", "拆解", "规划", "架构"],
@@ -89,10 +98,16 @@ impl SmartTaskAllocator {
     }
 
     pub async fn allocate(&self, task: &TaskNode, available_agents: &[AgentId]) -> AgentId {
-        self.allocate_with_decision(task, available_agents).await.selected_agent()
+        self.allocate_with_decision(task, available_agents)
+            .await
+            .selected_agent()
     }
 
-    pub async fn allocate_with_decision(&self, task: &TaskNode, available_agents: &[AgentId]) -> AllocationDecision {
+    pub async fn allocate_with_decision(
+        &self,
+        task: &TaskNode,
+        available_agents: &[AgentId],
+    ) -> AllocationDecision {
         if available_agents.is_empty() {
             return AllocationDecision {
                 task_id: task.id.clone(),
@@ -104,17 +119,27 @@ impl SmartTaskAllocator {
         let task_embedding = self.task_embedder.embed(&task.prompt).await;
         let mut scored: Vec<CandidateScore> = Vec::with_capacity(available_agents.len());
         for agent in available_agents {
-            let role = self.get_agent_role(agent).unwrap_or_else(|| task.agent_role.clone());
-            let profile = self.role_profiles.get(&role).cloned().unwrap_or_else(|| fallback_profile(&role));
+            let role = self
+                .get_agent_role(agent)
+                .unwrap_or_else(|| task.agent_role.clone());
+            let profile = self
+                .role_profiles
+                .get(&role)
+                .cloned()
+                .unwrap_or_else(|| fallback_profile(&role));
             let expertise_match = cosine_similarity(&task_embedding, &profile.expertise_embedding);
             let ucb_bonus = self.capability_router.get_exploration_bonus(&role);
-            let cap = self.capability_router.get_capability(&role).unwrap_or_else(|| AgentCapability::new(&role));
+            let cap = self
+                .capability_router
+                .get_capability(&role)
+                .unwrap_or_else(|| AgentCapability::new(&role));
             let load_penalty = cap.current_load as f64 * 0.1;
             let perf_from_router = performance_bonus(&cap);
             let perf_from_profile = performance_bonus_from_profile(&profile);
             let preferred_bonus = preferred_task_bonus(&task.prompt, &profile.preferred_task_types);
             let perf_bonus = perf_from_router.max(perf_from_profile);
-            let final_score = expertise_match + ucb_bonus + perf_bonus + preferred_bonus - load_penalty;
+            let final_score =
+                expertise_match + ucb_bonus + perf_bonus + preferred_bonus - load_penalty;
             scored.push(CandidateScore {
                 agent_id: agent.0.clone(),
                 role,
@@ -126,7 +151,11 @@ impl SmartTaskAllocator {
                 final_score,
             });
         }
-        scored.sort_by(|a, b| b.final_score.partial_cmp(&a.final_score).unwrap_or(std::cmp::Ordering::Equal));
+        scored.sort_by(|a, b| {
+            b.final_score
+                .partial_cmp(&a.final_score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         if let Some(best) = scored.first() {
             AllocationDecision {
                 task_id: task.id.clone(),
@@ -138,7 +167,9 @@ impl SmartTaskAllocator {
             AllocationDecision {
                 task_id: task.id.clone(),
                 selected_agent_id: available_agents[0].0.clone(),
-                selected_role: self.get_agent_role(&available_agents[0]).unwrap_or_else(|| task.agent_role.clone()),
+                selected_role: self
+                    .get_agent_role(&available_agents[0])
+                    .unwrap_or_else(|| task.agent_role.clone()),
                 candidates: vec![],
             }
         }
@@ -151,7 +182,11 @@ impl SmartTaskAllocator {
         }
         let lower = task.prompt.to_lowercase();
         for (role, profile) in &self.role_profiles {
-            if profile.preferred_task_types.iter().any(|kw| lower.contains(kw)) {
+            if profile
+                .preferred_task_types
+                .iter()
+                .any(|kw| lower.contains(kw))
+            {
                 roles.push(role.clone());
             }
         }
@@ -179,42 +214,115 @@ impl AllocationDecision {
 
 fn default_role_profiles() -> HashMap<String, RoleProfile> {
     let mut map = HashMap::new();
-    map.insert("coder".to_string(), RoleProfile {
-        role: "coder".to_string(),
-        expertise_embedding: vec![1.0, 0.1, 0.4, 0.2, 0.2, 0.4],
-        preferred_task_types: vec!["code".to_string(), "bug".to_string(), "refactor".to_string(), "api".to_string(), "代码".to_string()],
-        historical_performance: PerformanceMetrics { success_rate: 0.92, avg_latency_ms: 1800, total_tasks: 1 },
-    });
-    map.insert("researcher".to_string(), RoleProfile {
-        role: "researcher".to_string(),
-        expertise_embedding: vec![0.2, 1.0, 0.3, 0.2, 0.4, 0.5],
-        preferred_task_types: vec!["research".to_string(), "search".to_string(), "compare".to_string(), "调研".to_string()],
-        historical_performance: PerformanceMetrics { success_rate: 0.9, avg_latency_ms: 1600, total_tasks: 1 },
-    });
-    map.insert("analyst".to_string(), RoleProfile {
-        role: "analyst".to_string(),
-        expertise_embedding: vec![0.3, 0.4, 0.5, 0.3, 0.4, 1.0],
-        preferred_task_types: vec!["analysis".to_string(), "metrics".to_string(), "reason".to_string(), "分析".to_string()],
-        historical_performance: PerformanceMetrics { success_rate: 0.91, avg_latency_ms: 1700, total_tasks: 1 },
-    });
-    map.insert("reviewer".to_string(), RoleProfile {
-        role: "reviewer".to_string(),
-        expertise_embedding: vec![0.4, 0.2, 1.0, 0.3, 0.3, 0.6],
-        preferred_task_types: vec!["review".to_string(), "test".to_string(), "lint".to_string(), "审核".to_string()],
-        historical_performance: PerformanceMetrics { success_rate: 0.93, avg_latency_ms: 1500, total_tasks: 1 },
-    });
-    map.insert("planner".to_string(), RoleProfile {
-        role: "planner".to_string(),
-        expertise_embedding: vec![0.2, 0.4, 0.2, 0.2, 1.0, 0.5],
-        preferred_task_types: vec!["plan".to_string(), "roadmap".to_string(), "architecture".to_string(), "规划".to_string()],
-        historical_performance: PerformanceMetrics { success_rate: 0.89, avg_latency_ms: 1400, total_tasks: 1 },
-    });
-    map.insert("security".to_string(), RoleProfile {
-        role: "security".to_string(),
-        expertise_embedding: vec![0.3, 0.2, 0.6, 1.0, 0.2, 0.5],
-        preferred_task_types: vec!["security".to_string(), "auth".to_string(), "vulnerability".to_string(), "安全".to_string()],
-        historical_performance: PerformanceMetrics { success_rate: 0.94, avg_latency_ms: 1900, total_tasks: 1 },
-    });
+    map.insert(
+        "coder".to_string(),
+        RoleProfile {
+            role: "coder".to_string(),
+            expertise_embedding: vec![1.0, 0.1, 0.4, 0.2, 0.2, 0.4],
+            preferred_task_types: vec![
+                "code".to_string(),
+                "bug".to_string(),
+                "refactor".to_string(),
+                "api".to_string(),
+                "代码".to_string(),
+            ],
+            historical_performance: PerformanceMetrics {
+                success_rate: 0.92,
+                avg_latency_ms: 1800,
+                total_tasks: 1,
+            },
+        },
+    );
+    map.insert(
+        "researcher".to_string(),
+        RoleProfile {
+            role: "researcher".to_string(),
+            expertise_embedding: vec![0.2, 1.0, 0.3, 0.2, 0.4, 0.5],
+            preferred_task_types: vec![
+                "research".to_string(),
+                "search".to_string(),
+                "compare".to_string(),
+                "调研".to_string(),
+            ],
+            historical_performance: PerformanceMetrics {
+                success_rate: 0.9,
+                avg_latency_ms: 1600,
+                total_tasks: 1,
+            },
+        },
+    );
+    map.insert(
+        "analyst".to_string(),
+        RoleProfile {
+            role: "analyst".to_string(),
+            expertise_embedding: vec![0.3, 0.4, 0.5, 0.3, 0.4, 1.0],
+            preferred_task_types: vec![
+                "analysis".to_string(),
+                "metrics".to_string(),
+                "reason".to_string(),
+                "分析".to_string(),
+            ],
+            historical_performance: PerformanceMetrics {
+                success_rate: 0.91,
+                avg_latency_ms: 1700,
+                total_tasks: 1,
+            },
+        },
+    );
+    map.insert(
+        "reviewer".to_string(),
+        RoleProfile {
+            role: "reviewer".to_string(),
+            expertise_embedding: vec![0.4, 0.2, 1.0, 0.3, 0.3, 0.6],
+            preferred_task_types: vec![
+                "review".to_string(),
+                "test".to_string(),
+                "lint".to_string(),
+                "审核".to_string(),
+            ],
+            historical_performance: PerformanceMetrics {
+                success_rate: 0.93,
+                avg_latency_ms: 1500,
+                total_tasks: 1,
+            },
+        },
+    );
+    map.insert(
+        "planner".to_string(),
+        RoleProfile {
+            role: "planner".to_string(),
+            expertise_embedding: vec![0.2, 0.4, 0.2, 0.2, 1.0, 0.5],
+            preferred_task_types: vec![
+                "plan".to_string(),
+                "roadmap".to_string(),
+                "architecture".to_string(),
+                "规划".to_string(),
+            ],
+            historical_performance: PerformanceMetrics {
+                success_rate: 0.89,
+                avg_latency_ms: 1400,
+                total_tasks: 1,
+            },
+        },
+    );
+    map.insert(
+        "security".to_string(),
+        RoleProfile {
+            role: "security".to_string(),
+            expertise_embedding: vec![0.3, 0.2, 0.6, 1.0, 0.2, 0.5],
+            preferred_task_types: vec![
+                "security".to_string(),
+                "auth".to_string(),
+                "vulnerability".to_string(),
+                "安全".to_string(),
+            ],
+            historical_performance: PerformanceMetrics {
+                success_rate: 0.94,
+                avg_latency_ms: 1900,
+                total_tasks: 1,
+            },
+        },
+    );
     map
 }
 
@@ -305,6 +413,7 @@ mod tests {
             timeout_ms: 30_000,
             max_retries: 1,
             retry_count: 0,
+            execution_state: None,
         }
     }
 
@@ -313,14 +422,16 @@ mod tests {
         let router = Arc::new(CapabilityRouter::new());
         let allocator = SmartTaskAllocator::new(router);
         let task = node("please debug rust code and refactor api", "planner");
-        let chosen = allocator.allocate(
-            &task,
-            &[
-                AgentId::from_name("coder"),
-                AgentId::from_name("researcher"),
-                AgentId::from_name("analyst"),
-            ],
-        ).await;
+        let chosen = allocator
+            .allocate(
+                &task,
+                &[
+                    AgentId::from_name("coder"),
+                    AgentId::from_name("researcher"),
+                    AgentId::from_name("analyst"),
+                ],
+            )
+            .await;
         assert_eq!(chosen.0, "coder");
     }
 
@@ -332,13 +443,12 @@ mod tests {
         }
         let allocator = SmartTaskAllocator::new(router);
         let task = node("general task", "planner");
-        let chosen = allocator.allocate(
-            &task,
-            &[
-                AgentId::from_name("coder"),
-                AgentId::from_name("security"),
-            ],
-        ).await;
+        let chosen = allocator
+            .allocate(
+                &task,
+                &[AgentId::from_name("coder"), AgentId::from_name("security")],
+            )
+            .await;
         assert_eq!(chosen.0, "security");
     }
 
@@ -350,10 +460,7 @@ mod tests {
         let decision = allocator
             .allocate_with_decision(
                 &task,
-                &[
-                    AgentId::from_name("security"),
-                    AgentId::from_name("coder"),
-                ],
+                &[AgentId::from_name("security"), AgentId::from_name("coder")],
             )
             .await;
         assert!(!decision.candidates.is_empty());

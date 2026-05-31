@@ -1,14 +1,14 @@
 //! Hybrid Skill Matcher with RRF (Reciprocal Rank Fusion)
-//! 
+//!
 //! Combines multiple matching strategies using RRF to provide optimal
 //! recall and precision for skill matching.
 
-use std::collections::HashMap;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use tracing::{info, debug};
+use std::collections::HashMap;
+use tracing::{debug, info};
 
-use super::semantic_matcher::{SemanticMatcher, SemanticMatch};
+use super::semantic_matcher::{SemanticMatch, SemanticMatcher};
 
 /// Hybrid match result combining multiple signals
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -27,10 +27,10 @@ pub struct HybridMatch {
 /// Confidence tiers for matches
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum ConfidenceTier {
-    High,      // > 0.8 - Auto-execute
-    Medium,    // 0.6 - 0.8 - Suggest with confirmation
-    Low,       // 0.4 - 0.6 - Show as option
-    VeryLow,   // < 0.4 - Not shown unless explicitly requested
+    High,    // > 0.8 - Auto-execute
+    Medium,  // 0.6 - 0.8 - Suggest with confirmation
+    Low,     // 0.4 - 0.6 - Show as option
+    VeryLow, // < 0.4 - Not shown unless explicitly requested
 }
 
 impl ConfidenceTier {
@@ -48,7 +48,10 @@ impl ConfidenceTier {
     }
 
     pub fn should_suggest(&self) -> bool {
-        matches!(self, ConfidenceTier::High | ConfidenceTier::Medium | ConfidenceTier::Low)
+        matches!(
+            self,
+            ConfidenceTier::High | ConfidenceTier::Medium | ConfidenceTier::Low
+        )
     }
 }
 
@@ -115,8 +118,15 @@ impl HybridMatcher {
 
     /// Initialize semantic matcher with embedder
     #[cfg(feature = "knowledge")]
-    pub async fn init_semantic(&mut self, embedder: crate::knowledge::embedder::Embedder) -> Result<()> {
-        self.semantic_matcher = self.semantic_matcher.clone().with_embedder(embedder).await?;
+    pub async fn init_semantic(
+        &mut self,
+        embedder: crate::knowledge::embedder::Embedder,
+    ) -> Result<()> {
+        self.semantic_matcher = self
+            .semantic_matcher
+            .clone()
+            .with_embedder(embedder)
+            .await?;
         Ok(())
     }
 
@@ -128,11 +138,13 @@ impl HybridMatcher {
         keywords: Vec<String>,
         examples: Vec<String>,
     ) -> Result<()> {
-        self.semantic_matcher.register_skill(name, description, keywords, examples).await?;
-        
+        self.semantic_matcher
+            .register_skill(name, description, keywords, examples)
+            .await?;
+
         // Initialize usage stats
         self.usage_stats.entry(name.to_string()).or_default();
-        
+
         Ok(())
     }
 
@@ -145,13 +157,13 @@ impl HybridMatcher {
     ) -> Result<Vec<HybridMatch>> {
         // 1. Get semantic matches
         let semantic_matches = self.semantic_matcher.find_matches(query, top_k * 2).await?;
-        
+
         // 2. Get keyword matches
         let keyword_matches = self.keyword_match(query);
-        
+
         // 3. Get usage-based matches
         let usage_matches = self.usage_based_match(query);
-        
+
         // 4. Get context-based matches
         let context_matches = self.context_based_match(query, context);
 
@@ -173,11 +185,19 @@ impl HybridMatcher {
             .collect();
 
         // Sort by final score
-        results.sort_by(|a, b| b.final_score.partial_cmp(&a.final_score).unwrap());
+        results.sort_by(|a, b| {
+            b.final_score
+                .partial_cmp(&a.final_score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         results.truncate(top_k);
 
-        debug!("Hybrid matcher found {} matches for query: {}", results.len(), query);
-        
+        debug!(
+            "Hybrid matcher found {} matches for query: {}",
+            results.len(),
+            query
+        );
+
         Ok(results)
     }
 
@@ -190,7 +210,8 @@ impl HybridMatcher {
 
     /// Usage-based matching (popularity/recency)
     fn usage_based_match(&self, _query: &str) -> Vec<(String, f32)> {
-        let mut matches: Vec<(String, f32)> = self.usage_stats
+        let mut matches: Vec<(String, f32)> = self
+            .usage_stats
             .iter()
             .map(|(skill_name, stats)| {
                 let score = self.calculate_usage_score(stats);
@@ -199,7 +220,7 @@ impl HybridMatcher {
             .filter(|(_, score)| *score > 0.0)
             .collect();
 
-        matches.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+        matches.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         matches
     }
 
@@ -231,15 +252,20 @@ impl HybridMatcher {
     }
 
     /// Context-based matching
-    fn context_based_match(&self, query: &str, context: &ConversationContext) -> Vec<(String, f32)> {
+    fn context_based_match(
+        &self,
+        query: &str,
+        context: &ConversationContext,
+    ) -> Vec<(String, f32)> {
         let mut scores: HashMap<String, f32> = HashMap::new();
 
         // Topic similarity
         if let Some(ref topic) = context.current_topic {
-            for (skill_name, _) in &self.usage_stats {
+            for skill_name in self.usage_stats.keys() {
                 let similarity = self.calculate_topic_similarity(query, topic, skill_name);
                 if similarity > 0.0 {
-                    *scores.entry(skill_name.clone()).or_insert(0.0) += similarity * self.context_weights.conversation_topic;
+                    *scores.entry(skill_name.clone()).or_insert(0.0) +=
+                        similarity * self.context_weights.conversation_topic;
                 }
             }
         }
@@ -247,16 +273,18 @@ impl HybridMatcher {
         // Recent skills boost
         for (i, recent_skill) in context.recent_skills.iter().enumerate() {
             let recency_weight = 1.0 - (i as f32 / context.recent_skills.len() as f32);
-            *scores.entry(recent_skill.clone()).or_insert(0.0) += recency_weight * self.context_weights.recent_skills;
+            *scores.entry(recent_skill.clone()).or_insert(0.0) +=
+                recency_weight * self.context_weights.recent_skills;
         }
 
         // User preferences
         for (skill_name, preference) in &context.user_preferences {
-            *scores.entry(skill_name.clone()).or_insert(0.0) += preference * self.context_weights.user_preferences;
+            *scores.entry(skill_name.clone()).or_insert(0.0) +=
+                preference * self.context_weights.user_preferences;
         }
 
         let mut matches: Vec<(String, f32)> = scores.into_iter().collect();
-        matches.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+        matches.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         matches
     }
 
@@ -285,7 +313,8 @@ impl HybridMatcher {
         };
 
         // Add scores from each source
-        let semantic_tuples: Vec<(String, f32)> = semantic.iter()
+        let semantic_tuples: Vec<(String, f32)> = semantic
+            .iter()
             .map(|m| (m.skill_name.clone(), m.confidence))
             .collect();
         add_rrf(&semantic_tuples, 1.0);
@@ -295,7 +324,7 @@ impl HybridMatcher {
 
         // Convert to sorted vector
         let mut results: Vec<(String, f32)> = rrf_scores.into_iter().collect();
-        results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+        results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         results
     }
 
@@ -316,10 +345,14 @@ impl HybridMatcher {
             final_score,
             semantic_score: _semantic_match.map(|m| m.semantic_score).unwrap_or(0.0),
             keyword_score: _semantic_match.map(|m| m.keyword_score).unwrap_or(0.0),
-            usage_score: usage_stat.map(|s| self.calculate_usage_score(s)).unwrap_or(0.0),
-            context_score: 0.0, // Calculated separately
+            usage_score: usage_stat
+                .map(|s| self.calculate_usage_score(s))
+                .unwrap_or(0.0),
+            context_score: 0.0,     // Calculated separately
             rank_positions: vec![], // Tracked during RRF
-            matched_keywords: _semantic_match.map(|m| m.matched_keywords.clone()).unwrap_or_default(),
+            matched_keywords: _semantic_match
+                .map(|m| m.matched_keywords.clone())
+                .unwrap_or_default(),
             confidence_tier: ConfidenceTier::from_score(final_score),
         }
     }
@@ -345,11 +378,17 @@ impl HybridMatcher {
         if recall < 0.7 {
             // Lower threshold to increase recall
             self.threshold = (self.threshold * 0.9).max(0.3);
-            info!("Adapted threshold down to {:.2} to improve recall", self.threshold);
+            info!(
+                "Adapted threshold down to {:.2} to improve recall",
+                self.threshold
+            );
         } else if precision < 0.7 {
             // Raise threshold to increase precision
             self.threshold = (self.threshold * 1.1).min(0.8);
-            info!("Adapted threshold up to {:.2} to improve precision", self.threshold);
+            info!(
+                "Adapted threshold up to {:.2} to improve precision",
+                self.threshold
+            );
         }
     }
 }
@@ -361,23 +400,12 @@ impl Default for HybridMatcher {
 }
 
 /// Conversation context for context-aware matching
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ConversationContext {
     pub current_topic: Option<String>,
     pub recent_skills: Vec<String>,
     pub user_preferences: HashMap<String, f32>,
     pub conversation_history: Vec<String>,
-}
-
-impl Default for ConversationContext {
-    fn default() -> Self {
-        Self {
-            current_topic: None,
-            recent_skills: Vec::new(),
-            user_preferences: HashMap::new(),
-            conversation_history: Vec::new(),
-        }
-    }
 }
 
 impl ConversationContext {
@@ -423,7 +451,7 @@ mod tests {
             success_count: 8,
             last_used: Some(chrono::Utc::now()),
         };
-        
+
         let score = matcher.calculate_usage_score(&stats);
         assert!(score > 0.0 && score <= 1.0);
     }
@@ -431,21 +459,19 @@ mod tests {
     #[test]
     fn test_rrf_fusion() {
         let matcher = HybridMatcher::new();
-        
-        let semantic = vec![
-            SemanticMatch {
-                skill_name: "weather".to_string(),
-                confidence: 0.9,
-                matched_keywords: vec![],
-                semantic_score: 0.9,
-                keyword_score: 0.5,
-            }
-        ];
-        
+
+        let semantic = vec![SemanticMatch {
+            skill_name: "weather".to_string(),
+            confidence: 0.9,
+            matched_keywords: vec![],
+            semantic_score: 0.9,
+            keyword_score: 0.5,
+        }];
+
         let keyword = vec![("weather".to_string(), 0.8)];
         let usage = vec![];
         let context = vec![];
-        
+
         let results = matcher.reciprocal_rank_fusion(&semantic, &keyword, &usage, &context);
         assert!(!results.is_empty());
         assert_eq!(results[0].0, "weather");

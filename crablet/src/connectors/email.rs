@@ -44,7 +44,10 @@ use tokio::sync::mpsc;
 use tokio::time::{interval, Duration};
 use tracing::{debug, error, info};
 
-use crate::connectors::{Connector, ConnectorConfig, ConnectorError, ConnectorEvent, ConnectorHealth, ConnectorResult, HealthStatus};
+use crate::connectors::{
+    Connector, ConnectorConfig, ConnectorError, ConnectorEvent, ConnectorHealth, ConnectorResult,
+    HealthStatus,
+};
 
 /// Email connector configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -112,11 +115,13 @@ pub struct EmailConnector {
 
 impl EmailConnector {
     pub fn new(config: ConnectorConfig) -> ConnectorResult<Self> {
-        let email_config: EmailConfig = serde_json::from_value(config.settings.clone())
-            .map_err(|e| ConnectorError::ConfigurationError(format!("Invalid email config: {}", e)))?;
-        
+        let email_config: EmailConfig =
+            serde_json::from_value(config.settings.clone()).map_err(|e| {
+                ConnectorError::ConfigurationError(format!("Invalid email config: {}", e))
+            })?;
+
         let (event_tx, event_rx) = mpsc::channel(100);
-        
+
         Ok(Self {
             id: uuid::Uuid::new_v4().to_string(),
             config,
@@ -129,29 +134,28 @@ impl EmailConnector {
             processed_ids: std::collections::HashSet::new(),
         })
     }
-    
+
     /// Send an email response
     pub async fn send_email(
         &self,
         to: Vec<String>,
         subject: String,
         body: String,
-        #[allow(unused_variables)]
-        html_body: Option<String>,
+        #[allow(unused_variables)] html_body: Option<String>,
     ) -> ConnectorResult<()> {
         if !self.connected {
             return Err(ConnectorError::NotConnected);
         }
-        
+
         info!("Sending email to {:?} with subject: {}", to, subject);
-        
+
         // Note: In a real implementation, this would use lettre crate
         // For now, we just log the intent
         debug!("Email body: {}", body);
-        
+
         Ok(())
     }
-    
+
     /// Process a single email message
     async fn process_message(
         &mut self,
@@ -167,13 +171,13 @@ impl EmailConnector {
         if self.processed_ids.contains(&message_id) {
             return Ok(());
         }
-        
+
         // Apply filters
         if !self.matches_filters(&subject, &from, &to, !attachments.is_empty()) {
             debug!("Email {} filtered out", message_id);
             return Ok(());
         }
-        
+
         // Create event
         let event = ConnectorEvent::EmailReceived {
             connector_id: self.id.clone(),
@@ -185,16 +189,16 @@ impl EmailConnector {
             attachments,
             timestamp,
         };
-        
+
         // Send event
         if let Err(e) = self.event_tx.send(event).await {
             error!("Failed to send email event: {}", e);
             return Err(ConnectorError::Other(format!("Event channel error: {}", e)));
         }
-        
+
         // Mark as processed
         self.processed_ids.insert(message_id);
-        
+
         // Limit processed IDs cache size
         if self.processed_ids.len() > 10000 {
             // Clear oldest half
@@ -203,84 +207,96 @@ impl EmailConnector {
                 self.processed_ids.remove(&id);
             }
         }
-        
+
         Ok(())
     }
-    
-    fn matches_filters(&self, subject: &str, from: &str, to: &[String], has_attachments: bool) -> bool {
+
+    fn matches_filters(
+        &self,
+        subject: &str,
+        from: &str,
+        to: &[String],
+        has_attachments: bool,
+    ) -> bool {
         let filters = &self.email_config.filters;
-        
+
         // Subject filter
         if !filters.subject_contains.is_empty() {
-            let matches = filters.subject_contains.iter()
+            let matches = filters
+                .subject_contains
+                .iter()
                 .any(|s| subject.to_lowercase().contains(&s.to_lowercase()));
             if !matches {
                 return false;
             }
         }
-        
+
         // From filter
         if !filters.from_addresses.is_empty() {
-            let matches = filters.from_addresses.iter()
+            let matches = filters
+                .from_addresses
+                .iter()
                 .any(|addr| from.to_lowercase().contains(&addr.to_lowercase()));
             if !matches {
                 return false;
             }
         }
-        
+
         // To filter
         if !filters.to_addresses.is_empty() {
-            let matches = filters.to_addresses.iter()
-                .any(|addr| to.iter().any(|t| t.to_lowercase().contains(&addr.to_lowercase())));
+            let matches = filters.to_addresses.iter().any(|addr| {
+                to.iter()
+                    .any(|t| t.to_lowercase().contains(&addr.to_lowercase()))
+            });
             if !matches {
                 return false;
             }
         }
-        
+
         // Attachment filter
         if let Some(required) = filters.has_attachments {
             if has_attachments != required {
                 return false;
             }
         }
-        
+
         true
     }
-    
+
     /// Start polling for new emails
     async fn start_polling(&mut self) -> ConnectorResult<()> {
         let poll_interval = Duration::from_secs(self.email_config.poll_interval_seconds);
         let mut interval = interval(poll_interval);
-        
+
         let connector_id = self.id.clone();
         let _event_tx = self.event_tx.clone();
-        
+
         tokio::spawn(async move {
             loop {
                 interval.tick().await;
-                
+
                 // In a real implementation, this would fetch emails from IMAP server
                 // For now, we just simulate the polling
                 debug!("Polling emails for connector {}", connector_id);
-                
+
                 // Simulate checking for new emails
                 // Real implementation would use imap crate
             }
         });
-        
+
         Ok(())
     }
-    
+
     /// Start IMAP IDLE mode
     async fn start_idle(&mut self) -> ConnectorResult<()> {
         info!("Starting IMAP IDLE mode for {}", self.config.name);
-        
+
         // In a real implementation, this would use IMAP IDLE
         // For now, we fall back to polling
         if !self.email_config.use_idle {
             return self.start_polling().await;
         }
-        
+
         // Simulate IDLE mode (would use imap::Session::idle())
         self.start_polling().await
     }
@@ -291,92 +307,98 @@ impl Connector for EmailConnector {
     fn id(&self) -> &str {
         &self.id
     }
-    
+
     fn name(&self) -> &str {
         &self.config.name
     }
-    
+
     fn connector_type(&self) -> &str {
         "email"
     }
-    
+
     fn is_connected(&self) -> bool {
         self.connected
     }
-    
+
     async fn connect(&mut self) -> ConnectorResult<()> {
-        info!("Connecting to email server: {}", self.email_config.imap_server);
-        
+        info!(
+            "Connecting to email server: {}",
+            self.email_config.imap_server
+        );
+
         // In a real implementation, this would:
         // 1. Connect to IMAP server
         // 2. Authenticate
         // 3. Select folder
-        
+
         // Validate configuration
         if self.email_config.username.is_empty() {
             return Err(ConnectorError::ConfigurationError(
-                "Username is required".to_string()
+                "Username is required".to_string(),
             ));
         }
-        
+
         if self.email_config.password.is_empty() {
             return Err(ConnectorError::ConfigurationError(
-                "Password is required".to_string()
+                "Password is required".to_string(),
             ));
         }
-        
+
         self.connected = true;
-        info!("Email connector '{}' connected successfully", self.config.name);
-        
+        info!(
+            "Email connector '{}' connected successfully",
+            self.config.name
+        );
+
         Ok(())
     }
-    
+
     async fn disconnect(&mut self) -> ConnectorResult<()> {
         self.running = false;
         self.connected = false;
         info!("Email connector '{}' disconnected", self.config.name);
         Ok(())
     }
-    
+
     async fn start(&mut self) -> ConnectorResult<()> {
         if !self.connected {
             return Err(ConnectorError::NotConnected);
         }
-        
+
         self.running = true;
-        
+
         // Start IDLE or polling
         if self.email_config.use_idle {
             self.start_idle().await?;
         } else {
             self.start_polling().await?;
         }
-        
+
         info!("Email connector '{}' started", self.config.name);
         Ok(())
     }
-    
+
     async fn stop(&mut self) -> ConnectorResult<()> {
         self.running = false;
         info!("Email connector '{}' stopped", self.config.name);
         Ok(())
     }
-    
+
     fn event_receiver(&mut self) -> Option<mpsc::Receiver<ConnectorEvent>> {
         self.event_rx.take()
     }
-    
+
     async fn test(&self) -> ConnectorResult<()> {
         if !self.connected {
             return Err(ConnectorError::NotConnected);
         }
-        
+
         // Test connection by checking folder list
         info!("Testing email connection for '{}'", self.config.name);
-        
+
         Ok(())
     }
-    
+
     async fn health(&self) -> ConnectorHealth {
         ConnectorHealth {
             status: if self.connected {
@@ -425,38 +447,43 @@ impl EmailBuilder {
             attachments: Vec::new(),
         }
     }
-    
+
     pub fn to(mut self, address: impl Into<String>) -> Self {
         self.to.push(address.into());
         self
     }
-    
+
     pub fn cc(mut self, address: impl Into<String>) -> Self {
         self.cc.push(address.into());
         self
     }
-    
+
     pub fn bcc(mut self, address: impl Into<String>) -> Self {
         self.bcc.push(address.into());
         self
     }
-    
+
     pub fn subject(mut self, subject: impl Into<String>) -> Self {
         self.subject = subject.into();
         self
     }
-    
+
     pub fn body(mut self, body: impl Into<String>) -> Self {
         self.body = body.into();
         self
     }
-    
+
     pub fn html(mut self, html: impl Into<String>) -> Self {
         self.html_body = Some(html.into());
         self
     }
-    
-    pub fn attach(mut self, filename: impl Into<String>, content_type: impl Into<String>, data: Vec<u8>) -> Self {
+
+    pub fn attach(
+        mut self,
+        filename: impl Into<String>,
+        content_type: impl Into<String>,
+        data: Vec<u8>,
+    ) -> Self {
         self.attachments.push(Attachment {
             filename: filename.into(),
             content_type: content_type.into(),
@@ -464,7 +491,7 @@ impl EmailBuilder {
         });
         self
     }
-    
+
     pub fn build(self) -> EmailMessage {
         EmailMessage {
             to: self.to,

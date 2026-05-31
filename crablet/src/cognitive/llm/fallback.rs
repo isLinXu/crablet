@@ -3,14 +3,14 @@
 //! Provides automatic failover between multiple LLM providers.
 //! When the primary model fails, automatically switches to fallback models.
 
-use std::sync::Arc;
-use std::time::{Duration, Instant};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
-use tracing::{info, warn, error};
+use tracing::{error, info, warn};
 
-use crate::cognitive::llm::{LlmClient, KimiClient, ZhipuClient};
+use crate::cognitive::llm::{KimiClient, LlmClient, ZhipuClient};
 use crate::types::Message;
 
 /// LLM Error types
@@ -109,9 +109,9 @@ impl Default for ModelConfig {
 /// Circuit breaker states
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CircuitState {
-    Closed,     // Normal operation
-    Open,       // Failing, reject requests
-    HalfOpen,   // Testing if recovered
+    Closed,   // Normal operation
+    Open,     // Failing, reject requests
+    HalfOpen, // Testing if recovered
 }
 
 /// Model health status
@@ -157,26 +157,28 @@ impl FallbackLlmClient {
     /// Create a new fallback client
     pub async fn new(config: FallbackConfig) -> Result<Self, LlmError> {
         let primary = Self::create_client(&config.primary).await?;
-        
+
         let mut fallbacks = Vec::new();
         for fallback_config in &config.fallbacks {
             match Self::create_client(fallback_config).await {
                 Ok(client) => fallbacks.push(client),
                 Err(e) => {
-                    warn!("Failed to create fallback client for {}: {}", 
-                          fallback_config.model, e);
+                    warn!(
+                        "Failed to create fallback client for {}: {}",
+                        fallback_config.model, e
+                    );
                 }
             }
         }
-        
+
         let health_count = 1 + fallbacks.len();
-        let health = Arc::new(RwLock::new(
-            vec![ModelHealth::default(); health_count]
-        ));
-        
-        info!("Fallback LLM client initialized with {} fallback models", 
-              fallbacks.len());
-        
+        let health = Arc::new(RwLock::new(vec![ModelHealth::default(); health_count]));
+
+        info!(
+            "Fallback LLM client initialized with {} fallback models",
+            fallbacks.len()
+        );
+
         Ok(Self {
             config,
             primary,
@@ -184,34 +186,35 @@ impl FallbackLlmClient {
             health,
         })
     }
-    
+
     /// Create a client from configuration
     async fn create_client(config: &ModelConfig) -> Result<Arc<Box<dyn LlmClient>>, LlmError> {
-        use crate::cognitive::llm::{OpenAiClient, OllamaClient};
-        
+        use crate::cognitive::llm::{OllamaClient, OpenAiClient};
+
         let client: Box<dyn LlmClient> = match config.provider.as_str() {
-            "openai" | "anthropic" | "deepseek" => {
-                Box::new(OpenAiClient::new(&config.model).map_err(|e| LlmError::ConfigError(e.to_string()))?)
-            }
-            "kimi" => {
-                Box::new(KimiClient::new(&config.model).map_err(|e| LlmError::ConfigError(e.to_string()))?)
-            }
-            "zhipu" | "glm" => {
-                Box::new(ZhipuClient::new(&config.model).map_err(|e| LlmError::ConfigError(e.to_string()))?)
-            }
-            "ollama" | "local" => {
-                Box::new(OllamaClient::new(&config.model))
-            }
+            "openai" | "anthropic" | "deepseek" => Box::new(
+                OpenAiClient::new(&config.model)
+                    .map_err(|e| LlmError::ConfigError(e.to_string()))?,
+            ),
+            "kimi" => Box::new(
+                KimiClient::new(&config.model).map_err(|e| LlmError::ConfigError(e.to_string()))?,
+            ),
+            "zhipu" | "glm" => Box::new(
+                ZhipuClient::new(&config.model)
+                    .map_err(|e| LlmError::ConfigError(e.to_string()))?,
+            ),
+            "ollama" | "local" => Box::new(OllamaClient::new(&config.model)),
             _ => {
-                return Err(LlmError::ConfigError(
-                    format!("Unknown provider: {}", config.provider)
-                ));
+                return Err(LlmError::ConfigError(format!(
+                    "Unknown provider: {}",
+                    config.provider
+                )));
             }
         };
-        
+
         Ok(Arc::new(client))
     }
-    
+
     /// Complete with fallback
     pub async fn complete(&self, prompt: &str) -> Result<String, LlmError> {
         let messages = vec![Message::user(prompt.to_string())];
@@ -232,17 +235,23 @@ impl FallbackLlmClient {
         } else {
             warn!("Primary model circuit breaker is open, skipping...");
         }
-        
+
         // Try fallbacks in order
         for (idx, fallback) in self.fallbacks.iter().enumerate() {
             let health_idx = idx + 1;
-            
+
             if !self.is_model_available(health_idx).await {
-                warn!("Fallback model {} circuit breaker is open, skipping...", idx);
+                warn!(
+                    "Fallback model {} circuit breaker is open, skipping...",
+                    idx
+                );
                 continue;
             }
-            
-            match self.try_complete(health_idx, fallback.clone(), messages).await {
+
+            match self
+                .try_complete(health_idx, fallback.clone(), messages)
+                .await
+            {
                 Ok(response) => {
                     info!("Fallback model {} succeeded", idx);
                     return Ok(response);
@@ -253,11 +262,11 @@ impl FallbackLlmClient {
                 }
             }
         }
-        
+
         error!("All models failed, no fallback available");
         Err(LlmError::AllModelsFailed)
     }
-    
+
     /// Try to complete with a specific model
     async fn try_complete(
         &self,
@@ -266,15 +275,12 @@ impl FallbackLlmClient {
         messages: &[Message],
     ) -> Result<String, LlmError> {
         let start = Instant::now();
-        
+
         let timeout = Duration::from_secs(self.config.timeout_secs);
-        let result = tokio::time::timeout(
-            timeout,
-            client.chat_complete(messages)
-        ).await;
-        
+        let result = tokio::time::timeout(timeout, client.chat_complete(messages)).await;
+
         let latency = start.elapsed();
-        
+
         match result {
             Ok(Ok(response)) => {
                 self.record_success(health_idx, latency).await;
@@ -290,7 +296,7 @@ impl FallbackLlmClient {
             }
         }
     }
-    
+
     /// Check if a model is available (circuit breaker)
     async fn is_model_available(&self, health_idx: usize) -> bool {
         let health = self.health.read().await;
@@ -298,15 +304,14 @@ impl FallbackLlmClient {
             Some(h) => h,
             None => return false,
         };
-        
+
         match model_health.state {
             CircuitState::Closed => true,
             CircuitState::Open => {
                 // Check if enough time has passed to try half-open
                 if let Some(last_failure) = model_health.last_failure {
-                    let reset_duration = Duration::from_secs(
-                        self.config.circuit_breaker_reset_secs
-                    );
+                    let reset_duration =
+                        Duration::from_secs(self.config.circuit_breaker_reset_secs);
                     if last_failure.elapsed() > reset_duration {
                         drop(health);
                         self.transition_to_half_open(health_idx).await;
@@ -321,7 +326,7 @@ impl FallbackLlmClient {
             CircuitState::HalfOpen => true,
         }
     }
-    
+
     /// Record a successful request
     async fn record_success(&self, health_idx: usize, latency: Duration) {
         let mut health = self.health.write().await;
@@ -330,12 +335,12 @@ impl FallbackLlmClient {
             model_health.last_success = Some(Instant::now());
             model_health.total_requests += 1;
             model_health.successful_requests += 1;
-            
+
             // Update average latency
             let latency_ms = latency.as_millis() as f64;
-            model_health.average_latency_ms = 
+            model_health.average_latency_ms =
                 (model_health.average_latency_ms * 0.9) + (latency_ms * 0.1);
-            
+
             // If half-open and success, close the circuit
             if model_health.state == CircuitState::HalfOpen {
                 model_health.state = CircuitState::Closed;
@@ -343,7 +348,7 @@ impl FallbackLlmClient {
             }
         }
     }
-    
+
     /// Record a failed request
     async fn record_failure(&self, health_idx: usize) {
         let mut health = self.health.write().await;
@@ -352,31 +357,37 @@ impl FallbackLlmClient {
             model_health.last_failure = Some(Instant::now());
             model_health.total_requests += 1;
             model_health.failed_requests += 1;
-            
+
             // Check if we should open the circuit
-            if self.config.enable_circuit_breaker &&
-               model_health.consecutive_failures >= self.config.circuit_breaker_threshold {
+            if self.config.enable_circuit_breaker
+                && model_health.consecutive_failures >= self.config.circuit_breaker_threshold
+            {
                 model_health.state = CircuitState::Open;
-                error!("Model {} circuit breaker opened after {} failures", 
-                       health_idx, model_health.consecutive_failures);
+                error!(
+                    "Model {} circuit breaker opened after {} failures",
+                    health_idx, model_health.consecutive_failures
+                );
             }
         }
     }
-    
+
     /// Transition to half-open state
     async fn transition_to_half_open(&self, health_idx: usize) {
         let mut health = self.health.write().await;
         if let Some(model_health) = health.get_mut(health_idx) {
             model_health.state = CircuitState::HalfOpen;
-            info!("Model {} circuit breaker half-open (testing recovery)", health_idx);
+            info!(
+                "Model {} circuit breaker half-open (testing recovery)",
+                health_idx
+            );
         }
     }
-    
+
     /// Get health status for all models
     pub async fn get_health_status(&self) -> Vec<ModelHealth> {
         self.health.read().await.clone()
     }
-    
+
     /// Force reset circuit breaker for a model
     pub async fn reset_circuit_breaker(&self, health_idx: usize) {
         let mut health = self.health.write().await;
@@ -396,12 +407,16 @@ impl LlmClient for FallbackLlmClient {
             Err(e) => Err(anyhow::anyhow!("Fallback LLM error: {}", e)),
         }
     }
-    
-    async fn chat_complete_with_tools(&self, messages: &[Message], _tools: &[serde_json::Value]) -> anyhow::Result<Message> {
+
+    async fn chat_complete_with_tools(
+        &self,
+        messages: &[Message],
+        _tools: &[serde_json::Value],
+    ) -> anyhow::Result<Message> {
         let text = self.chat_complete(messages).await?;
         Ok(Message::new("assistant", &text))
     }
-    
+
     fn model_name(&self) -> &str {
         "fallback-llm"
     }
@@ -410,7 +425,7 @@ impl LlmClient for FallbackLlmClient {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[tokio::test]
     async fn test_fallback_config_default() {
         let config = FallbackConfig::default();
@@ -418,7 +433,7 @@ mod tests {
         assert_eq!(config.timeout_secs, 30);
         assert!(config.enable_circuit_breaker);
     }
-    
+
     #[tokio::test]
     async fn test_model_health_default() {
         let health = ModelHealth::default();

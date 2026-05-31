@@ -402,7 +402,7 @@ impl SelfImprovementLoop {
         if self.config.enable_strategy_adaptation {
             // Find best performing strategy
             let best_strategy = component.strategies.iter()
-                .max_by(|a, b| a.success_rate.partial_cmp(&b.success_rate).unwrap());
+                .max_by(|a, b| a.success_rate.partial_cmp(&b.success_rate).unwrap_or(std::cmp::Ordering::Equal));
             
             if let Some(best) = best_strategy {
                 if best.name != component.active_strategy && best.success_rate > 0.7 {

@@ -8,6 +8,8 @@ export const LOCAL_STORAGE_KEYS = {
   MODEL_PRIORITY: 'crablet-model-priority',
 };
 
+const GATEWAY_API_PREFIX = '/api';
+
 const getDefaultApiFallback = () => {
   if (typeof window === 'undefined' || !window.location) {
     return 'http://127.0.0.1:18790/api';
@@ -24,6 +26,24 @@ const getDefaultApiFallback = () => {
   return `${apiProtocol}//${hostname}:18790/api`;
 };
 
+export const normalizeApiRequestPath = (path: string) => {
+  const trimmed = path.trim();
+  if (!trimmed || /^https?:\/\//i.test(trimmed)) {
+    return trimmed;
+  }
+
+  const normalized = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
+  if (normalized === GATEWAY_API_PREFIX) {
+    return '';
+  }
+
+  if (normalized.startsWith(`${GATEWAY_API_PREFIX}/`)) {
+    return normalized.slice(GATEWAY_API_PREFIX.length);
+  }
+
+  return normalized;
+};
+
 export const getApiBaseUrl = () => {
   const fallback = getDefaultApiFallback();
   let url = (localStorage.getItem(LOCAL_STORAGE_KEYS.API_BASE_URL) || import.meta.env.VITE_API_URL || fallback).trim();
@@ -33,8 +53,8 @@ export const getApiBaseUrl = () => {
     return fallback;
   }
 
-  // Auto-fix if pointing to serve-web (3333/3000) or the stale 18789 gateway port.
-  if (url === '/api' || url.includes(':3333') || url.includes(':3000') || url.includes(':18789')) {
+  // Auto-fix if pointing to legacy UI ports or the stale 18789 gateway port.
+  if (url.includes(':3333') || url.includes(':3000') || url.includes(':18789')) {
       localStorage.setItem(LOCAL_STORAGE_KEYS.API_BASE_URL, fallback);
       return fallback;
   }
@@ -89,6 +109,46 @@ export const getApiBaseUrl = () => {
     localStorage.setItem(LOCAL_STORAGE_KEYS.API_BASE_URL, fallback);
     return fallback;
   }
+};
+
+export const isGatewayApiBaseUrl = (baseUrl = getApiBaseUrl()) => {
+  if (!baseUrl) {
+    return false;
+  }
+
+  if (baseUrl.startsWith(GATEWAY_API_PREFIX)) {
+    return true;
+  }
+
+  try {
+    const parsed = new URL(baseUrl);
+    return parsed.pathname === GATEWAY_API_PREFIX || parsed.pathname.startsWith(`${GATEWAY_API_PREFIX}/`);
+  } catch {
+    return /\/api(?:\/|$)/.test(baseUrl);
+  }
+};
+
+export const resolveApiUrl = (path: string, baseUrl = getApiBaseUrl()) => {
+  if (/^https?:\/\//i.test(path)) {
+    return path;
+  }
+
+  const normalizedBase = baseUrl.replace(/\/+$/, '');
+  const normalizedPath = normalizeApiRequestPath(path);
+
+  if (!normalizedBase) {
+    return normalizedPath;
+  }
+
+  if (normalizedBase.startsWith('/')) {
+    return `${normalizedBase}${normalizedPath}`;
+  }
+
+  const parsed = new URL(normalizedBase);
+  parsed.pathname = `${parsed.pathname.replace(/\/+$/, '')}${normalizedPath}` || '/';
+  parsed.search = '';
+  parsed.hash = '';
+  return parsed.toString();
 };
 
 const getDefaultWsBase = () => {

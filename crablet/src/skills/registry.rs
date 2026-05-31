@@ -1,10 +1,10 @@
-use std::collections::HashMap;
-use std::sync::Arc;
+use super::{dependency, openclaw, Skill, SkillManifest, SkillType};
 use anyhow::Result;
-use tracing::{info, warn, error};
-use std::path::{Path, PathBuf};
-use super::{Skill, SkillType, SkillManifest, openclaw, dependency};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use tracing::{error, info, warn};
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct RegistryIndexItem {
@@ -25,8 +25,20 @@ pub struct RegistryIndex {
 
 pub struct SkillRegistry {
     pub(crate) skills: HashMap<String, SkillType>,
-    resources: HashMap<String, (crate::tools::mcp::McpResource, Arc<crate::tools::mcp::McpClient>)>,
-    prompts: HashMap<String, (crate::tools::mcp::McpPrompt, Arc<crate::tools::mcp::McpClient>)>,
+    resources: HashMap<
+        String,
+        (
+            crate::tools::mcp::McpResource,
+            Arc<crate::tools::mcp::McpClient>,
+        ),
+    >,
+    prompts: HashMap<
+        String,
+        (
+            crate::tools::mcp::McpPrompt,
+            Arc<crate::tools::mcp::McpClient>,
+        ),
+    >,
     registry_url: String,
 }
 
@@ -42,15 +54,17 @@ impl SkillRegistry {
             skills: HashMap::new(),
             resources: HashMap::new(),
             prompts: HashMap::new(),
-            registry_url: "https://raw.githubusercontent.com/crablet/skill-registry/main/index.json".to_string(),
+            registry_url:
+                "https://raw.githubusercontent.com/crablet/skill-registry/main/index.json"
+                    .to_string(),
         }
     }
-    
+
     pub fn with_registry_url(mut self, url: String) -> Self {
         self.registry_url = url;
         self
     }
-    
+
     // Add insert_skill method for testing or manual registration
     pub fn insert_skill(&mut self, name: String, skill_type: SkillType) {
         self.skills.insert(name, skill_type);
@@ -98,7 +112,10 @@ impl SkillRegistry {
             name: plugin.name().to_string(),
             description: plugin.description().to_string(),
             version: "1.0.0 (Native)".to_string(),
-            parameters: serde_json::json!({ "type": "object", "additionalProperties": true }), // TODO: Add schema to Plugin trait
+            parameters: serde_json::json!({ "type": "object", "additionalProperties": true }),
+            // Note: Plugin trait does not yet expose a JSON Schema for its parameters.
+            // When the Plugin trait gains an `input_schema()` method, it should be
+            // used here instead of the generic object schema.
             entrypoint: "native".to_string(),
             env: HashMap::new(),
             requires: vec![],
@@ -111,10 +128,19 @@ impl SkillRegistry {
             author: None,
             triggers: vec![],
         };
-        self.skills.insert(plugin.name().to_string(), SkillType::Plugin(manifest, Arc::new(plugin)));
+        self.skills.insert(
+            plugin.name().to_string(),
+            SkillType::Plugin(manifest, Arc::new(plugin)),
+        );
     }
 
-    pub fn register_mcp_tool(&mut self, tool_name: String, client: Arc<crate::tools::mcp::McpClient>, description: Option<String>, input_schema: serde_json::Value) {
+    pub fn register_mcp_tool(
+        &mut self,
+        tool_name: String,
+        client: Arc<crate::tools::mcp::McpClient>,
+        description: Option<String>,
+        input_schema: serde_json::Value,
+    ) {
         let manifest = SkillManifest {
             name: tool_name.clone(),
             description: description.unwrap_or_default(),
@@ -132,15 +158,27 @@ impl SkillRegistry {
             author: None,
             triggers: vec![],
         };
-        
-        self.skills.insert(tool_name.clone(), SkillType::Mcp(manifest, client, tool_name));
+
+        self.skills.insert(
+            tool_name.clone(),
+            SkillType::Mcp(manifest, client, tool_name),
+        );
     }
 
-    pub fn register_mcp_resource(&mut self, resource: crate::tools::mcp::McpResource, client: Arc<crate::tools::mcp::McpClient>) {
-        self.resources.insert(resource.uri.clone(), (resource, client));
+    pub fn register_mcp_resource(
+        &mut self,
+        resource: crate::tools::mcp::McpResource,
+        client: Arc<crate::tools::mcp::McpClient>,
+    ) {
+        self.resources
+            .insert(resource.uri.clone(), (resource, client));
     }
 
-    pub fn register_mcp_prompt(&mut self, prompt: crate::tools::mcp::McpPrompt, client: Arc<crate::tools::mcp::McpClient>) {
+    pub fn register_mcp_prompt(
+        &mut self,
+        prompt: crate::tools::mcp::McpPrompt,
+        client: Arc<crate::tools::mcp::McpClient>,
+    ) {
         self.prompts.insert(prompt.name.clone(), (prompt, client));
     }
 
@@ -171,8 +209,12 @@ impl SkillRegistry {
                 if let Some(manifest_path) = manifest_path {
                     match self.load_skill(&manifest_path).await {
                         Ok(skill) => {
-                            info!("Loaded skill: {} (v{})", skill.manifest.name, skill.manifest.version);
-                            self.skills.insert(skill.manifest.name.clone(), SkillType::Local(skill));
+                            info!(
+                                "Loaded skill: {} (v{})",
+                                skill.manifest.name, skill.manifest.version
+                            );
+                            self.skills
+                                .insert(skill.manifest.name.clone(), SkillType::Local(skill));
                         }
                         Err(e) => {
                             error!("Failed to load skill from {:?}: {}", manifest_path, e);
@@ -185,8 +227,14 @@ impl SkillRegistry {
                         match openclaw::OpenClawSkillLoader::load(&md_path).await {
                             Ok(skill) => {
                                 info!("Loaded OpenClaw skill: {}", skill.manifest.name);
-                                let instruction = openclaw::OpenClawSkillLoader::get_instruction(&md_path).await.unwrap_or_default();
-                                self.skills.insert(skill.manifest.name.clone(), SkillType::OpenClaw(skill, instruction));
+                                let instruction =
+                                    openclaw::OpenClawSkillLoader::get_instruction(&md_path)
+                                        .await
+                                        .unwrap_or_default();
+                                self.skills.insert(
+                                    skill.manifest.name.clone(),
+                                    SkillType::OpenClaw(skill, instruction),
+                                );
                             }
                             Err(e) => {
                                 error!("Failed to load OpenClaw skill from {:?}: {}", md_path, e);
@@ -206,13 +254,16 @@ impl SkillRegistry {
         } else {
             serde_yaml::from_str(&content)?
         };
-        
+
         // Dependency check
         dependency::check_dependencies(self, &manifest).await?;
 
         Ok(Skill {
             manifest,
-            path: path.parent().ok_or_else(|| anyhow::anyhow!("Invalid skill path: has no parent"))?.to_path_buf(),
+            path: path
+                .parent()
+                .ok_or_else(|| anyhow::anyhow!("Invalid skill path: has no parent"))?
+                .to_path_buf(),
         })
     }
 
@@ -230,28 +281,47 @@ impl SkillRegistry {
         // Return owned SkillManifests to support dynamic generation
         let mut manifests = Vec::new();
         for skill_type in self.skills.values() {
-             match skill_type {
-                 SkillType::Local(s) => manifests.push(s.manifest.clone()),
-                 SkillType::Mcp(m, _, _) => manifests.push(m.clone()),
-                 SkillType::Plugin(m, _) => manifests.push(m.clone()),
-                 SkillType::OpenClaw(s, _) => manifests.push(s.manifest.clone()),
-             }
+            match skill_type {
+                SkillType::Local(s) => manifests.push(s.manifest.clone()),
+                SkillType::Mcp(m, _, _) => manifests.push(m.clone()),
+                SkillType::Plugin(m, _) => manifests.push(m.clone()),
+                SkillType::OpenClaw(s, _) => manifests.push(s.manifest.clone()),
+            }
         }
         manifests
     }
 
+    pub fn build_trigger_engine(&self) -> crate::skills::SkillTriggerEngine {
+        let mut engine = crate::skills::SkillTriggerEngine::new();
+
+        for manifest in self.list_skills() {
+            let triggers = if manifest.triggers.is_empty() {
+                Self::default_triggers_for_manifest(&manifest)
+            } else {
+                manifest.triggers.clone()
+            };
+
+            engine.register_triggers(manifest.name.clone(), triggers);
+        }
+
+        engine
+    }
+
     pub fn to_tool_definitions(&self) -> Vec<serde_json::Value> {
-        let mut tools: Vec<serde_json::Value> = self.list_skills().iter()
+        let mut tools: Vec<serde_json::Value> = self
+            .list_skills()
+            .iter()
             .map(|s| {
-            serde_json::json!({
-                "type": "function",
-                "function": {
-                    "name": s.name,
-                    "description": s.description,
-                    "parameters": s.parameters
-                }
+                serde_json::json!({
+                    "type": "function",
+                    "function": {
+                        "name": s.name,
+                        "description": s.description,
+                        "parameters": s.parameters
+                    }
+                })
             })
-        }).collect();
+            .collect();
 
         // Inject MCP Resource Tools if any resources exist
         if !self.resources.is_empty() {
@@ -289,7 +359,7 @@ impl SkillRegistry {
 
         // Inject MCP Prompt Tools if any prompts exist
         if !self.prompts.is_empty() {
-             tools.push(serde_json::json!({
+            tools.push(serde_json::json!({
                 "type": "function",
                 "function": {
                     "name": "list_prompts",
@@ -301,7 +371,7 @@ impl SkillRegistry {
                     }
                 }
             }));
-            
+
             tools.push(serde_json::json!({
                 "type": "function",
                 "function": {
@@ -321,7 +391,7 @@ impl SkillRegistry {
 
         tools
     }
-    
+
     // Delegate execution to executor
     pub async fn execute(&self, name: &str, args: serde_json::Value) -> Result<String> {
         // Intercept built-in MCP tools
@@ -329,28 +399,32 @@ impl SkillRegistry {
             "list_resources" => {
                 let resources = self.list_resources();
                 return Ok(serde_json::to_string_pretty(&resources)?);
-            },
+            }
             "read_resource" => {
-                let uri = args.get("uri").and_then(|v| v.as_str())
+                let uri = args
+                    .get("uri")
+                    .and_then(|v| v.as_str())
                     .ok_or_else(|| anyhow::anyhow!("Missing 'uri' parameter"))?;
                 return self.read_resource(uri).await;
-            },
+            }
             "list_prompts" => {
                 let prompts = self.list_prompts();
                 return Ok(serde_json::to_string_pretty(&prompts)?);
-            },
+            }
             "get_prompt" => {
-                let prompt_name = args.get("name").and_then(|v| v.as_str())
+                let prompt_name = args
+                    .get("name")
+                    .and_then(|v| v.as_str())
                     .ok_or_else(|| anyhow::anyhow!("Missing 'name' parameter"))?;
                 let prompt_args = args.get("arguments").cloned();
                 return self.get_prompt(prompt_name, prompt_args).await;
-            },
+            }
             _ => {}
         }
 
         super::executor::SkillExecutor::execute(self, name, args).await
     }
-    
+
     pub fn list_resources(&self) -> Vec<crate::tools::mcp::McpResource> {
         self.resources.values().map(|(r, _)| r.clone()).collect()
     }
@@ -385,56 +459,106 @@ impl SkillRegistry {
     pub async fn search(&self, query: &str) -> Result<Vec<RegistryIndexItem>> {
         let index = self.fetch_registry().await?;
         let query = query.to_lowercase();
-        
-        let results = index.skills.into_iter()
-            .filter(|s| s.name.to_lowercase().contains(&query) || s.description.to_lowercase().contains(&query))
+
+        let results = index
+            .skills
+            .into_iter()
+            .filter(|s| {
+                s.name.to_lowercase().contains(&query)
+                    || s.description.to_lowercase().contains(&query)
+            })
             .collect();
-            
+
         Ok(results)
     }
 
     pub async fn install(&mut self, name: &str, target_dir: PathBuf) -> Result<()> {
         let index = self.fetch_registry().await?;
-        let skill = index.skills.iter()
+        let skill = index
+            .skills
+            .iter()
             .find(|s| s.name == name)
             .ok_or_else(|| anyhow::anyhow!("Skill '{}' not found in registry", name))?;
-            
+
         info!("Installing skill '{}' from {}", name, skill.url);
-        
+
         // Ensure target directory exists
         if !target_dir.exists() {
             tokio::fs::create_dir_all(&target_dir).await?;
         }
-        
+
         let install_path = target_dir.join(name);
         if install_path.exists() {
             anyhow::bail!("Skill directory already exists: {:?}", install_path);
         }
-        
+
         // Clone repo
         info!("Cloning {} to {:?}", skill.url, install_path);
-        
+
         // Simple git clone for now
         let status = std::process::Command::new("git")
             .arg("clone")
             .arg(&skill.url)
             .arg(&install_path)
             .status()?;
-            
+
         if !status.success() {
             anyhow::bail!("Failed to clone skill repository");
         }
-        
+
         // Load the installed skill
         self.load_from_dir(&target_dir).await?;
-        
+
         Ok(())
+    }
+
+    fn default_triggers_for_manifest(manifest: &SkillManifest) -> Vec<crate::skills::SkillTrigger> {
+        use crate::skills::SkillTrigger;
+
+        let mut triggers = vec![SkillTrigger::Command {
+            prefix: format!("/{}", manifest.name.to_lowercase()),
+            args_schema: Some(manifest.parameters.clone()),
+        }];
+
+        let keywords: Vec<String> = manifest
+            .description
+            .split_whitespace()
+            .filter(|word| word.len() > 3)
+            .take(5)
+            .map(|word| {
+                word.to_ascii_lowercase()
+                    .trim_matches(|c: char| !c.is_alphanumeric())
+                    .to_string()
+            })
+            .filter(|word| !word.is_empty())
+            .collect();
+
+        if !keywords.is_empty() {
+            triggers.push(SkillTrigger::Keyword {
+                keywords,
+                case_sensitive: false,
+            });
+        }
+
+        triggers
     }
 }
 
 #[derive(Clone)]
 pub struct RegistryBackup {
     pub(crate) skills: HashMap<String, SkillType>,
-    pub(crate) resources: HashMap<String, (crate::tools::mcp::McpResource, Arc<crate::tools::mcp::McpClient>)>,
-    pub(crate) prompts: HashMap<String, (crate::tools::mcp::McpPrompt, Arc<crate::tools::mcp::McpClient>)>,
+    pub(crate) resources: HashMap<
+        String,
+        (
+            crate::tools::mcp::McpResource,
+            Arc<crate::tools::mcp::McpClient>,
+        ),
+    >,
+    pub(crate) prompts: HashMap<
+        String,
+        (
+            crate::tools::mcp::McpPrompt,
+            Arc<crate::tools::mcp::McpClient>,
+        ),
+    >,
 }

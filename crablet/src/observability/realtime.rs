@@ -302,7 +302,7 @@ impl MetricsCollector {
             
             if !values.is_empty() {
                 let mut sorted = values.clone();
-                sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+                sorted.sort_by(|a, b| a.total_cmp(b));
                 
                 let count = sorted.len() as u64;
                 let sum: f64 = sorted.iter().sum();

@@ -2,10 +2,10 @@
 //!
 //! Core type definitions for the auto-working system.
 
-use std::collections::HashMap;
-use std::time::Duration;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::time::Duration;
 
 /// Schedule type for tasks
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -16,9 +16,15 @@ pub enum ScheduleType {
     /// Execute periodically with a fixed interval
     Periodic { interval: Duration },
     /// Execute based on a cron expression
-    Cron { expression: String, timezone: Option<String> },
+    Cron {
+        expression: String,
+        timezone: Option<String>,
+    },
     /// Execute when a specific event occurs
-    EventTriggered { event_type: String, condition: String },
+    EventTriggered {
+        event_type: String,
+        condition: String,
+    },
 }
 
 impl ScheduleType {
@@ -32,12 +38,8 @@ impl ScheduleType {
                     None // Already executed
                 }
             }
-            ScheduleType::Periodic { interval } => {
-                Some(after + *interval)
-            }
-            ScheduleType::Cron { expression, .. } => {
-                parse_cron_next(expression, after)
-            }
+            ScheduleType::Periodic { interval } => Some(after + *interval),
+            ScheduleType::Cron { expression, .. } => parse_cron_next(expression, after),
             ScheduleType::EventTriggered { .. } => {
                 None // Event-triggered tasks don't have a fixed next run time
             }
@@ -51,7 +53,7 @@ fn parse_cron_next(expression: &str, after: DateTime<Utc>) -> Option<DateTime<Ut
     {
         use cron::Schedule;
         use std::str::FromStr;
-        
+
         if let Ok(schedule) = Schedule::from_str(expression) {
             schedule.after(&after).next()
         } else {
@@ -70,36 +72,31 @@ fn parse_cron_next(expression: &str, after: DateTime<Utc>) -> Option<DateTime<Ut
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum TaskAction {
     /// Execute cognitive processing
-    Cognitive { 
-        prompt: String, 
-        context: Option<String> 
+    Cognitive {
+        prompt: String,
+        context: Option<String>,
     },
     /// Execute a system command
-    SystemCommand { 
-        command: String, 
-        args: Vec<String> 
-    },
+    SystemCommand { command: String, args: Vec<String> },
     /// Make an HTTP API call
-    ApiCall { 
-        endpoint: String, 
-        method: HttpMethod, 
+    ApiCall {
+        endpoint: String,
+        method: HttpMethod,
         headers: Option<HashMap<String, String>>,
-        body: Option<serde_json::Value> 
+        body: Option<serde_json::Value>,
     },
     /// Execute an RPA workflow
-    Rpa { 
-        workflow_id: String, 
-        parameters: serde_json::Value 
+    Rpa {
+        workflow_id: String,
+        parameters: serde_json::Value,
     },
     /// Execute a named workflow
-    Workflow { 
-        workflow_name: String, 
-        parameters: serde_json::Value 
+    Workflow {
+        workflow_name: String,
+        parameters: serde_json::Value,
     },
     /// Execute a composite task (multiple actions)
-    Composite { 
-        actions: Vec<TaskAction> 
-    },
+    Composite { actions: Vec<TaskAction> },
 }
 
 /// System type for cognitive processing
@@ -154,7 +151,7 @@ impl ScheduledTask {
     pub fn new(name: String, schedule: ScheduleType, action: TaskAction) -> Self {
         let now = Utc::now();
         let next_run_at = schedule.next_run(now);
-        
+
         Self {
             id: uuid::Uuid::new_v4().to_string(),
             name,
@@ -171,18 +168,18 @@ impl ScheduledTask {
             retry_count: 0,
         }
     }
-    
+
     /// Calculate the next execution time
     pub fn calculate_next_run(&self) -> Option<DateTime<Utc>> {
         let base = self.last_run_at.unwrap_or(self.created_at);
         self.schedule.next_run(base)
     }
-    
+
     /// Update after execution
     pub fn mark_executed(&mut self, success: bool) {
         self.last_run_at = Some(Utc::now());
         self.run_count += 1;
-        
+
         if success {
             self.retry_count = 0;
             self.next_run_at = self.calculate_next_run();
@@ -235,7 +232,7 @@ impl QueuedTask {
             visibility_timeout: None,
         }
     }
-    
+
     /// Check if the task is visible (not in visibility timeout)
     pub fn is_visible(&self) -> bool {
         if let Some(timeout) = self.visibility_timeout {
@@ -268,7 +265,7 @@ impl TaskResult {
             metadata: HashMap::new(),
         }
     }
-    
+
     /// Create a failed result
     pub fn failure(error: impl Into<String>) -> Self {
         Self {
@@ -308,7 +305,10 @@ pub enum BackoffStrategy {
     /// Exponential backoff
     Exponential { base: u32, max_delay: Duration },
     /// Linear backoff
-    Linear { increment: Duration, max_delay: Duration },
+    Linear {
+        increment: Duration,
+        max_delay: Duration,
+    },
 }
 
 impl BackoffStrategy {
@@ -320,7 +320,10 @@ impl BackoffStrategy {
                 let delay = Duration::from_secs(base.pow(attempt) as u64);
                 delay.min(*max_delay)
             }
-            BackoffStrategy::Linear { increment, max_delay } => {
+            BackoffStrategy::Linear {
+                increment,
+                max_delay,
+            } => {
                 let delay = *increment * attempt;
                 delay.min(*max_delay)
             }
@@ -370,58 +373,64 @@ pub struct ExecutionRecord {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_schedule_type_next_run() {
         let now = Utc::now();
-        
+
         // Test Once schedule
         let future = now + Duration::from_secs(3600);
         let once = ScheduleType::Once { at: future };
         assert_eq!(once.next_run(now), Some(future));
-        
+
         let past = now - Duration::from_secs(3600);
         let once_past = ScheduleType::Once { at: past };
         assert_eq!(once_past.next_run(now), None);
-        
+
         // Test Periodic schedule
-        let periodic = ScheduleType::Periodic { interval: Duration::from_secs(60) };
+        let periodic = ScheduleType::Periodic {
+            interval: Duration::from_secs(60),
+        };
         let next = periodic.next_run(now).unwrap();
         assert!(next > now);
         assert_eq!((next - now).num_seconds(), 60);
     }
-    
+
     #[test]
     fn test_backoff_strategy() {
         // Test fixed backoff
-        let fixed = BackoffStrategy::Fixed { delay: Duration::from_secs(10) };
+        let fixed = BackoffStrategy::Fixed {
+            delay: Duration::from_secs(10),
+        };
         assert_eq!(fixed.calculate_delay(0), Duration::from_secs(10));
         assert_eq!(fixed.calculate_delay(5), Duration::from_secs(10));
-        
+
         // Test exponential backoff
-        let exp = BackoffStrategy::Exponential { 
-            base: 2, 
-            max_delay: Duration::from_secs(60) 
+        let exp = BackoffStrategy::Exponential {
+            base: 2,
+            max_delay: Duration::from_secs(60),
         };
         assert_eq!(exp.calculate_delay(0), Duration::from_secs(1));
         assert_eq!(exp.calculate_delay(1), Duration::from_secs(2));
         assert_eq!(exp.calculate_delay(2), Duration::from_secs(4));
         assert_eq!(exp.calculate_delay(10), Duration::from_secs(60)); // Capped at max
     }
-    
+
     #[test]
     fn test_scheduled_task_mark_executed() {
         let mut task = ScheduledTask::new(
             "Test Task".to_string(),
-            ScheduleType::Periodic { interval: Duration::from_secs(60) },
-            TaskAction::Cognitive { 
-                prompt: "test".to_string(), 
-                context: None 
-            }
+            ScheduleType::Periodic {
+                interval: Duration::from_secs(60),
+            },
+            TaskAction::Cognitive {
+                prompt: "test".to_string(),
+                context: None,
+            },
         );
-        
+
         assert_eq!(task.run_count, 0);
-        
+
         task.mark_executed(true);
         assert_eq!(task.run_count, 1);
         assert!(task.last_run_at.is_some());

@@ -2,10 +2,10 @@
 //!
 //! 将 System3 的复杂多 Agent 执行结果蒸馏为 System2 可直接使用的知识和技能
 
-use std::collections::HashMap;
-use std::sync::Arc;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 
@@ -147,15 +147,15 @@ impl KnowledgeDistiller {
     /// 执行蒸馏任务
     pub async fn distill(&self, task: DistillationTask) -> DistillationResult {
         let start_time = std::time::Instant::now();
-        
+
         info!("Starting distillation for task {}", task.id);
 
         // 1. 分析执行轨迹
         let trace_analysis = self.analyze_trace(&task.execution_trace).await;
-        
+
         // 2. 提取知识
         let knowledge_result = self.extract_knowledge(&task, &trace_analysis).await;
-        
+
         // 3. 提取可复用技能
         let skill_result = self.extract_skill(&task, &trace_analysis).await;
 
@@ -175,12 +175,15 @@ impl KnowledgeDistiller {
         if let Some(knowledge) = knowledge_result {
             self.store_knowledge(knowledge).await;
         }
-        
+
         if let Some(skill) = skill_result {
             self.store_skill(skill).await;
         }
 
-        info!("Distillation completed for task {} in {}ms", task.id, processing_time);
+        info!(
+            "Distillation completed for task {} in {}ms",
+            task.id, processing_time
+        );
         result
     }
 
@@ -192,15 +195,16 @@ impl KnowledgeDistiller {
 
         // 统计工具使用频率
         for tool_call in &trace.tool_calls {
-            *tool_frequency.entry(tool_call.tool_name.clone()).or_insert(0) += 1;
+            *tool_frequency
+                .entry(tool_call.tool_name.clone())
+                .or_insert(0) += 1;
         }
 
         // 分析 Agent 通信模式
         for interaction in &trace.agent_interactions {
-            let pattern = format!("{} -> {}: {}", 
-                interaction.from_agent, 
-                interaction.to_agent,
-                interaction.message_type
+            let pattern = format!(
+                "{} -> {}: {}",
+                interaction.from_agent, interaction.to_agent, interaction.message_type
             );
             if !agent_communication_patterns.contains(&pattern) {
                 agent_communication_patterns.push(pattern);
@@ -232,22 +236,23 @@ impl KnowledgeDistiller {
     ) -> Option<DistilledKnowledge> {
         // 构建 LLM 提示
         let prompt = self.build_knowledge_extraction_prompt(task, analysis);
-        
+
         let messages = vec![Message::user(&prompt)];
-        
+
         match self.llm.chat_complete(&messages).await {
-            Ok(response) => {
-                match self.parse_knowledge_extraction(&response, &task.id) {
-                    Ok(knowledge) => {
-                        debug!("Successfully extracted knowledge for topic: {}", knowledge.topic);
-                        Some(knowledge)
-                    }
-                    Err(e) => {
-                        warn!("Failed to parse knowledge extraction: {}", e);
-                        None
-                    }
+            Ok(response) => match self.parse_knowledge_extraction(&response, &task.id) {
+                Ok(knowledge) => {
+                    debug!(
+                        "Successfully extracted knowledge for topic: {}",
+                        knowledge.topic
+                    );
+                    Some(knowledge)
                 }
-            }
+                Err(e) => {
+                    warn!("Failed to parse knowledge extraction: {}", e);
+                    None
+                }
+            },
             Err(e) => {
                 warn!("LLM call failed during knowledge extraction: {}", e);
                 None
@@ -255,17 +260,31 @@ impl KnowledgeDistiller {
         }
     }
 
-    fn build_knowledge_extraction_prompt(&self, task: &DistillationTask, analysis: &TraceAnalysis) -> String {
-        let tool_summary: String = analysis.tool_frequency
+    fn build_knowledge_extraction_prompt(
+        &self,
+        task: &DistillationTask,
+        analysis: &TraceAnalysis,
+    ) -> String {
+        let tool_summary: String = analysis
+            .tool_frequency
             .iter()
             .map(|(tool, count)| format!("- {}: {} times", tool, count))
             .collect::<Vec<_>>()
             .join("\n");
 
-        let steps_summary: String = task.execution_trace.steps
+        let steps_summary: String = task
+            .execution_trace
+            .steps
             .iter()
             .take(10)
-            .map(|s| format!("{}. {}: {}", s.step_number, s.action, s.output.chars().take(100).collect::<String>()))
+            .map(|s| {
+                format!(
+                    "{}. {}: {}",
+                    s.step_number,
+                    s.action,
+                    s.output.chars().take(100).collect::<String>()
+                )
+            })
             .collect::<Vec<_>>()
             .join("\n");
 
@@ -298,7 +317,11 @@ impl KnowledgeDistiller {
         )
     }
 
-    fn parse_knowledge_extraction(&self, response: &str, task_id: &str) -> anyhow::Result<DistilledKnowledge> {
+    fn parse_knowledge_extraction(
+        &self,
+        response: &str,
+        task_id: &str,
+    ) -> anyhow::Result<DistilledKnowledge> {
         // 提取 JSON 部分
         let json_str = if let Some(start) = response.find('{') {
             if let Some(end) = response.rfind('}') {
@@ -336,9 +359,9 @@ impl KnowledgeDistiller {
         if relationships.is_empty() {
             return 0.5;
         }
-        
-        let avg_confidence: f64 = relationships.iter().map(|r| r.confidence).sum::<f64>() 
-            / relationships.len() as f64;
+
+        let avg_confidence: f64 =
+            relationships.iter().map(|r| r.confidence).sum::<f64>() / relationships.len() as f64;
         avg_confidence
     }
 
@@ -357,18 +380,16 @@ impl KnowledgeDistiller {
         let messages = vec![Message::user(&prompt)];
 
         match self.llm.chat_complete(&messages).await {
-            Ok(response) => {
-                match self.parse_skill_extraction(&response) {
-                    Ok(skill) => {
-                        debug!("Successfully extracted skill: {}", skill.name);
-                        Some(skill)
-                    }
-                    Err(e) => {
-                        warn!("Failed to parse skill extraction: {}", e);
-                        None
-                    }
+            Ok(response) => match self.parse_skill_extraction(&response) {
+                Ok(skill) => {
+                    debug!("Successfully extracted skill: {}", skill.name);
+                    Some(skill)
                 }
-            }
+                Err(e) => {
+                    warn!("Failed to parse skill extraction: {}", e);
+                    None
+                }
+            },
             Err(e) => {
                 warn!("LLM call failed during skill extraction: {}", e);
                 None
@@ -376,7 +397,11 @@ impl KnowledgeDistiller {
         }
     }
 
-    fn build_skill_extraction_prompt(&self, task: &DistillationTask, analysis: &TraceAnalysis) -> String {
+    fn build_skill_extraction_prompt(
+        &self,
+        task: &DistillationTask,
+        analysis: &TraceAnalysis,
+    ) -> String {
         format!(
             "Analyze this successful multi-agent execution and extract a reusable skill:\n\n\
             Input: {}\n\
@@ -452,12 +477,12 @@ impl KnowledgeDistiller {
     /// 存储知识
     async fn store_knowledge(&self, knowledge: DistilledKnowledge) {
         let mut kb = self.knowledge_base.write().await;
-        
+
         if kb.len() >= self.max_knowledge_entries {
             // 移除最旧的知识
             kb.remove(0);
         }
-        
+
         kb.push(knowledge);
         debug!("Stored knowledge, total entries: {}", kb.len());
     }
@@ -472,12 +497,14 @@ impl KnowledgeDistiller {
     /// 查询知识
     pub async fn query_knowledge(&self, topic: &str) -> Vec<DistilledKnowledge> {
         let kb = self.knowledge_base.read().await;
-        
+
         kb.iter()
             .filter(|k| {
-                k.topic.to_lowercase().contains(&topic.to_lowercase()) ||
-                k.summary.to_lowercase().contains(&topic.to_lowercase()) ||
-                k.key_facts.iter().any(|f| f.to_lowercase().contains(&topic.to_lowercase()))
+                k.topic.to_lowercase().contains(&topic.to_lowercase())
+                    || k.summary.to_lowercase().contains(&topic.to_lowercase())
+                    || k.key_facts
+                        .iter()
+                        .any(|f| f.to_lowercase().contains(&topic.to_lowercase()))
             })
             .cloned()
             .collect()
@@ -491,12 +518,12 @@ impl KnowledgeDistiller {
     /// 批量蒸馏
     pub async fn distill_batch(&self, tasks: Vec<DistillationTask>) -> Vec<DistillationResult> {
         let mut results = Vec::new();
-        
+
         for task in tasks {
             let result = self.distill(task).await;
             results.push(result);
         }
-        
+
         results
     }
 }
@@ -522,7 +549,7 @@ mod tests {
     #[test]
     fn test_knowledge_confidence_calculation() {
         let distiller = KnowledgeDistiller::new(Arc::new(Box::new(MockLlmClient::new())));
-        
+
         let relationships = vec![
             Relationship {
                 subject: "A".to_string(),

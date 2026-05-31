@@ -1,9 +1,9 @@
-use std::sync::Arc;
-use dashmap::DashMap;
-use tokio::sync::mpsc;
-use serde::Serialize;
-use uuid::Uuid;
 use crate::gateway::types::GatewayError;
+use dashmap::DashMap;
+use serde::Serialize;
+use std::sync::Arc;
+use tokio::sync::mpsc;
+use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Session {
@@ -32,7 +32,11 @@ impl SessionManager {
         }
     }
 
-    pub fn create_session(&self, user_id: String, sender: mpsc::Sender<super::types::RpcResponse>) -> String {
+    pub fn create_session(
+        &self,
+        user_id: String,
+        sender: mpsc::Sender<super::types::RpcResponse>,
+    ) -> String {
         let session_id = Uuid::new_v4().to_string();
         let session = Session {
             id: session_id.clone(),
@@ -52,14 +56,24 @@ impl SessionManager {
         self.sessions.get(session_id).map(|s| s.value().clone())
     }
 
-    pub async fn send_to_session(&self, session_id: &str, response: super::types::RpcResponse) -> Result<(), GatewayError> {
+    pub async fn send_to_session(
+        &self,
+        session_id: &str,
+        response: super::types::RpcResponse,
+    ) -> Result<(), GatewayError> {
         if let Some(session) = self.sessions.get(session_id) {
             if let Some(sender) = &session.sender {
-                sender.send(response).await.map_err(|e| GatewayError::InternalError(e.to_string()))?;
+                sender
+                    .send(response)
+                    .await
+                    .map_err(|e| GatewayError::InternalError(e.to_string()))?;
                 return Ok(());
             }
         }
-        Err(GatewayError::NotFound(format!("Session {} not found", session_id)))
+        Err(GatewayError::NotFound(format!(
+            "Session {} not found",
+            session_id
+        )))
     }
 
     pub async fn broadcast(&self, response: super::types::RpcResponse) {
@@ -93,7 +107,11 @@ mod tests {
     use super::*;
     use tokio::sync::mpsc;
 
-    fn make_session_manager() -> (SessionManager, mpsc::Sender<super::super::types::RpcResponse>, mpsc::Receiver<super::super::types::RpcResponse>) {
+    fn make_session_manager() -> (
+        SessionManager,
+        mpsc::Sender<super::super::types::RpcResponse>,
+        mpsc::Receiver<super::super::types::RpcResponse>,
+    ) {
         let mgr = SessionManager::new();
         let (tx, rx) = mpsc::channel(16);
         (mgr, tx, rx)
@@ -133,11 +151,7 @@ mod tests {
     #[tokio::test]
     async fn test_send_to_nonexistent_session() {
         let mgr = SessionManager::new();
-        let response = super::super::types::RpcResponse::new(
-            Some("1".to_string()),
-            None,
-            None,
-        );
+        let response = super::super::types::RpcResponse::new(Some("1".to_string()), None, None);
         let result = mgr.send_to_session("fake-id", response).await;
         assert!(result.is_err());
     }
@@ -177,7 +191,9 @@ mod tests {
         let mgr = SessionManager::new();
         let history = mgr.get_history("any-id");
         assert!(history.is_some());
-        assert!(history.unwrap().is_empty());
+        assert!(history
+            .expect("placeholder history should be present")
+            .is_empty());
     }
 
     #[tokio::test]

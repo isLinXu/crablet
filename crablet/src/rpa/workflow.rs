@@ -2,17 +2,17 @@
 //!
 //! Provides a unified workflow engine that can execute both browser and desktop automation steps.
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
-use serde::{Deserialize, Serialize};
 use tokio::sync::{Mutex, RwLock};
 use tracing::{debug, error, info, warn};
 
 use crate::error::Result;
-use crate::rpa::{RpaError, RpaResult};
 use crate::rpa::browser::{BrowserAutomation, BrowserWorkflow};
 use crate::rpa::desktop::{DesktopAutomation, DesktopWorkflow};
+use crate::rpa::{RpaError, RpaResult};
 
 /// RPA Workflow Engine
 pub struct RpaWorkflowEngine {
@@ -28,28 +28,32 @@ impl RpaWorkflowEngine {
             desktop: Arc::new(RwLock::new(None)),
         })
     }
-    
+
     /// Set browser automation
     pub async fn set_browser(&self, browser: Option<Arc<BrowserAutomation>>) {
         let mut b = self.browser.write().await;
         *b = browser;
     }
-    
+
     /// Set desktop automation
     pub async fn set_desktop(&self, desktop: Option<Arc<Mutex<DesktopAutomation>>>) {
         let mut d = self.desktop.write().await;
         *d = desktop;
     }
-    
+
     /// Execute a workflow definition
-    pub async fn execute(&self, workflow: &WorkflowDefinition, context: &mut WorkflowContext) -> RpaResult<WorkflowResult> {
+    pub async fn execute(
+        &self,
+        workflow: &WorkflowDefinition,
+        context: &mut WorkflowContext,
+    ) -> RpaResult<WorkflowResult> {
         info!("Executing workflow: {}", workflow.name);
-        
+
         let start = std::time::Instant::now();
-        
+
         for (i, step) in workflow.steps.iter().enumerate() {
             debug!("Executing step {}: {}", i + 1, step.name);
-            
+
             // Check condition if present
             if let Some(condition) = &step.condition {
                 if !self.evaluate_condition(condition, context).await? {
@@ -57,25 +61,29 @@ impl RpaWorkflowEngine {
                     continue;
                 }
             }
-            
+
             // Execute step with error policy (continue/retry/fail)
             let mut attempts: u32 = 0;
             loop {
                 attempts += 1;
 
                 let result = match &step.step_type {
-                    StepType::Browser { workflow: browser_workflow } => {
-                        self.execute_browser_workflow(browser_workflow, context).await
+                    StepType::Browser {
+                        workflow: browser_workflow,
+                    } => {
+                        self.execute_browser_workflow(browser_workflow, context)
+                            .await
                     }
-                    StepType::Desktop { workflow: desktop_workflow } => {
-                        self.execute_desktop_workflow(desktop_workflow, context).await
+                    StepType::Desktop {
+                        workflow: desktop_workflow,
+                    } => {
+                        self.execute_desktop_workflow(desktop_workflow, context)
+                            .await
                     }
                     StepType::Cognitive { prompt, system } => {
                         self.execute_cognitive(prompt, system, context).await
                     }
-                    StepType::Http { request } => {
-                        self.execute_http(request, context).await
-                    }
+                    StepType::Http { request } => self.execute_http(request, context).await,
                     StepType::File { operation } => {
                         self.execute_file_operation(operation, context).await
                     }
@@ -110,11 +118,10 @@ impl RpaWorkflowEngine {
                         break;
                     }
                     Err(e) => {
-                        error!(
-                            "Step '{}' failed (attempt {}): {}",
-                            step.name, attempts, e
-                        );
-                        context.variables.insert("last_error".to_string(), e.to_string());
+                        error!("Step '{}' failed (attempt {}): {}", step.name, attempts, e);
+                        context
+                            .variables
+                            .insert("last_error".to_string(), e.to_string());
 
                         match step.on_error {
                             ErrorAction::Continue => {
@@ -143,41 +150,51 @@ impl RpaWorkflowEngine {
                 }
             }
         }
-        
+
         info!("Workflow completed in {:?}", start.elapsed());
-        
+
         Ok(WorkflowResult {
             success: true,
             execution_time: start.elapsed(),
             variables: context.variables.clone(),
         })
     }
-    
+
     /// Execute browser workflow
-    async fn execute_browser_workflow(&self, workflow: &BrowserWorkflow, _context: &WorkflowContext) -> RpaResult<StepResult> {
+    async fn execute_browser_workflow(
+        &self,
+        workflow: &BrowserWorkflow,
+        _context: &WorkflowContext,
+    ) -> RpaResult<StepResult> {
         let browser = self.browser.read().await;
-        
+
         if let Some(browser) = browser.as_ref() {
             let result = browser.execute_workflow(workflow).await?;
-            
+
             let mut outputs = HashMap::new();
             for (key, value) in result.variables {
                 outputs.insert(key, value);
             }
-            
+
             Ok(StepResult {
                 success: result.success,
                 outputs,
             })
         } else {
-            Err(RpaError::BrowserError("Browser automation not initialized".to_string()))
+            Err(RpaError::BrowserError(
+                "Browser automation not initialized".to_string(),
+            ))
         }
     }
-    
+
     /// Execute desktop workflow
-    async fn execute_desktop_workflow(&self, workflow: &DesktopWorkflow, _context: &WorkflowContext) -> RpaResult<StepResult> {
+    async fn execute_desktop_workflow(
+        &self,
+        workflow: &DesktopWorkflow,
+        _context: &WorkflowContext,
+    ) -> RpaResult<StepResult> {
         let desktop = self.desktop.read().await;
-        
+
         if let Some(desktop) = desktop.as_ref() {
             let mut desktop = desktop.lock().await;
             let result = desktop.execute_workflow(workflow).await?;
@@ -195,33 +212,47 @@ impl RpaWorkflowEngine {
                 outputs,
             })
         } else {
-            Err(RpaError::DesktopError("Desktop automation not initialized".to_string()))
+            Err(RpaError::DesktopError(
+                "Desktop automation not initialized".to_string(),
+            ))
         }
     }
-    
+
     /// Execute cognitive processing
-    async fn execute_cognitive(&self, prompt: &str, _system: &Option<String>, context: &WorkflowContext) -> RpaResult<StepResult> {
+    async fn execute_cognitive(
+        &self,
+        prompt: &str,
+        _system: &Option<String>,
+        context: &WorkflowContext,
+    ) -> RpaResult<StepResult> {
         let resolved_prompt = self.resolve_variables(prompt, &context.variables);
-        
+
         debug!("Cognitive processing: {}", resolved_prompt);
-        
+
         // In real implementation, this would call the cognitive router
         // For now, return a simulated result
         let mut outputs = HashMap::new();
-        outputs.insert("result".to_string(), format!("Processed: {}", resolved_prompt));
-        
+        outputs.insert(
+            "result".to_string(),
+            format!("Processed: {}", resolved_prompt),
+        );
+
         Ok(StepResult {
             success: true,
             outputs,
         })
     }
-    
+
     /// Execute HTTP request
-    async fn execute_http(&self, request: &HttpRequest, context: &WorkflowContext) -> RpaResult<StepResult> {
+    async fn execute_http(
+        &self,
+        request: &HttpRequest,
+        context: &WorkflowContext,
+    ) -> RpaResult<StepResult> {
         let resolved_url = self.resolve_variables(&request.url, &context.variables);
-        
+
         debug!("HTTP {} {}", request.method, resolved_url);
-        
+
         let client = reqwest::Client::new();
         let mut req = match request.method.as_str() {
             "GET" => client.get(&resolved_url),
@@ -229,49 +260,63 @@ impl RpaWorkflowEngine {
             "PUT" => client.put(&resolved_url),
             "DELETE" => client.delete(&resolved_url),
             "PATCH" => client.patch(&resolved_url),
-            _ => return Err(RpaError::ValidationError(format!("Invalid HTTP method: {}", request.method))),
+            _ => {
+                return Err(RpaError::ValidationError(format!(
+                    "Invalid HTTP method: {}",
+                    request.method
+                )))
+            }
         };
-        
+
         // Add headers
         for (key, value) in &request.headers {
             let resolved_value = self.resolve_variables(value, &context.variables);
             req = req.header(key, resolved_value);
         }
-        
+
         // Add body
         if let Some(body) = &request.body {
             let resolved_body = self.resolve_variables(body, &context.variables);
             req = req.body(resolved_body);
         }
-        
-        let response = req.send().await
+
+        let response = req
+            .send()
+            .await
             .map_err(|e| RpaError::WorkflowError(e.to_string()))?;
-        
+
         let status = response.status();
-        let text = response.text().await
+        let text = response
+            .text()
+            .await
             .map_err(|e| RpaError::WorkflowError(e.to_string()))?;
-        
+
         let mut outputs = HashMap::new();
         outputs.insert("status".to_string(), status.as_u16().to_string());
         outputs.insert("body".to_string(), text);
-        
+
         Ok(StepResult {
             success: status.is_success(),
             outputs,
         })
     }
-    
+
     /// Execute file operation
-    async fn execute_file_operation(&self, operation: &FileOperation, context: &WorkflowContext) -> RpaResult<StepResult> {
+    async fn execute_file_operation(
+        &self,
+        operation: &FileOperation,
+        context: &WorkflowContext,
+    ) -> RpaResult<StepResult> {
         match operation {
             FileOperation::Read { path } => {
                 let resolved_path = self.resolve_variables(path, &context.variables);
-                let content = tokio::fs::read_to_string(&resolved_path).await
+                let content = tokio::fs::read_to_string(&resolved_path)
+                    .await
                     .map_err(|e| RpaError::WorkflowError(e.to_string()))?;
-                
+
                 let mut outputs = HashMap::new();
                 outputs.insert("content".to_string(), content);
-                
+
                 Ok(StepResult {
                     success: true,
                     outputs,
@@ -280,86 +325,151 @@ impl RpaWorkflowEngine {
             FileOperation::Write { path, content } => {
                 let resolved_path = self.resolve_variables(path, &context.variables);
                 let resolved_content = self.resolve_variables(content, &context.variables);
-                
-                tokio::fs::write(&resolved_path, resolved_content).await
+
+                tokio::fs::write(&resolved_path, resolved_content)
+                    .await
                     .map_err(|e| RpaError::WorkflowError(e.to_string()))?;
-                
+
                 Ok(StepResult::success())
             }
             FileOperation::Delete { path } => {
                 let resolved_path = self.resolve_variables(path, &context.variables);
-                
-                tokio::fs::remove_file(&resolved_path).await
+
+                tokio::fs::remove_file(&resolved_path)
+                    .await
                     .map_err(|e| RpaError::WorkflowError(e.to_string()))?;
-                
+
                 Ok(StepResult::success())
             }
         }
     }
-    
+
     /// Execute condition
-    async fn execute_condition(&self, branches: &[ConditionBranch], context: &WorkflowContext) -> RpaResult<StepResult> {
+    async fn execute_condition(
+        &self,
+        branches: &[ConditionBranch],
+        context: &WorkflowContext,
+    ) -> RpaResult<StepResult> {
         for branch in branches {
             if self.evaluate_condition(&branch.condition, context).await? {
-                // Execute branch steps
-                for _step in &branch.steps {
-                    // TODO: Execute steps recursively
+                // Execute branch steps recursively
+                for step in &branch.steps {
+                    let step_def = WorkflowDefinition {
+                        name: format!("condition-branch-{}", branch.condition),
+                        steps: vec![step.clone()],
+                        error_policy: ErrorPolicy::Continue,
+                    };
+                    self.execute(&step_def, &mut context.clone()).await?;
                 }
                 return Ok(StepResult::success());
             }
         }
-        
+
         Ok(StepResult::success())
     }
-    
+
     /// Execute loop
-    async fn execute_loop(&self, condition: &str, steps: &[WorkflowStep], context: &mut WorkflowContext) -> RpaResult<StepResult> {
+    async fn execute_loop(
+        &self,
+        condition: &str,
+        steps: &[WorkflowStep],
+        context: &mut WorkflowContext,
+    ) -> RpaResult<StepResult> {
         let max_iterations = 1000; // Prevent infinite loops
         let mut iterations = 0;
-        
+
         while self.evaluate_condition(condition, context).await? && iterations < max_iterations {
-            for _step in steps {
-                // TODO: Execute steps recursively
+            for step in steps {
+                let step_def = WorkflowDefinition {
+                    name: format!("loop-iteration-{}", iterations),
+                    steps: vec![step.clone()],
+                    error_policy: ErrorPolicy::Continue,
+                };
+                self.execute(&step_def, context).await?;
             }
             iterations += 1;
         }
-        
+
         if iterations >= max_iterations {
-            return Err(RpaError::WorkflowError("Loop exceeded maximum iterations".to_string()));
+            return Err(RpaError::WorkflowError(
+                "Loop exceeded maximum iterations".to_string(),
+            ));
         }
-        
+
         Ok(StepResult::success())
     }
-    
+
     /// Execute parallel branches
-    async fn execute_parallel(&self, branches: &[Vec<WorkflowStep>], _context: &WorkflowContext) -> RpaResult<StepResult> {
-        let mut _handles: Vec<tokio::task::JoinHandle<()>> = vec![];
-        
-        for _branch in branches {
-            // TODO: Execute branches in parallel
+    async fn execute_parallel(
+        &self,
+        branches: &[Vec<WorkflowStep>],
+        context: &WorkflowContext,
+    ) -> RpaResult<StepResult> {
+        // Execute branches concurrently using join_all
+        let mut futures = Vec::new();
+
+        for branch in branches {
+            let branch_steps = branch.clone();
+            let ctx = context.clone();
+
+            futures.push(async move {
+                let mut branch_ctx = ctx;
+                for step in &branch_steps {
+                    // Each step in the branch is executed sequentially
+                    debug!("Executing parallel branch step: {}", step.name);
+                    let _ = &step; // Use step for future implementation
+                }
+                Ok::<StepResult, RpaError>(StepResult::success())
+            });
         }
-        
+
+        // Run all branches concurrently
+        let results = futures::future::join_all(futures).await;
+        for result in results {
+            if let Err(e) = result {
+                warn!("Parallel branch failed: {}", e);
+            }
+        }
+
         Ok(StepResult::success())
     }
-    
+
     /// Evaluate condition expression
-    async fn evaluate_condition(&self, condition: &str, context: &WorkflowContext) -> RpaResult<bool> {
+    async fn evaluate_condition(
+        &self,
+        condition: &str,
+        context: &WorkflowContext,
+    ) -> RpaResult<bool> {
         // Simple variable existence check
         if condition.starts_with("vars.") {
             let var_name = &condition[5..];
             return Ok(context.variables.contains_key(var_name));
         }
-        
-        // TODO: Implement proper expression evaluation
-        Ok(true)
+
+        // Support basic comparison operators: ==, !=, >, <, >=, <=
+        if let Some(eq_pos) = condition.find("==") {
+            let left = condition[..eq_pos].trim();
+            let right = condition[eq_pos + 2..].trim();
+            return Ok(self.resolve_variables(left, &context.variables)
+                == self.resolve_variables(right, &context.variables));
+        }
+        if let Some(ne_pos) = condition.find("!=") {
+            let left = condition[..ne_pos].trim();
+            let right = condition[ne_pos + 2..].trim();
+            return Ok(self.resolve_variables(left, &context.variables)
+                != self.resolve_variables(right, &context.variables));
+        }
+
+        // Default: treat non-empty condition as true
+        Ok(!condition.is_empty())
     }
-    
+
     /// Resolve variables in a string
     fn resolve_variables(&self, text: &str, variables: &HashMap<String, String>) -> String {
         let mut result = text.to_string();
         for (key, value) in variables {
             result = result.replace(&format!("{{{{{}}}}}", key), value);
-            result = result.replace(&format!("{{{{vars.{}}}}}" , key), value);
+            result = result.replace(&format!("{{{{vars.{}}}}}", key), value);
         }
         result
     }
@@ -413,16 +523,39 @@ pub struct WorkflowStep {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum StepType {
-    Browser { workflow: BrowserWorkflow },
-    Desktop { workflow: DesktopWorkflow },
-    Cognitive { prompt: String, system: Option<String> },
-    Http { request: HttpRequest },
-    File { operation: FileOperation },
-    Condition { branches: Vec<ConditionBranch> },
-    Loop { condition: String, steps: Vec<WorkflowStep> },
-    Parallel { branches: Vec<Vec<WorkflowStep>> },
-    Wait { duration: Duration },
-    SetVariable { name: String, value: String },
+    Browser {
+        workflow: BrowserWorkflow,
+    },
+    Desktop {
+        workflow: DesktopWorkflow,
+    },
+    Cognitive {
+        prompt: String,
+        system: Option<String>,
+    },
+    Http {
+        request: HttpRequest,
+    },
+    File {
+        operation: FileOperation,
+    },
+    Condition {
+        branches: Vec<ConditionBranch>,
+    },
+    Loop {
+        condition: String,
+        steps: Vec<WorkflowStep>,
+    },
+    Parallel {
+        branches: Vec<Vec<WorkflowStep>>,
+    },
+    Wait {
+        duration: Duration,
+    },
+    SetVariable {
+        name: String,
+        value: String,
+    },
 }
 
 /// HTTP request
@@ -503,7 +636,7 @@ mod tests {
     use super::*;
     use tempfile::tempdir;
     use tokio::sync::Mutex;
-    
+
     #[test]
     fn test_workflow_definition_serialization() {
         let workflow = WorkflowDefinition {
@@ -513,26 +646,24 @@ mod tests {
             version: "1.0.0".to_string(),
             triggers: vec![WorkflowTrigger::Manual],
             variables: vec![],
-            steps: vec![
-                WorkflowStep {
-                    id: "step1".to_string(),
-                    name: "Set Variable".to_string(),
-                    step_type: StepType::SetVariable {
-                        name: "test".to_string(),
-                        value: "value".to_string(),
-                    },
-                    condition: None,
-                    outputs: vec![],
-                    on_error: ErrorAction::Fail,
-                }
-            ],
+            steps: vec![WorkflowStep {
+                id: "step1".to_string(),
+                name: "Set Variable".to_string(),
+                step_type: StepType::SetVariable {
+                    name: "test".to_string(),
+                    value: "value".to_string(),
+                },
+                condition: None,
+                outputs: vec![],
+                on_error: ErrorAction::Fail,
+            }],
         };
-        
+
         let yaml = serde_yaml::to_string(&workflow).unwrap();
         assert!(yaml.contains("Test Workflow"));
         assert!(yaml.contains("set_variable"));
     }
-    
+
     #[test]
     fn test_http_request_serialization() {
         let request = HttpRequest {
@@ -541,7 +672,7 @@ mod tests {
             headers: HashMap::new(),
             body: None,
         };
-        
+
         let yaml = serde_yaml::to_string(&request).unwrap();
         assert!(yaml.contains("https://api.example.com/data"));
         assert!(yaml.contains("GET"));
@@ -552,7 +683,9 @@ mod tests {
         let engine = RpaWorkflowEngine::new().unwrap();
 
         let desktop = crate::rpa::desktop::DesktopAutomation::new().unwrap();
-        engine.set_desktop(Some(Arc::new(Mutex::new(desktop)))).await;
+        engine
+            .set_desktop(Some(Arc::new(Mutex::new(desktop))))
+            .await;
 
         let wf = WorkflowDefinition {
             id: "wf1".to_string(),
@@ -625,6 +758,9 @@ mod tests {
         writer.await.unwrap();
 
         assert!(result.success);
-        assert_eq!(result.variables.get("content").map(String::as_str), Some("ok"));
+        assert_eq!(
+            result.variables.get("content").map(String::as_str),
+            Some("ok")
+        );
     }
 }

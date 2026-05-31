@@ -1,5 +1,5 @@
 //! Skill Trigger System
-//! 
+//!
 //! Provides multiple trigger types for skill activation:
 //! - Keyword: Exact keyword matching
 //! - Regex: Regular expression matching
@@ -7,29 +7,31 @@
 //! - Semantic: Vector similarity matching
 //! - Command: Command prefix matching
 
-use serde::{Deserialize, Serialize};
+use crate::cognitive::classifier::{Classifier, Intent};
 use regex::Regex;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use tracing::warn;
 
 /// Skill trigger types for automatic skill activation
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum SkillTrigger {
     /// Exact keyword matching
-    Keyword { 
+    Keyword {
         keywords: Vec<String>,
         #[serde(default)]
         case_sensitive: bool,
     },
     /// Regular expression matching
-    Regex { 
+    Regex {
         pattern: String,
         #[serde(skip)]
         #[serde(default)]
         compiled: Option<Regex>,
     },
     /// Intent matching (integrates with classifier)
-    Intent { 
+    Intent {
         intent: String,
         #[serde(default = "default_confidence_threshold")]
         confidence_threshold: f32,
@@ -64,7 +66,7 @@ impl SkillTrigger {
         }
         Ok(())
     }
-    
+
     /// Get the trigger type name
     pub fn type_name(&self) -> &'static str {
         match self {
@@ -105,87 +107,105 @@ impl SkillTriggerEngine {
             triggers: Vec::new(),
         }
     }
-    
+
     /// Register a skill trigger
-    pub fn register(&mut self, skill_name: String, trigger: SkillTrigger) {
+    pub fn register(&mut self, skill_name: String, mut trigger: SkillTrigger) {
+        if let Err(error) = trigger.compile() {
+            warn!(
+                "Skipping invalid {} trigger for skill '{}': {}",
+                trigger.type_name(),
+                skill_name,
+                error
+            );
+            return;
+        }
         self.triggers.push((skill_name, trigger));
     }
-    
+
     /// Register multiple triggers for a skill
     pub fn register_triggers(&mut self, skill_name: String, triggers: Vec<SkillTrigger>) {
         for trigger in triggers {
-            self.triggers.push((skill_name.clone(), trigger));
+            self.register(skill_name.clone(), trigger);
         }
     }
-    
+
     /// Remove all triggers for a skill
     pub fn unregister(&mut self, skill_name: &str) {
         self.triggers.retain(|(name, _)| name != skill_name);
     }
-    
+
     /// Match input against all registered triggers
     pub fn match_input(&self, input: &str) -> Vec<TriggerMatch> {
         let mut matches = Vec::new();
-        
+
         for (skill_name, trigger) in &self.triggers {
             if let Some(m) = self.evaluate_trigger(input, skill_name, trigger) {
                 matches.push(m);
             }
         }
-        
+
         // Sort by confidence (highest first)
-        matches.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap());
+        matches.sort_by(|a, b| b.confidence.total_cmp(&a.confidence));
         matches
     }
-    
+
     /// Match input and return only the best match above threshold
     pub fn match_best(&self, input: &str, threshold: f32) -> Option<TriggerMatch> {
         let matches = self.match_input(input);
         matches.into_iter().find(|m| m.confidence >= threshold)
     }
-    
+
     /// Evaluate a single trigger against input
-    fn evaluate_trigger(&self, input: &str, skill_name: &str, trigger: &SkillTrigger) -> Option<TriggerMatch> {
+    fn evaluate_trigger(
+        &self,
+        input: &str,
+        skill_name: &str,
+        trigger: &SkillTrigger,
+    ) -> Option<TriggerMatch> {
         match trigger {
-            SkillTrigger::Keyword { keywords, case_sensitive } => {
-                self.evaluate_keyword(input, skill_name, keywords, *case_sensitive)
-            }
+            SkillTrigger::Keyword {
+                keywords,
+                case_sensitive,
+            } => self.evaluate_keyword(input, skill_name, keywords, *case_sensitive),
             SkillTrigger::Regex { pattern, compiled } => {
                 self.evaluate_regex(input, skill_name, pattern, compiled.as_ref())
             }
-            SkillTrigger::Intent { intent, confidence_threshold } => {
-                self.evaluate_intent(input, skill_name, intent, *confidence_threshold)
-            }
-            SkillTrigger::Semantic { description, threshold } => {
-                self.evaluate_semantic(input, skill_name, description, *threshold)
-            }
-            SkillTrigger::Command { prefix, args_schema } => {
-                self.evaluate_command(input, skill_name, prefix, args_schema.as_ref())
-            }
+            SkillTrigger::Intent {
+                intent,
+                confidence_threshold,
+            } => self.evaluate_intent(input, skill_name, intent, *confidence_threshold),
+            SkillTrigger::Semantic {
+                description,
+                threshold,
+            } => self.evaluate_semantic(input, skill_name, description, *threshold),
+            SkillTrigger::Command {
+                prefix,
+                args_schema,
+            } => self.evaluate_command(input, skill_name, prefix, args_schema.as_ref()),
         }
     }
-    
+
     /// Evaluate keyword trigger
     fn evaluate_keyword(
-        &self, 
-        input: &str, 
-        skill_name: &str, 
-        keywords: &[String], 
-        case_sensitive: bool
+        &self,
+        input: &str,
+        skill_name: &str,
+        keywords: &[String],
+        case_sensitive: bool,
     ) -> Option<TriggerMatch> {
-        let input_to_check = if case_sensitive { 
-            input.to_string() 
-        } else { 
-            input.to_lowercase() 
+        let input_to_check = if case_sensitive {
+            input.to_string()
+        } else {
+            input.to_lowercase()
         };
-        
+
         for kw in keywords {
-            let kw_to_check = if case_sensitive { 
-                kw.clone() 
-            } else { 
-                kw.to_lowercase() 
+            let kw_to_check = if case_sensitive {
+                kw.clone()
+            } else {
+                kw.to_lowercase()
             };
-            
+
             if input_to_check.contains(&kw_to_check) {
                 return Some(TriggerMatch {
                     skill_name: skill_name.to_string(),
@@ -198,14 +218,14 @@ impl SkillTriggerEngine {
         }
         None
     }
-    
+
     /// Evaluate regex trigger
     fn evaluate_regex(
-        &self, 
-        input: &str, 
-        skill_name: &str, 
+        &self,
+        input: &str,
+        skill_name: &str,
         _pattern: &str,
-        compiled: Option<&Regex>
+        compiled: Option<&Regex>,
     ) -> Option<TriggerMatch> {
         if let Some(regex) = compiled {
             if let Some(captures) = regex.captures(input) {
@@ -216,62 +236,83 @@ impl SkillTriggerEngine {
                         args.insert(name.to_string(), serde_json::json!(value.as_str()));
                     }
                 }
-                
+
                 return Some(TriggerMatch {
                     skill_name: skill_name.to_string(),
                     trigger_type: "regex".to_string(),
                     confidence: 0.9,
-                    extracted_args: if args.is_empty() { None } else { Some(serde_json::json!(args)) },
+                    extracted_args: if args.is_empty() {
+                        None
+                    } else {
+                        Some(serde_json::json!(args))
+                    },
                     matched_text: Some(captures.get(0)?.as_str().to_string()),
                 });
             }
         }
         None
     }
-    
+
     /// Evaluate intent trigger (placeholder - requires classifier integration)
     fn evaluate_intent(
-        &self, 
-        _input: &str, 
-        _skill_name: &str, 
-        _intent: &str, 
-        _threshold: f32
+        &self,
+        input: &str,
+        skill_name: &str,
+        intent: &str,
+        threshold: f32,
     ) -> Option<TriggerMatch> {
-        // This requires integration with the intent classifier
-        // For now, return None - will be implemented when classifier is available
+        let classified_intent = Classifier::classify_intent(input);
+        let detected =
+            Self::normalize_intent_name(Self::classifier_intent_name(&classified_intent));
+        let expected = Self::normalize_intent_name(intent);
+        let confidence = 0.9;
+
+        if detected == expected && confidence >= threshold {
+            return Some(TriggerMatch {
+                skill_name: skill_name.to_string(),
+                trigger_type: "intent".to_string(),
+                confidence,
+                extracted_args: Some(serde_json::json!({
+                    "intent": detected,
+                    "input": input,
+                })),
+                matched_text: Some(intent.to_string()),
+            });
+        }
+
         None
     }
-    
+
     /// Evaluate semantic trigger (placeholder - requires vector store)
     fn evaluate_semantic(
-        &self, 
-        _input: &str, 
-        _skill_name: &str, 
-        _description: &str, 
-        _threshold: f32
+        &self,
+        _input: &str,
+        _skill_name: &str,
+        _description: &str,
+        _threshold: f32,
     ) -> Option<TriggerMatch> {
         // This requires vector embedding and similarity calculation
         // For now, return None - will be implemented with vector store
         None
     }
-    
+
     /// Evaluate command trigger
     fn evaluate_command(
-        &self, 
-        input: &str, 
-        skill_name: &str, 
+        &self,
+        input: &str,
+        skill_name: &str,
         prefix: &str,
-        args_schema: Option<&serde_json::Value>
+        args_schema: Option<&serde_json::Value>,
     ) -> Option<TriggerMatch> {
         if input.starts_with(prefix) {
             let args_str = input.strip_prefix(prefix).unwrap_or("").trim();
-            
+
             let extracted = if let Some(schema) = args_schema {
                 Self::parse_args(args_str, schema)
             } else {
                 serde_json::json!({ "args": args_str })
             };
-            
+
             return Some(TriggerMatch {
                 skill_name: skill_name.to_string(),
                 trigger_type: "command".to_string(),
@@ -282,15 +323,15 @@ impl SkillTriggerEngine {
         }
         None
     }
-    
+
     /// Parse command arguments based on schema
     fn parse_args(args_str: &str, schema: &serde_json::Value) -> serde_json::Value {
         let mut result = serde_json::Map::new();
-        
+
         // Simple parsing: try to extract key=value pairs or positional args
         if let Some(properties) = schema.get("properties").and_then(|p| p.as_object()) {
             let keys: Vec<&String> = properties.keys().collect();
-            
+
             // Try key=value format first
             for (key, _) in properties {
                 let pattern = format!("{}=", key);
@@ -304,7 +345,7 @@ impl SkillTriggerEngine {
                     result.insert(key.clone(), serde_json::json!(value));
                 }
             }
-            
+
             // If no key=value found, use positional args
             if result.is_empty() && !keys.is_empty() {
                 let parts: Vec<&str> = args_str.split_whitespace().collect();
@@ -318,25 +359,46 @@ impl SkillTriggerEngine {
             // No schema, just store raw args
             result.insert("args".to_string(), serde_json::json!(args_str));
         }
-        
+
         serde_json::Value::Object(result)
     }
-    
+
+    fn normalize_intent_name(name: &str) -> String {
+        name.trim().to_ascii_lowercase().replace(['-', ' '], "_")
+    }
+
+    fn classifier_intent_name(intent: &Intent) -> &'static str {
+        match intent {
+            Intent::Greeting => "greeting",
+            Intent::Help => "help",
+            Intent::Status => "status",
+            Intent::Persona => "persona",
+            Intent::Chat => "chat",
+            Intent::DeepResearch => "deep_research",
+            Intent::MultiStep => "multi_step",
+            Intent::Coding => "coding",
+            Intent::Analysis => "analysis",
+            Intent::Creative => "creative",
+            Intent::Math => "math",
+            Intent::General => "general",
+        }
+    }
+
     /// Get all registered skill names
     pub fn list_skills(&self) -> Vec<String> {
         self.triggers.iter().map(|(name, _)| name.clone()).collect()
     }
-    
+
     /// Clear all triggers
     pub fn clear(&mut self) {
         self.triggers.clear();
     }
-    
+
     /// Get trigger count
     pub fn len(&self) -> usize {
         self.triggers.len()
     }
-    
+
     /// Check if empty
     pub fn is_empty(&self) -> bool {
         self.triggers.is_empty()
@@ -350,11 +412,14 @@ mod tests {
     #[test]
     fn test_keyword_trigger() {
         let mut engine = SkillTriggerEngine::new();
-        engine.register("weather".to_string(), SkillTrigger::Keyword {
-            keywords: vec!["天气".to_string(), "weather".to_string()],
-            case_sensitive: false,
-        });
-        
+        engine.register(
+            "weather".to_string(),
+            SkillTrigger::Keyword {
+                keywords: vec!["天气".to_string(), "weather".to_string()],
+                case_sensitive: false,
+            },
+        );
+
         let matches = engine.match_input("今天天气怎么样？");
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0].skill_name, "weather");
@@ -364,31 +429,40 @@ mod tests {
     #[test]
     fn test_command_trigger() {
         let mut engine = SkillTriggerEngine::new();
-        engine.register("search".to_string(), SkillTrigger::Command {
-            prefix: "/search".to_string(),
-            args_schema: None,
-        });
-        
+        engine.register(
+            "search".to_string(),
+            SkillTrigger::Command {
+                prefix: "/search".to_string(),
+                args_schema: None,
+            },
+        );
+
         let matches = engine.match_input("/search rust tutorial");
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0].skill_name, "search");
-        assert_eq!(matches[0].extracted_args, Some(serde_json::json!({"args": "rust tutorial"})));
+        assert_eq!(
+            matches[0].extracted_args,
+            Some(serde_json::json!({"args": "rust tutorial"}))
+        );
     }
 
     #[test]
     fn test_command_trigger_with_schema() {
         let mut engine = SkillTriggerEngine::new();
-        engine.register("weather".to_string(), SkillTrigger::Command {
-            prefix: "/weather".to_string(),
-            args_schema: Some(serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "location": { "type": "string" },
-                    "units": { "type": "string" }
-                }
-            })),
-        });
-        
+        engine.register(
+            "weather".to_string(),
+            SkillTrigger::Command {
+                prefix: "/weather".to_string(),
+                args_schema: Some(serde_json::json!({
+                    "type": "object",
+                    "properties": {
+                        "location": { "type": "string" },
+                        "units": { "type": "string" }
+                    }
+                })),
+            },
+        );
+
         let matches = engine.match_input("/weather Beijing metric");
         assert_eq!(matches.len(), 1);
         let args = matches[0].extracted_args.as_ref().unwrap();
@@ -405,7 +479,7 @@ mod tests {
         };
         trigger.compile().unwrap();
         engine.register("calculator".to_string(), trigger);
-        
+
         let matches = engine.match_input("计算 5 + 3");
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0].skill_name, "calculator");
@@ -414,21 +488,24 @@ mod tests {
     #[test]
     fn test_multiple_triggers_same_skill() {
         let mut engine = SkillTriggerEngine::new();
-        engine.register_triggers("weather".to_string(), vec![
-            SkillTrigger::Keyword {
-                keywords: vec!["天气".to_string()],
-                case_sensitive: false,
-            },
-            SkillTrigger::Command {
-                prefix: "/weather".to_string(),
-                args_schema: None,
-            },
-        ]);
-        
+        engine.register_triggers(
+            "weather".to_string(),
+            vec![
+                SkillTrigger::Keyword {
+                    keywords: vec!["天气".to_string()],
+                    case_sensitive: false,
+                },
+                SkillTrigger::Command {
+                    prefix: "/weather".to_string(),
+                    args_schema: None,
+                },
+            ],
+        );
+
         let matches_keyword = engine.match_input("今天天气如何？");
         assert_eq!(matches_keyword.len(), 1);
         assert_eq!(matches_keyword[0].trigger_type, "keyword");
-        
+
         let matches_command = engine.match_input("/weather Beijing");
         assert_eq!(matches_command.len(), 1);
         assert_eq!(matches_command[0].trigger_type, "command");
@@ -437,18 +514,42 @@ mod tests {
     #[test]
     fn test_best_match() {
         let mut engine = SkillTriggerEngine::new();
-        engine.register("weather".to_string(), SkillTrigger::Keyword {
-            keywords: vec!["天气".to_string()],
-            case_sensitive: false,
-        });
-        engine.register("search".to_string(), SkillTrigger::Command {
-            prefix: "/search".to_string(),
-            args_schema: None,
-        });
-        
+        engine.register(
+            "weather".to_string(),
+            SkillTrigger::Keyword {
+                keywords: vec!["天气".to_string()],
+                case_sensitive: false,
+            },
+        );
+        engine.register(
+            "search".to_string(),
+            SkillTrigger::Command {
+                prefix: "/search".to_string(),
+                args_schema: None,
+            },
+        );
+
         // Command has higher confidence (0.95) than keyword (0.8)
         let best = engine.match_best("/search weather in Beijing", 0.7);
         assert!(best.is_some());
         assert_eq!(best.unwrap().skill_name, "search");
+    }
+
+    #[test]
+    fn test_intent_trigger() {
+        let mut engine = SkillTriggerEngine::new();
+        engine.register(
+            "coder".to_string(),
+            SkillTrigger::Intent {
+                intent: "coding".to_string(),
+                confidence_threshold: 0.7,
+            },
+        );
+
+        let best = engine.match_best("Please implement a Rust function", 0.7);
+        assert!(best.is_some());
+        let matched = best.unwrap();
+        assert_eq!(matched.skill_name, "coder");
+        assert_eq!(matched.trigger_type, "intent");
     }
 }

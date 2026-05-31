@@ -1,16 +1,16 @@
-use crate::error::{Result, CrabletError};
+use crate::agent::aggregator::AggregatorAgent;
+use crate::agent::analyst::AnalystAgent;
+use crate::agent::coder::CoderAgent;
+use crate::agent::coordinator::CoordinatorAgent;
+use crate::agent::factory::AgentFactory;
+use crate::agent::researcher::ResearchAgent;
+use crate::agent::swarm::{AgentId, Swarm, SwarmOrchestrator};
+use crate::cognitive::llm::LlmClient;
 use crate::cognitive::CognitiveSystem;
+use crate::error::{CrabletError, Result};
 use crate::types::{Message, TraceStep};
 use async_trait::async_trait;
 use std::sync::Arc;
-use crate::cognitive::llm::LlmClient;
-use crate::agent::researcher::ResearchAgent;
-use crate::agent::swarm::{Swarm, AgentId, SwarmOrchestrator};
-use crate::agent::coder::CoderAgent;
-use crate::agent::analyst::AnalystAgent;
-use crate::agent::aggregator::AggregatorAgent;
-use crate::agent::coordinator::CoordinatorAgent;
-use crate::agent::factory::AgentFactory;
 use std::time::Duration;
 
 use crate::events::EventBus;
@@ -28,35 +28,44 @@ pub struct System3 {
 }
 
 impl System3 {
-    pub async fn new(llm: Arc<Box<dyn LlmClient>>, event_bus: Arc<EventBus>, pool: Option<SqlitePool>) -> Self {
+    pub async fn new(
+        llm: Arc<Box<dyn LlmClient>>,
+        event_bus: Arc<EventBus>,
+        pool: Option<SqlitePool>,
+    ) -> Self {
         let swarm = Arc::new(Swarm::new().with_event_bus(event_bus.clone()));
-        
+
         let agent_factory = Arc::new(AgentFactory::new(llm.clone(), event_bus.clone()));
-        
-        let orchestrator = Arc::new(SwarmOrchestrator::new(llm.clone(), swarm.clone(), pool, agent_factory));
-        
+
+        let orchestrator = Arc::new(SwarmOrchestrator::new(
+            llm.clone(),
+            swarm.clone(),
+            pool,
+            agent_factory,
+        ));
+
         // Initialize orchestrator (load active graphs)
         orchestrator.init().await;
-        
+
         let coordinator = CoordinatorAgent::new(llm.clone(), swarm.clone());
         let coordinator_id = coordinator.id().clone();
-        
+
         // Register Researcher
         let researcher = Box::new(ResearchAgent::new(llm.clone(), event_bus.clone()));
         swarm.register_agent(researcher).await;
-        
+
         // Register Coder
         let coder = Box::new(CoderAgent::new(llm.clone()));
         swarm.register_agent(coder).await;
-        
+
         // Register Analyst
         let analyst = Box::new(AnalystAgent::new(llm.clone()));
         swarm.register_agent(analyst).await;
-        
+
         // Register Aggregator
         let aggregator = Box::new(AggregatorAgent::new(llm.clone()));
         swarm.register_agent(aggregator).await;
-        
+
         // Register Coordinator (System3 delegate)
         let coord_clone = coordinator.clone();
         swarm.register_agent(Box::new(coord_clone)).await;
@@ -80,22 +89,20 @@ impl CognitiveSystem for System3 {
 
     async fn process(&self, input: &str, _context: &[Message]) -> Result<(String, Vec<TraceStep>)> {
         let lower = input.to_lowercase();
-        
+
         // Handle Draft Mode specifically using the new SwarmOrchestrator
         if lower.starts_with("draft ") {
             if let Some(orch) = &self.orchestrator {
                 let topic = input.chars().skip(6).collect::<String>().trim().to_string();
                 let result_msg = orch.coordinator.start_draft_swarm(&topic).await?;
-                
-                let traces = vec![
-                    TraceStep {
-                        step: 1,
-                        thought: format!("Draft Mode initialized for topic: {}", topic),
-                        action: Some("start_draft_swarm".to_string()),
-                        action_input: Some(topic),
-                        observation: Some(result_msg.clone()),
-                    }
-                ];
+
+                let traces = vec![TraceStep {
+                    step: 1,
+                    thought: format!("Draft Mode initialized for topic: {}", topic),
+                    action: Some("start_draft_swarm".to_string()),
+                    action_input: Some(topic),
+                    observation: Some(result_msg.clone()),
+                }];
                 return Ok((result_msg, traces));
             }
         }
@@ -110,7 +117,7 @@ impl CognitiveSystem for System3 {
         } else {
             input.trim().to_string()
         };
-        
+
         // Submit task to coordinator
         let task_id = self.coordinator.submit_task(topic.to_string()).await;
         tracing::info!("System 3 submitted task '{}' (id: {})", topic, task_id);
@@ -118,24 +125,28 @@ impl CognitiveSystem for System3 {
         // Execute via Coordinator (this will block until all subtasks are done)
         // We use a timeout to prevent hanging forever
         let execution_future = self.coordinator.execute_task(&task_id);
-        
+
         match tokio::time::timeout(self.timeout, execution_future).await {
             Ok(Ok(response)) => {
-                let traces = vec![
-                    TraceStep {
-                        step: 1,
-                        thought: format!("Swarm execution completed for task {}", task_id),
-                        action: Some("swarm_execution".to_string()),
-                        action_input: Some(topic.to_string()),
-                        observation: Some("Received aggregated result".to_string()),
-                    }
-                ];
+                let traces = vec![TraceStep {
+                    step: 1,
+                    thought: format!("Swarm execution completed for task {}", task_id),
+                    action: Some("swarm_execution".to_string()),
+                    action_input: Some(topic.to_string()),
+                    observation: Some("Received aggregated result".to_string()),
+                }];
                 Ok((response, traces))
-            },
-            Ok(Err(e)) => Err(CrabletError::Swarm(format!("Swarm execution failed: {}", e))),
+            }
+            Ok(Err(e)) => Err(CrabletError::Swarm(format!(
+                "Swarm execution failed: {}",
+                e
+            ))),
             Err(_) => {
                 tracing::warn!("Swarm task {} timed out after {:?}", task_id, self.timeout);
-                Ok(("Task timed out. The agents are taking longer than expected.".to_string(), vec![]))
+                Ok((
+                    "Task timed out. The agents are taking longer than expected.".to_string(),
+                    vec![],
+                ))
             }
         }
     }

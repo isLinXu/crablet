@@ -6,13 +6,15 @@
 //! - 模板和参数化
 //! - 版本控制友好
 
-use std::collections::HashMap;
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::{json, Value};
+use std::collections::HashMap;
 
-use super::composite::{CompositeSkill, CompositionType, SkillNode, ErrorPolicy, RetryPolicy};
-use super::chain::{SkillChain, ChainStep, StepType, StepConnection, ChainConfig, ChainErrorPolicy};
+use super::chain::{
+    ChainConfig, ChainErrorPolicy, ChainStep, SkillChain, StepConnection, StepType,
+};
+use super::composite::{CompositeSkill, CompositionType, ErrorPolicy, RetryPolicy, SkillNode};
 
 /// DSL 版本
 pub const DSL_VERSION: &str = "1.0";
@@ -246,7 +248,7 @@ impl WorkflowCompiler {
     pub fn from_yaml(yaml_str: &str) -> Result<WorkflowDefinition> {
         let workflow: WorkflowDefinition = serde_yaml::from_str(yaml_str)
             .map_err(|e| anyhow!("Failed to parse workflow YAML: {}", e))?;
-        
+
         Self::validate(&workflow)?;
         Ok(workflow)
     }
@@ -255,7 +257,7 @@ impl WorkflowCompiler {
     pub fn from_json(json_str: &str) -> Result<WorkflowDefinition> {
         let workflow: WorkflowDefinition = serde_json::from_str(json_str)
             .map_err(|e| anyhow!("Failed to parse workflow JSON: {}", e))?;
-        
+
         Self::validate(&workflow)?;
         Ok(workflow)
     }
@@ -274,7 +276,11 @@ impl WorkflowCompiler {
         for step in &workflow.steps {
             if let Some(ref next) = step.next {
                 if !ids.contains(next) {
-                    return Err(anyhow!("Step '{}' references unknown step: {}", step.id, next));
+                    return Err(anyhow!(
+                        "Step '{}' references unknown step: {}",
+                        step.id,
+                        next
+                    ));
                 }
             }
 
@@ -289,7 +295,7 @@ impl WorkflowCompiler {
 
         // 3. 检查输入引用有效性
         for step in &workflow.steps {
-            for (_key, expr) in &step.inputs {
+            for expr in step.inputs.values() {
                 Self::validate_expression(expr, workflow)?;
             }
         }
@@ -300,11 +306,11 @@ impl WorkflowCompiler {
     /// 验证表达式
     fn validate_expression(expr: &str, workflow: &WorkflowDefinition) -> Result<()> {
         // 简单验证: 检查变量引用
-        if expr.starts_with("$") {
-            let var_name = &expr[1..];
-            if !workflow.inputs.contains_key(var_name) 
-                && !workflow.variables.contains_key(var_name) 
-                && var_name != "input" {
+        if let Some(var_name) = expr.strip_prefix("$") {
+            if !workflow.inputs.contains_key(var_name)
+                && !workflow.variables.contains_key(var_name)
+                && var_name != "input"
+            {
                 // 可能是步骤输出，不做严格检查
             }
         }
@@ -314,13 +320,14 @@ impl WorkflowCompiler {
     /// 编译为 CompositeSkill
     pub fn compile_to_composite(workflow: &WorkflowDefinition) -> Result<CompositeSkill> {
         let composition_type = Self::detect_composition_type(workflow)?;
-        
-        let nodes: Vec<SkillNode> = workflow.steps.iter()
+
+        let nodes: Vec<SkillNode> = workflow
+            .steps
+            .iter()
             .filter(|s| s.step_type == "skill")
             .map(|step| SkillNode {
                 id: step.id.clone(),
-                skill_name: step.skill.clone()
-                    .unwrap_or_else(|| "default".to_string()),
+                skill_name: step.skill.clone().unwrap_or_else(|| "default".to_string()),
                 input_mapping: step.inputs.clone(),
                 output_mapping: step.output.clone(),
                 condition: step.condition.clone(),
@@ -333,7 +340,11 @@ impl WorkflowCompiler {
             })
             .collect();
 
-        let error_policy = if workflow.steps.iter().any(|s| s.on_error.strategy == "continue") {
+        let error_policy = if workflow
+            .steps
+            .iter()
+            .any(|s| s.on_error.strategy == "continue")
+        {
             ErrorPolicy::Continue
         } else {
             ErrorPolicy::FailFast
@@ -437,7 +448,8 @@ impl WorkflowCompiler {
             }
 
             // 如果没有显式连接，自动连接下一步
-            if step_def.next.is_none() && step_def.branches.is_none() && step_def.parallel.is_none() {
+            if step_def.next.is_none() && step_def.branches.is_none() && step_def.parallel.is_none()
+            {
                 if let Some(next_step) = workflow.steps.get(idx + 1) {
                     connections.push(StepConnection {
                         from: step_def.id.clone(),
@@ -449,9 +461,17 @@ impl WorkflowCompiler {
             }
         }
 
-        let error_policy = if workflow.steps.iter().any(|s| s.on_error.strategy == "continue") {
+        let error_policy = if workflow
+            .steps
+            .iter()
+            .any(|s| s.on_error.strategy == "continue")
+        {
             ChainErrorPolicy::Continue
-        } else if workflow.steps.iter().any(|s| s.on_error.strategy == "compensate") {
+        } else if workflow
+            .steps
+            .iter()
+            .any(|s| s.on_error.strategy == "compensate")
+        {
             ChainErrorPolicy::Compensate
         } else {
             ChainErrorPolicy::Stop
@@ -481,11 +501,19 @@ impl WorkflowCompiler {
         // 检查是否有并行步骤
         let has_parallel = workflow.steps.iter().any(|s| s.step_type == "parallel");
         // 检查是否有条件步骤
-        let has_condition = workflow.steps.iter().any(|s| s.condition.is_some() || s.branches.is_some());
+        let has_condition = workflow
+            .steps
+            .iter()
+            .any(|s| s.condition.is_some() || s.branches.is_some());
         // 检查是否有循环
         let has_loop = workflow.steps.iter().any(|s| s.loop_config.is_some());
         // 检查是否有map
-        let has_map = workflow.steps.iter().any(|s| s.loop_config.as_ref().map(|l| l.collection.is_some()).unwrap_or(false));
+        let has_map = workflow.steps.iter().any(|s| {
+            s.loop_config
+                .as_ref()
+                .map(|l| l.collection.is_some())
+                .unwrap_or(false)
+        });
 
         if has_map {
             Ok(CompositionType::Map)
@@ -554,8 +582,7 @@ impl WorkflowCompiler {
 
     /// 导出为 YAML
     pub fn to_yaml(workflow: &WorkflowDefinition) -> Result<String> {
-        serde_yaml::to_string(workflow)
-            .map_err(|e| anyhow!("Failed to serialize workflow: {}", e))
+        serde_yaml::to_string(workflow).map_err(|e| anyhow!("Failed to serialize workflow: {}", e))
     }
 
     /// 导出为 JSON
@@ -572,23 +599,27 @@ impl WorkflowTemplateEngine {
     /// 渲染模板
     pub fn render(template: &str, params: &HashMap<String, Value>) -> Result<String> {
         let mut result = template.to_string();
-        
+
         for (key, value) in params {
             let placeholder = format!("{{{{{}}}}}", key);
-            let replacement = value.as_str()
+            let replacement = value
+                .as_str()
                 .map(|s| s.to_string())
                 .unwrap_or_else(|| value.to_string());
             result = result.replace(&placeholder, &replacement);
         }
-        
+
         Ok(result)
     }
 
     /// 参数化工作流
-    pub fn parameterize(workflow: &mut WorkflowDefinition, params: &HashMap<String, Value>) -> Result<()> {
+    pub fn parameterize(
+        workflow: &mut WorkflowDefinition,
+        params: &HashMap<String, Value>,
+    ) -> Result<()> {
         // 替换名称
         workflow.name = Self::render(&workflow.name, params)?;
-        
+
         // 替换描述
         if let Some(ref mut desc) = workflow.description {
             *desc = Self::render(desc, params)?;
@@ -599,8 +630,8 @@ impl WorkflowTemplateEngine {
             if let Some(ref mut skill) = step.skill {
                 *skill = Self::render(skill, params)?;
             }
-            
-            for (_, expr) in &mut step.inputs {
+
+            for expr in step.inputs.values_mut() {
                 *expr = Self::render(expr, params)?;
             }
         }
@@ -615,8 +646,10 @@ pub mod templates {
 
     /// 顺序处理模板
     pub fn sequential_pipeline(name: &str, skills: Vec<&str>) -> WorkflowDefinition {
-        let steps: Vec<StepDef> = skills.iter().enumerate().map(|(idx, skill)| {
-            StepDef {
+        let steps: Vec<StepDef> = skills
+            .iter()
+            .enumerate()
+            .map(|(idx, skill)| StepDef {
                 id: format!("step_{}", idx),
                 name: Some(format!("Step {}", idx)),
                 step_type: "skill".to_string(),
@@ -632,8 +665,8 @@ pub mod templates {
                 loop_config: None,
                 next: None,
                 branches: None,
-            }
-        }).collect();
+            })
+            .collect();
 
         WorkflowDefinition {
             dsl_version: DSL_VERSION.to_string(),
@@ -651,7 +684,12 @@ pub mod templates {
     }
 
     /// 条件分支模板
-    pub fn conditional_workflow(name: &str, condition: &str, then_skill: &str, else_skill: &str) -> WorkflowDefinition {
+    pub fn conditional_workflow(
+        name: &str,
+        condition: &str,
+        then_skill: &str,
+        else_skill: &str,
+    ) -> WorkflowDefinition {
         WorkflowDefinition {
             dsl_version: DSL_VERSION.to_string(),
             name: name.to_string(),
@@ -735,35 +773,40 @@ pub mod templates {
         WorkflowDefinition {
             dsl_version: DSL_VERSION.to_string(),
             name: name.to_string(),
-            description: Some(format!("Parallel workflow with {} branches", branches.len())),
+            description: Some(format!(
+                "Parallel workflow with {} branches",
+                branches.len()
+            )),
             version: "1.0.0".to_string(),
             author: None,
             tags: vec!["parallel".to_string()],
             inputs: HashMap::new(),
             outputs: HashMap::new(),
             variables: HashMap::new(),
-            steps: vec![
-                StepDef {
-                    id: "parallel_start".to_string(),
-                    name: Some("Parallel Start".to_string()),
-                    step_type: "parallel".to_string(),
-                    skill: None,
-                    workflow: None,
-                    condition: None,
-                    inputs: HashMap::new(),
-                    output: None,
-                    retry: RetryConfig::default(),
-                    timeout: None,
-                    on_error: ErrorHandler::default(),
-                    parallel: Some(ParallelConfig {
-                        branches: branches.iter().enumerate().map(|(i, _)| format!("branch_{}", i)).collect(),
-                        aggregate: "all".to_string(),
-                    }),
-                    loop_config: None,
-                    next: None,
-                    branches: None,
-                },
-            ],
+            steps: vec![StepDef {
+                id: "parallel_start".to_string(),
+                name: Some("Parallel Start".to_string()),
+                step_type: "parallel".to_string(),
+                skill: None,
+                workflow: None,
+                condition: None,
+                inputs: HashMap::new(),
+                output: None,
+                retry: RetryConfig::default(),
+                timeout: None,
+                on_error: ErrorHandler::default(),
+                parallel: Some(ParallelConfig {
+                    branches: branches
+                        .iter()
+                        .enumerate()
+                        .map(|(i, _)| format!("branch_{}", i))
+                        .collect(),
+                    aggregate: "all".to_string(),
+                }),
+                loop_config: None,
+                next: None,
+                branches: None,
+            }],
             config: WorkflowConfig::default(),
         }
     }
@@ -817,25 +860,23 @@ config:
             inputs: HashMap::new(),
             outputs: HashMap::new(),
             variables: HashMap::new(),
-            steps: vec![
-                StepDef {
-                    id: "s1".to_string(),
-                    name: None,
-                    step_type: "skill".to_string(),
-                    skill: Some("skill1".to_string()),
-                    workflow: None,
-                    condition: None,
-                    inputs: HashMap::new(),
-                    output: Some("out1".to_string()),
-                    retry: RetryConfig::default(),
-                    timeout: None,
-                    on_error: ErrorHandler::default(),
-                    parallel: None,
-                    loop_config: None,
-                    next: None,
-                    branches: None,
-                },
-            ],
+            steps: vec![StepDef {
+                id: "s1".to_string(),
+                name: None,
+                step_type: "skill".to_string(),
+                skill: Some("skill1".to_string()),
+                workflow: None,
+                condition: None,
+                inputs: HashMap::new(),
+                output: Some("out1".to_string()),
+                retry: RetryConfig::default(),
+                timeout: None,
+                on_error: ErrorHandler::default(),
+                parallel: None,
+                loop_config: None,
+                next: None,
+                branches: None,
+            }],
             config: WorkflowConfig::default(),
         };
 
@@ -856,7 +897,8 @@ config:
 
     #[test]
     fn test_sequential_pipeline_template() {
-        let workflow = templates::sequential_pipeline("my_pipeline", vec!["step1", "step2", "step3"]);
+        let workflow =
+            templates::sequential_pipeline("my_pipeline", vec!["step1", "step2", "step3"]);
         assert_eq!(workflow.steps.len(), 3);
         assert_eq!(workflow.steps[0].skill, Some("step1".to_string()));
     }

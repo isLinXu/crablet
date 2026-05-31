@@ -281,7 +281,21 @@ impl BackgroundThinker {
                 let mut stats = self.stats.write().await;
                 *stats.insights_by_type.entry(type_name).or_insert(0) += 1;
                 drop(stats);
-                
+
+                // Publish high-confidence insights as learning signals so that
+                // OnlineLearner and other adaptive subsystems can close the
+                // reflection → learning loop.
+                if insight.confidence >= self.config.min_insight_confidence {
+                    self.event_bus.publish(AgentEvent::InsightLearningSignal {
+                        insight_id: insight.id.clone(),
+                        insight_type: format!("{:?}", insight.insight_type),
+                        content: insight.content.clone(),
+                        confidence: insight.confidence,
+                        source_sessions: insight.source_sessions.clone(),
+                        generated_at: insight.created_at,
+                    });
+                }
+
                 stored_insights.push(insight);
             }
         }

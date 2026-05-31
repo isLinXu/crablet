@@ -4,12 +4,12 @@
 //! - Hot: Active session context in Redis (fast read/write)
 //! - Cold: Session history in SQLite (persistent)
 
-use std::sync::Arc;
-use sqlx::{SqlitePool, Row};
-use serde::{Deserialize, Serialize};
 use chrono::Utc;
+use serde::{Deserialize, Serialize};
+use sqlx::{Row, SqlitePool};
+use std::sync::Arc;
 
-use super::redis_client::{RedisClient, session_key};
+use super::redis_client::{session_key, RedisClient};
 
 /// Session context stored in Redis (hot data)
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -19,7 +19,7 @@ pub struct SessionContext {
     pub max_tokens: u32,
     pub compressed: bool,
     pub last_updated: i64,
-    pub messages_json: String,  // JSON serialized messages
+    pub messages_json: String, // JSON serialized messages
 }
 
 /// Token usage statistics
@@ -61,7 +61,7 @@ impl SessionContextStore {
         // Fallback to SQLite (cold data)
         let row = sqlx::query(
             "SELECT session_id, token_count, max_tokens, compressed, last_updated, messages_json 
-             FROM session_contexts WHERE session_id = ?"
+             FROM session_contexts WHERE session_id = ?",
         )
         .bind(session_id)
         .fetch_optional(&self.sqlite_pool)
@@ -113,7 +113,11 @@ impl SessionContextStore {
             match redis.set(&key, &json, Some(86400)).await {
                 Ok(_) => {}
                 Err(e) => {
-                    tracing::warn!("Failed to update Redis cache for session {}: {}. SQLite is up-to-date.", context.session_id, e);
+                    tracing::warn!(
+                        "Failed to update Redis cache for session {}: {}. SQLite is up-to-date.",
+                        context.session_id,
+                        e
+                    );
                 }
             }
         }
@@ -122,7 +126,11 @@ impl SessionContextStore {
     }
 
     /// Update token count
-    pub async fn update_token_count(&self, session_id: &str, token_count: u32) -> anyhow::Result<()> {
+    pub async fn update_token_count(
+        &self,
+        session_id: &str,
+        token_count: u32,
+    ) -> anyhow::Result<()> {
         let now = Utc::now().timestamp();
 
         // Update Redis
@@ -140,7 +148,7 @@ impl SessionContextStore {
 
         // Update SQLite
         sqlx::query(
-            "UPDATE session_contexts SET token_count = ?, last_updated = ? WHERE session_id = ?"
+            "UPDATE session_contexts SET token_count = ?, last_updated = ? WHERE session_id = ?",
         )
         .bind(token_count)
         .bind(now)
@@ -165,8 +173,8 @@ impl SessionContextStore {
             Ok(Some(TokenUsage {
                 session_id: ctx.session_id,
                 total_tokens: ctx.token_count,
-                prompt_tokens: ctx.token_count / 2,  // Estimate
-                completion_tokens: ctx.token_count / 2,  // Estimate
+                prompt_tokens: ctx.token_count / 2,     // Estimate
+                completion_tokens: ctx.token_count / 2, // Estimate
                 token_limit: ctx.max_tokens,
                 usage_percentage,
                 last_updated: ctx.last_updated,
@@ -177,14 +185,19 @@ impl SessionContextStore {
     }
 
     /// Compress session context (reduce message history)
-    pub async fn compress_context(&self, session_id: &str, keep_recent: usize) -> anyhow::Result<bool> {
+    pub async fn compress_context(
+        &self,
+        session_id: &str,
+        keep_recent: usize,
+    ) -> anyhow::Result<bool> {
         let mut context = match self.get_context(session_id).await? {
             Some(ctx) => ctx,
             None => return Ok(false),
         };
 
         // Parse messages and keep only recent ones
-        if let Ok(messages) = serde_json::from_str::<Vec<serde_json::Value>>(&context.messages_json) {
+        if let Ok(messages) = serde_json::from_str::<Vec<serde_json::Value>>(&context.messages_json)
+        {
             let msg_len = messages.len();
             if msg_len > keep_recent {
                 let kept: Vec<_> = messages.into_iter().skip(msg_len - keep_recent).collect();
@@ -232,7 +245,7 @@ impl SessionContextStore {
         } else {
             // Redis not available, query SQLite
             let rows = sqlx::query(
-                "SELECT session_id FROM session_contexts ORDER BY last_updated DESC LIMIT 100"
+                "SELECT session_id FROM session_contexts ORDER BY last_updated DESC LIMIT 100",
             )
             .fetch_all(&self.sqlite_pool)
             .await?;
@@ -243,9 +256,16 @@ impl SessionContextStore {
 
     /// Search for relevant messages across all sessions using simple keyword matching
     /// Returns (session_id, message_index, matched_message, relevance_score)
-    pub async fn search_history(&self, query: &str, limit: usize) -> anyhow::Result<Vec<HistorySearchResult>> {
+    pub async fn search_history(
+        &self,
+        query: &str,
+        limit: usize,
+    ) -> anyhow::Result<Vec<HistorySearchResult>> {
         let query_lower = query.to_lowercase();
-        let query_terms: Vec<&str> = query_lower.split_whitespace().filter(|w| w.len() > 2).collect();
+        let query_terms: Vec<&str> = query_lower
+            .split_whitespace()
+            .filter(|w| w.len() > 2)
+            .collect();
 
         if query_terms.is_empty() {
             return Ok(vec![]);
@@ -265,9 +285,10 @@ impl SessionContextStore {
             let messages_json: String = row.get("messages_json");
 
             if let Ok(messages) = serde_json::from_str::<Vec<serde_json::Value>>(&messages_json) {
-                for (_idx, msg) in messages.iter().enumerate() {
+                for msg in messages.iter() {
                     // Extract text content from message
-                    let content = msg.get("content")
+                    let content = msg
+                        .get("content")
                         .and_then(|c| c.as_str())
                         .unwrap_or_default();
                     let content_lower = content.to_lowercase();
@@ -284,8 +305,16 @@ impl SessionContextStore {
                         let score = match_count as f32 / query_terms.len() as f32;
                         results.push(HistorySearchResult {
                             session_id: session_id.clone(),
-                            message_id: msg.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                            role: msg.get("role").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                            message_id: msg
+                                .get("id")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string(),
+                            role: msg
+                                .get("role")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string(),
                             content_preview: if content.len() > 200 {
                                 format!("{}...", &content[..200])
                             } else {
@@ -299,7 +328,11 @@ impl SessionContextStore {
         }
 
         // Sort by relevance and limit
-        results.sort_by(|a, b| b.relevance_score.partial_cmp(&a.relevance_score).unwrap_or(std::cmp::Ordering::Equal));
+        results.sort_by(|a, b| {
+            b.relevance_score
+                .partial_cmp(&a.relevance_score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         results.truncate(limit);
 
         Ok(results)
@@ -326,7 +359,7 @@ pub async fn init_session_tables(pool: &SqlitePool) -> anyhow::Result<()> {
             compressed INTEGER NOT NULL DEFAULT 0,
             last_updated INTEGER NOT NULL,
             messages_json TEXT NOT NULL DEFAULT '[]'
-        )"
+        )",
     )
     .execute(pool)
     .await?;

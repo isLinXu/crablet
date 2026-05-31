@@ -2,11 +2,11 @@
 //!
 //! Allows pausing Agent execution at specific points for inspection or intervention.
 
-use super::{ExecutionContext, ObservabilityEvent, EventPublisher};
-use serde::{Serialize, Deserialize};
+use super::{EventPublisher, ExecutionContext, ObservabilityEvent};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::{RwLock, oneshot};
+use tokio::sync::{oneshot, RwLock};
 use tokio::time::{timeout, Duration};
 
 /// Manages breakpoints for Agent execution
@@ -21,6 +21,12 @@ struct HoldState {
     response_tx: oneshot::Sender<BreakpointAction>,
 }
 
+impl Default for BreakpointManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl BreakpointManager {
     pub fn new() -> Self {
         Self {
@@ -33,7 +39,10 @@ impl BreakpointManager {
     /// Set a new breakpoint
     pub async fn set_breakpoint(&self, breakpoint: Breakpoint) -> String {
         let id = uuid::Uuid::new_v4().to_string();
-        self.breakpoints.write().await.insert(id.clone(), breakpoint);
+        self.breakpoints
+            .write()
+            .await
+            .insert(id.clone(), breakpoint);
         id
     }
 
@@ -67,27 +76,28 @@ impl BreakpointManager {
     /// Check if execution should pause at current context
     pub async fn check_breakpoint(&self, context: &ExecutionContext) -> Option<BreakpointAction> {
         let breakpoints = self.breakpoints.read().await;
-        
+
         for (_, breakpoint) in breakpoints.iter() {
             if breakpoint.condition.matches(context) {
                 // Publish breakpoint hit event
-                self.event_publisher.publish(ObservabilityEvent::BreakpointHit {
-                    execution_id: context.execution_id.clone(),
-                    breakpoint_id: breakpoint.id.clone(),
-                    context: context.clone(),
-                    timestamp: current_timestamp(),
-                });
-                
+                self.event_publisher
+                    .publish(ObservabilityEvent::BreakpointHit {
+                        execution_id: context.execution_id.clone(),
+                        breakpoint_id: breakpoint.id.clone(),
+                        context: context.clone(),
+                        timestamp: current_timestamp(),
+                    });
+
                 // If auto-continue, return immediately
                 if let BreakpointAction::Continue = breakpoint.action {
                     return Some(BreakpointAction::Continue);
                 }
-                
+
                 // Otherwise, hold and wait for human response
                 return self.hold_execution(context, breakpoint).await;
             }
         }
-        
+
         None
     }
 
@@ -98,7 +108,7 @@ impl BreakpointManager {
         breakpoint: &Breakpoint,
     ) -> Option<BreakpointAction> {
         let (tx, rx) = oneshot::channel();
-        
+
         // Store hold state
         self.active_holds.write().await.insert(
             context.execution_id.clone(),
@@ -107,45 +117,54 @@ impl BreakpointManager {
                 response_tx: tx,
             },
         );
-        
+
         // Publish hold event
-        self.event_publisher.publish(ObservabilityEvent::ExecutionPaused {
-            execution_id: context.execution_id.clone(),
-            reason: PauseReason::Breakpoint(breakpoint.id.clone()),
-            context: context.clone(),
-            timeout_seconds: breakpoint.timeout_secs,
-            timestamp: current_timestamp(),
-        });
-        
+        self.event_publisher
+            .publish(ObservabilityEvent::ExecutionPaused {
+                execution_id: context.execution_id.clone(),
+                reason: PauseReason::Breakpoint(breakpoint.id.clone()),
+                context: context.clone(),
+                timeout_seconds: breakpoint.timeout_secs,
+                timestamp: current_timestamp(),
+            });
+
         // Wait for response with timeout
         let timeout_duration = Duration::from_secs(breakpoint.timeout_secs);
-        
+
         match timeout(timeout_duration, rx).await {
             Ok(Ok(action)) => {
-                self.active_holds.write().await.remove(&context.execution_id);
-                
+                self.active_holds
+                    .write()
+                    .await
+                    .remove(&context.execution_id);
+
                 // Publish resume event
-                self.event_publisher.publish(ObservabilityEvent::ExecutionResumed {
-                    execution_id: context.execution_id.clone(),
-                    action: action.clone(),
-                    timestamp: current_timestamp(),
-                });
-                
+                self.event_publisher
+                    .publish(ObservabilityEvent::ExecutionResumed {
+                        execution_id: context.execution_id.clone(),
+                        action: action.clone(),
+                        timestamp: current_timestamp(),
+                    });
+
                 Some(action)
             }
             _ => {
                 // Timeout or channel closed
-                self.active_holds.write().await.remove(&context.execution_id);
-                
+                self.active_holds
+                    .write()
+                    .await
+                    .remove(&context.execution_id);
+
                 // Use fallback action
                 let fallback = breakpoint.fallback_action.clone();
-                
-                self.event_publisher.publish(ObservabilityEvent::ExecutionResumed {
-                    execution_id: context.execution_id.clone(),
-                    action: fallback.clone(),
-                    timestamp: current_timestamp(),
-                });
-                
+
+                self.event_publisher
+                    .publish(ObservabilityEvent::ExecutionResumed {
+                        execution_id: context.execution_id.clone(),
+                        action: fallback.clone(),
+                        timestamp: current_timestamp(),
+                    });
+
                 Some(fallback)
             }
         }
@@ -158,7 +177,7 @@ impl BreakpointManager {
         action: BreakpointAction,
     ) -> Result<(), BreakpointError> {
         let mut holds = self.active_holds.write().await;
-        
+
         if let Some(hold) = holds.remove(execution_id) {
             hold.response_tx
                 .send(action)
@@ -240,42 +259,28 @@ pub enum BreakpointCondition {
     },
 
     /// Break after a specific number of iterations (alias for OnStep)
-    AfterIteration {
-        count: usize,
-    },
+    AfterIteration { count: usize },
 
     /// Break on a specific step number
-    OnStep {
-        count: usize,
-    },
+    OnStep { count: usize },
 
     /// Break when confidence is below threshold
-    LowConfidence {
-        threshold: f32,
-    },
+    LowConfidence { threshold: f32 },
 
     /// Break when a loop is detected
     LoopDetected,
 
     /// Break when specific text appears in thought
-    ThoughtContains {
-        text: String,
-    },
+    ThoughtContains { text: String },
 
     /// Break when execution time exceeds limit
-    ExecutionTimeExceeded {
-        max_duration_ms: u64,
-    },
+    ExecutionTimeExceeded { max_duration_ms: u64 },
 
     /// Break when token usage exceeds limit
-    TokenBudgetExceeded {
-        max_tokens: usize,
-    },
+    TokenBudgetExceeded { max_tokens: usize },
 
     /// Break on any error
-    OnError {
-        recoverable_only: bool,
-    },
+    OnError { recoverable_only: bool },
 
     /// Compound condition: ALL must match
     All(Vec<BreakpointCondition>),
@@ -301,25 +306,21 @@ impl BreakpointCondition {
                     false
                 }
             }
-            
-            BreakpointCondition::AfterIteration { count } => {
-                context.step_number >= *count
-            }
 
-            BreakpointCondition::OnStep { count } => {
-                context.step_number == *count
-            }
+            BreakpointCondition::AfterIteration { count } => context.step_number >= *count,
+
+            BreakpointCondition::OnStep { count } => context.step_number == *count,
 
             BreakpointCondition::LowConfidence { threshold: _ } => {
                 // Would need to extract confidence from context
                 false // Placeholder
             }
-            
+
             BreakpointCondition::LoopDetected => {
                 // Would need loop detection state in context
                 false // Placeholder
             }
-            
+
             BreakpointCondition::ThoughtContains { text } => {
                 if let Some(ref thought) = context.current_thought {
                     thought.to_lowercase().contains(&text.to_lowercase())
@@ -327,29 +328,27 @@ impl BreakpointCondition {
                     false
                 }
             }
-            
+
             BreakpointCondition::ExecutionTimeExceeded { max_duration_ms: _ } => {
                 // Would need start time in context
                 false // Placeholder
             }
-            
+
             BreakpointCondition::TokenBudgetExceeded { max_tokens: _ } => {
                 // Would need token count in context
                 false // Placeholder
             }
-            
-            BreakpointCondition::OnError { recoverable_only: _ } => {
+
+            BreakpointCondition::OnError {
+                recoverable_only: _,
+            } => {
                 // Would need error state in context
                 false // Placeholder
             }
-            
-            BreakpointCondition::All(conditions) => {
-                conditions.iter().all(|c| c.matches(context))
-            }
-            
-            BreakpointCondition::Any(conditions) => {
-                conditions.iter().any(|c| c.matches(context))
-            }
+
+            BreakpointCondition::All(conditions) => conditions.iter().all(|c| c.matches(context)),
+
+            BreakpointCondition::Any(conditions) => conditions.iter().any(|c| c.matches(context)),
         }
     }
 }
@@ -360,32 +359,26 @@ impl BreakpointCondition {
 pub enum BreakpointAction {
     /// Pause and wait for human intervention
     Pause,
-    
+
     /// Continue execution
     Continue,
-    
+
     /// Continue with modified context
     ModifyContext {
         variable_updates: HashMap<String, serde_json::Value>,
     },
-    
+
     /// Inject a hint into the context
-    InjectHint {
-        hint: String,
-    },
-    
+    InjectHint { hint: String },
+
     /// Skip the current step
     Skip,
-    
+
     /// Abort execution
-    Abort {
-        reason: String,
-    },
-    
+    Abort { reason: String },
+
     /// Retry with modified parameters
-    RetryWithParams {
-        params: serde_json::Value,
-    },
+    RetryWithParams { params: serde_json::Value },
 }
 
 #[derive(Debug)]
@@ -419,6 +412,6 @@ pub enum PauseReason {
 fn current_timestamp() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_millis() as u64
+        .map(|duration| duration.as_millis() as u64)
+        .unwrap_or(0)
 }

@@ -413,7 +413,7 @@ impl EmotionPatterns {
         }
         
         // Sort by confidence
-        results.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap());
+        results.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap_or(std::cmp::Ordering::Equal));
         results
     }
     
@@ -635,7 +635,7 @@ impl EmotionalMemoryFusion {
             .cloned()
             .collect();
         
-        positive.sort_by(|a, b| b.emotional_impact.partial_cmp(&a.emotional_impact).unwrap());
+        positive.sort_by(|a, b| b.emotional_impact.partial_cmp(&a.emotional_impact).unwrap_or(std::cmp::Ordering::Equal));
         positive.truncate(limit);
         positive
     }

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { LOCAL_STORAGE_KEYS } from '../../utils/constants';
+import { getApiBaseUrl, isGatewayApiBaseUrl, LOCAL_STORAGE_KEYS } from '../../utils/constants';
 import toast from 'react-hot-toast';
 import type { ApiKeyInfo, McpOverview, RoutingEvaluationReport, RoutingSettings } from '@/types/domain';
 import { settingsService } from '@/services/settingsService';
@@ -137,7 +137,7 @@ export function useSettingsState(): UseSettingsState {
 
   // Load initial data
   useEffect(() => {
-    const savedUrl = localStorage.getItem(LOCAL_STORAGE_KEYS.API_BASE_URL) || import.meta.env.VITE_API_URL || '/api';
+    const savedUrl = getApiBaseUrl();
     const savedKey = localStorage.getItem(LOCAL_STORAGE_KEYS.API_KEY) || '';
     const savedProfileName = localStorage.getItem('crablet-profile-name') || '';
     const savedProfileEmail = localStorage.getItem('crablet-profile-email') || '';
@@ -189,7 +189,7 @@ export function useSettingsState(): UseSettingsState {
     setApiBaseUrl(normalizedUrl);
     localStorage.setItem(LOCAL_STORAGE_KEYS.API_BASE_URL, normalizedUrl);
     const apiKeyValue = apiKey.trim();
-    const isLocalGateway = normalizedUrl.startsWith('/api') || normalizedUrl.includes('127.0.0.1:18789') || normalizedUrl.includes('localhost:18789');
+    const isLocalGateway = isGatewayApiBaseUrl(normalizedUrl);
 
     if (apiKeyValue) {
       if (apiKeyValue.startsWith('sk-') && !apiKeyValue.startsWith('sk-crablet-')) {

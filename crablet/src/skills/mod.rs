@@ -1,54 +1,71 @@
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
-use serde::{Deserialize, Serialize};
 
-pub mod registry;
-pub mod executor;
-pub mod dependency;
-pub mod openclaw;
-pub mod installer;
-pub mod watcher;
-pub mod composite;
-pub mod chain;
-pub mod orchestrator;
-pub mod dsl;
-pub mod visualization;
-pub mod semantic_matcher;
-pub mod hybrid_matcher;
-pub mod openclaw_executor;
 pub mod atomic_installer;
-pub mod signature;
-pub mod environment;
-pub mod installer_ui;
-pub mod semantic_search;
-pub mod version_manager;
-pub mod interactive_wizard;
-pub mod dev_tools;
-pub mod trigger;
+pub mod chain;
+pub mod composite;
 pub mod context;
+pub mod dependency;
+pub mod dev_tools;
 pub mod discovery;
+pub mod dsl;
+pub mod environment;
+pub mod executor;
+pub mod hybrid_matcher;
+pub mod installer;
+pub mod installer_ui;
+pub mod interactive_wizard;
+pub mod openclaw;
+pub mod openclaw_executor;
+pub mod orchestrator;
+pub mod registry;
+pub mod semantic_matcher;
+pub mod semantic_search;
+pub mod signature;
+pub mod trigger;
+pub mod version_manager;
+pub mod visualization;
+pub mod watcher;
 
 // Re-export core types
-pub use registry::SkillRegistry;
-pub use executor::SkillExecutor;
-pub use dependency::SkillDependencies;
-pub use composite::{CompositeSkill, CompositeExecutor, CompositionType, SkillNode, ErrorPolicy, RetryPolicy};
-pub use chain::{SkillChain, SkillChainEngine, ChainStep, StepType, StepConnection, ChainConfig, ChainErrorPolicy};
-pub use dsl::{WorkflowDefinition, WorkflowCompiler};
-pub use orchestrator::{SkillOrchestrator, OrchestratorConfig, ExecutionRequest, ExecutionResponse, ExecutionStatus};
-pub use visualization::{GraphExporter, GraphFormat};
-pub use openclaw_executor::{OpenClawEngine, OpenClawResult, ExecutionContext};
 pub use atomic_installer::{AtomicInstaller, InstallResult};
-pub use signature::{SkillSignatureVerifier, VerificationResult};
+pub use chain::{
+    ChainConfig, ChainErrorPolicy, ChainStep, SkillChain, SkillChainEngine, StepConnection,
+    StepType,
+};
+pub use composite::{
+    CompositeExecutor, CompositeSkill, CompositionType, ErrorPolicy, RetryPolicy, SkillNode,
+};
+pub use context::{ExecutionRecord, MemoryContext, SkillContext};
+pub use dependency::SkillDependencies;
+pub use dev_tools::{
+    BuildResult, DevTools, DocsResult, InitResult, PublishResult, TestResult, ValidationResult,
+};
+pub use dsl::{WorkflowCompiler, WorkflowDefinition};
 pub use environment::{SkillEnvironment, VirtualEnv};
-pub use installer_ui::{InstallProgress, SkillInfoDisplay, UserPrompt, ErrorDisplay, LogDisplay};
-pub use semantic_search::{SkillSearchManager, SkillSearchResult, SkillSearchMetadata, SkillSearchIndex, SkillCategory, SearchQuery, SearchFilters, MatchType};
-pub use semantic_matcher::{SemanticMatcher, SemanticMatch, SkillMetadata};
-pub use version_manager::{VersionManager, SemVer, VersionConstraint, VersionDiff, UpdateInfo, UpdateStats};
-pub use interactive_wizard::{InteractiveWizard, QuickInstallWizard, WizardStep, WizardState, SkillConfiguration, InstallOptions};
-pub use dev_tools::{DevTools, InitResult, ValidationResult, TestResult, BuildResult, PublishResult, DocsResult};
+pub use executor::SkillExecutor;
+pub use installer_ui::{ErrorDisplay, InstallProgress, LogDisplay, SkillInfoDisplay, UserPrompt};
+pub use interactive_wizard::{
+    InstallOptions, InteractiveWizard, QuickInstallWizard, SkillConfiguration, WizardState,
+    WizardStep,
+};
+pub use openclaw_executor::{ExecutionContext, OpenClawEngine, OpenClawResult};
+pub use orchestrator::{
+    ExecutionRequest, ExecutionResponse, ExecutionStatus, OrchestratorConfig, SkillOrchestrator,
+};
+pub use registry::SkillRegistry;
+pub use semantic_matcher::{SemanticMatch, SemanticMatcher, SkillMetadata};
+pub use semantic_search::{
+    MatchType, SearchFilters, SearchQuery, SkillCategory, SkillSearchIndex, SkillSearchManager,
+    SkillSearchMetadata, SkillSearchResult,
+};
+pub use signature::{SkillSignatureVerifier, VerificationResult};
 pub use trigger::{SkillTrigger, SkillTriggerEngine, TriggerMatch};
-pub use context::{SkillContext, ExecutionRecord, MemoryContext};
+pub use version_manager::{
+    SemVer, UpdateInfo, UpdateStats, VersionConstraint, VersionDiff, VersionManager,
+};
+pub use visualization::{GraphExporter, GraphFormat};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SkillParameter {
@@ -75,7 +92,7 @@ pub struct SkillManifest {
     pub description: String,
     pub version: String,
     pub parameters: serde_json::Value, // JSON Schema for arguments
-    pub entrypoint: String, // Command to run (e.g., "python main.py")
+    pub entrypoint: String,            // Command to run (e.g., "python main.py")
     #[serde(default)]
     pub env: HashMap<String, String>, // Environment variables
     #[serde(default)]

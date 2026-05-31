@@ -1,5 +1,5 @@
 //! Enhanced System 1 - Fast Intuitive Response System
-//! 
+//!
 //! System 1 is designed for rapid, intuitive responses to common user inputs.
 //! It uses a multi-layer matching strategy to handle a wide variety of inputs.
 //!
@@ -10,13 +10,13 @@
 //! 4. Command Registry - Extensible command library with 20+ categories
 
 use crate::cognitive::CognitiveSystem;
+use crate::error::{CrabletError, Result};
 use crate::types::{Message, TraceStep};
-use crate::error::{Result, CrabletError};
 use async_trait::async_trait;
+use chrono::{Local, Timelike};
+use regex::Regex;
 use std::collections::HashMap;
 use std::sync::Arc;
-use regex::Regex;
-use chrono::{Local, Timelike};
 
 // ============================================================================
 // Types and Enums
@@ -25,11 +25,11 @@ use chrono::{Local, Timelike};
 /// Match confidence level
 #[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
 pub enum MatchConfidence {
-    Exact = 100,      // Exact match
-    High = 80,        // Very close match
-    Medium = 60,      // Good match
-    Low = 40,         // Possible match
-    None = 0,         // No match
+    Exact = 100, // Exact match
+    High = 80,   // Very close match
+    Medium = 60, // Good match
+    Low = 40,    // Possible match
+    None = 0,    // No match
 }
 
 /// Match result from pattern matching
@@ -45,12 +45,12 @@ pub struct MatchResult {
 /// Type of pattern match
 #[derive(Clone, Debug, PartialEq)]
 pub enum MatchType {
-    Exact,           // Character-for-character match
-    Prefix,          // Prefix match
-    Regex,           // Regular expression match
-    Fuzzy,           // Fuzzy string match
-    Semantic,        // Semantic similarity match
-    Contextual,      // Context-based match
+    Exact,      // Character-for-character match
+    Prefix,     // Prefix match
+    Regex,      // Regular expression match
+    Fuzzy,      // Fuzzy string match
+    Semantic,   // Semantic similarity match
+    Contextual, // Context-based match
 }
 
 /// Response template with variables
@@ -77,29 +77,33 @@ impl ResponseTemplate {
     pub fn render(&self, vars: &HashMap<String, String>) -> String {
         use rand::prelude::IndexedRandom;
         let mut rng = rand::rng();
-        
+
         if self.templates.is_empty() {
             return String::new();
         }
-        let template = self.templates.choose(&mut rng).unwrap_or(&self.templates[0]);
-        
+        let template = self
+            .templates
+            .choose(&mut rng)
+            .unwrap_or(&self.templates[0]);
+
         let mut result = template.clone();
         for (key, value) in vars {
             result = result.replace(&format!("{{{}}}", key), value);
         }
-        
+
         // Replace time variables
         let now = Local::now();
         result = result.replace("{time}", &now.format("%H:%M").to_string());
         result = result.replace("{date}", &now.format("%Y-%m-%d").to_string());
         result = result.replace("{day}", &now.format("%A").to_string());
-        
+
         result
     }
 }
 
 /// Handler function type for commands
-type CommandHandler = Arc<dyn Fn(&str, &HashMap<String, String>, &[Message]) -> String + Send + Sync>;
+type CommandHandler =
+    Arc<dyn Fn(&str, &HashMap<String, String>, &[Message]) -> String + Send + Sync>;
 
 /// Command definition
 #[derive(Clone)]
@@ -108,7 +112,7 @@ pub struct Command {
     pub category: CommandCategory,
     pub patterns: Vec<Pattern>,
     pub response: ResponseTemplate,
-    pub priority: i32,  // Higher = checked first
+    pub priority: i32, // Higher = checked first
     pub context_aware: bool,
     pub handler: Option<CommandHandler>,
 }
@@ -116,35 +120,35 @@ pub struct Command {
 /// Pattern for matching
 #[derive(Clone, Debug)]
 pub enum Pattern {
-    Exact(String),                    // Exact string match
-    Prefix(String),                   // Prefix match
-    Contains(String),                 // Substring match
-    Regex(String),                    // Regex pattern
-    Fuzzy(String, usize),            // Fuzzy match with max distance
+    Exact(String),        // Exact string match
+    Prefix(String),       // Prefix match
+    Contains(String),     // Substring match
+    Regex(String),        // Regex pattern
+    Fuzzy(String, usize), // Fuzzy match with max distance
 }
 
 /// Command categories
 #[derive(Clone, Debug, PartialEq)]
 pub enum CommandCategory {
-    Greeting,         // Hello, hi, etc.
-    Farewell,         // Goodbye, bye, etc.
-    Gratitude,        // Thanks, thank you
-    Identity,         // Who are you, what is your name
-    Help,             // Help, assistance
-    Status,           // System status
-    Time,             // What time is it
-    Weather,          // Weather queries
-    Emotion,          // How are you, mood
-    Capability,       // What can you do
-    Opinion,          // What do you think
-    Confirmation,     // Yes, no, ok
-    Clarification,    // What, why, how come
-    SmallTalk,        // Casual conversation
-    Joke,             // Tell me a joke
-    Compliment,       // You're great, good job
-    Complaint,        // You're wrong, bad
-    Meta,             // About the conversation
-    Fallback,         // Catch-all
+    Greeting,      // Hello, hi, etc.
+    Farewell,      // Goodbye, bye, etc.
+    Gratitude,     // Thanks, thank you
+    Identity,      // Who are you, what is your name
+    Help,          // Help, assistance
+    Status,        // System status
+    Time,          // What time is it
+    Weather,       // Weather queries
+    Emotion,       // How are you, mood
+    Capability,    // What can you do
+    Opinion,       // What do you think
+    Confirmation,  // Yes, no, ok
+    Clarification, // What, why, how come
+    SmallTalk,     // Casual conversation
+    Joke,          // Tell me a joke
+    Compliment,    // You're great, good job
+    Complaint,     // You're wrong, bad
+    Meta,          // About the conversation
+    Fallback,      // Catch-all
 }
 
 // ============================================================================
@@ -169,9 +173,13 @@ impl PatternMatcher {
     }
 
     /// Match input against a pattern
-    pub fn match_pattern(&mut self, input: &str, pattern: &Pattern) -> Option<(MatchConfidence, HashMap<String, String>)> {
+    pub fn match_pattern(
+        &mut self,
+        input: &str,
+        pattern: &Pattern,
+    ) -> Option<(MatchConfidence, HashMap<String, String>)> {
         let input_lower = input.trim().to_lowercase();
-        
+
         match pattern {
             Pattern::Exact(s) => {
                 if input_lower == s.to_lowercase() {
@@ -180,7 +188,7 @@ impl PatternMatcher {
                     None
                 }
             }
-            
+
             Pattern::Prefix(s) => {
                 if input_lower.starts_with(&s.to_lowercase()) {
                     Some((MatchConfidence::High, HashMap::new()))
@@ -188,7 +196,7 @@ impl PatternMatcher {
                     None
                 }
             }
-            
+
             Pattern::Contains(s) => {
                 if input_lower.contains(&s.to_lowercase()) {
                     Some((MatchConfidence::Medium, HashMap::new()))
@@ -196,11 +204,31 @@ impl PatternMatcher {
                     None
                 }
             }
-            
+
             Pattern::Regex(pattern_str) => {
-                let regex = self.compiled_regexes.entry(pattern_str.clone())
-                    .or_insert_with(|| Regex::new(pattern_str).expect("Failed to compile regex pattern"));
-                
+                // Compile lazily, but never panic on an invalid user-supplied
+                // pattern: skip the rule and warn instead of crashing the
+                // request-handling hot path.
+                if !self.compiled_regexes.contains_key(pattern_str) {
+                    match Regex::new(pattern_str) {
+                        Ok(re) => {
+                            self.compiled_regexes.insert(pattern_str.clone(), re);
+                        }
+                        Err(e) => {
+                            tracing::warn!(
+                                "Skipping invalid regex pattern '{}': {}",
+                                pattern_str,
+                                e
+                            );
+                            return None;
+                        }
+                    }
+                }
+                let regex = match self.compiled_regexes.get(pattern_str) {
+                    Some(re) => re,
+                    None => return None,
+                };
+
                 if let Some(captures) = regex.captures(&input_lower) {
                     let mut params = HashMap::new();
                     for name in regex.capture_names().flatten() {
@@ -213,7 +241,7 @@ impl PatternMatcher {
                     None
                 }
             }
-            
+
             Pattern::Fuzzy(target, max_dist) => {
                 let dist = strsim::levenshtein(&input_lower, &target.to_lowercase());
                 if dist <= *max_dist {
@@ -242,15 +270,14 @@ impl PatternMatcher {
 /// Helper function to extract text content from Message
 fn get_message_text(msg: &Message) -> String {
     match &msg.content {
-        Some(parts) => {
-            parts.iter()
-                .filter_map(|part| match part {
-                    crate::types::ContentPart::Text { text } => Some(text.clone()),
-                    _ => None,
-                })
-                .collect::<Vec<_>>()
-                .join("")
-        }
+        Some(parts) => parts
+            .iter()
+            .filter_map(|part| match part {
+                crate::types::ContentPart::Text { text } => Some(text.clone()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join(""),
         None => String::new(),
     }
 }
@@ -261,24 +288,25 @@ impl ContextHandler {
     /// Analyze conversation context to enhance matching
     pub fn analyze_context(context: &[Message]) -> ContextInfo {
         let mut info = ContextInfo::default();
-        
+
         if context.is_empty() {
             return info;
         }
-        
+
         // Check last message role
         if let Some(last) = context.last() {
             info.last_role = last.role.clone();
-            
+
             // Check if waiting for confirmation
             let last_content = get_message_text(last).to_lowercase();
-            if last_content.contains("?") || 
-               last_content.contains("confirm") ||
-               last_content.contains("sure") ||
-               last_content.contains("ok") {
+            if last_content.contains("?")
+                || last_content.contains("confirm")
+                || last_content.contains("sure")
+                || last_content.contains("ok")
+            {
                 info.expecting_confirmation = true;
             }
-            
+
             // Detect conversation topic
             if last_content.contains("code") || last_content.contains("function") {
                 info.topic = Some("coding".to_string());
@@ -286,25 +314,25 @@ impl ContextHandler {
                 info.topic = Some("search".to_string());
             }
         }
-        
+
         // Count turns
         info.turn_count = context.len();
-        
+
         // Check for repeated patterns
-        let user_messages: Vec<_> = context.iter()
-            .filter(|m| m.role == "user")
-            .collect();
-        
+        let user_messages: Vec<_> = context.iter().filter(|m| m.role == "user").collect();
+
         if user_messages.len() >= 2 {
             let last_two: Vec<_> = user_messages.iter().rev().take(2).collect();
-            if get_message_text(last_two[0]).to_lowercase() == get_message_text(last_two[1]).to_lowercase() {
+            if get_message_text(last_two[0]).to_lowercase()
+                == get_message_text(last_two[1]).to_lowercase()
+            {
                 info.is_repeating = true;
             }
         }
-        
+
         info
     }
-    
+
     /// Get contextual response modifier
     pub fn get_context_modifier(info: &ContextInfo) -> Option<String> {
         if info.is_repeating {
@@ -347,14 +375,17 @@ impl System1Enhanced {
         let mut system = Self {
             commands: Vec::new(),
             fallback_handler: Arc::new(|input| {
-                format!("I'm not sure how to respond to '{}' quickly. Let me think about it...", input)
+                format!(
+                    "I'm not sure how to respond to '{}' quickly. Let me think about it...",
+                    input
+                )
             }),
         };
-        
+
         system.register_default_commands();
         system
     }
-    
+
     /// Register all default commands
     fn register_default_commands(&mut self) {
         // 1. Greetings (High priority)
@@ -393,7 +424,7 @@ impl System1Enhanced {
                 }
             })),
         });
-        
+
         // 2. Time-based greetings
         self.register_command(Command {
             id: "greeting_time".to_string(),
@@ -406,9 +437,7 @@ impl System1Enhanced {
                 Pattern::Contains("下午好".to_string()),
                 Pattern::Contains("晚上好".to_string()),
             ],
-            response: ResponseTemplate::new(vec![
-                "{greeting}! 今天过得怎么样？",
-            ]).with_context(),
+            response: ResponseTemplate::new(vec!["{greeting}! 今天过得怎么样？"]).with_context(),
             priority: 95,
             context_aware: true,
             handler: Some(Arc::new(|_input, _vars, _ctx| {
@@ -423,7 +452,7 @@ impl System1Enhanced {
                 format!("{}！有什么我可以帮你的吗？", greeting)
             })),
         });
-        
+
         // 3. Identity
         self.register_command(Command {
             id: "identity_who".to_string(),
@@ -445,7 +474,7 @@ impl System1Enhanced {
             context_aware: false,
             handler: None,
         });
-        
+
         // 4. Capabilities
         self.register_command(Command {
             id: "capability_what".to_string(),
@@ -466,7 +495,7 @@ impl System1Enhanced {
             context_aware: false,
             handler: None,
         });
-        
+
         // 5. Help
         self.register_command(Command {
             id: "help_general".to_string(),
@@ -486,7 +515,7 @@ impl System1Enhanced {
             context_aware: false,
             handler: None,
         });
-        
+
         // 6. Status
         self.register_command(Command {
             id: "status_check".to_string(),
@@ -507,7 +536,7 @@ impl System1Enhanced {
             context_aware: false,
             handler: None,
         });
-        
+
         // 7. Time queries
         self.register_command(Command {
             id: "time_query".to_string(),
@@ -520,15 +549,12 @@ impl System1Enhanced {
                 Pattern::Contains("current time".to_string()),
                 Pattern::Regex(r"^what('s| is) the time".to_string()),
             ],
-            response: ResponseTemplate::new(vec![
-                "现在是 {time}。",
-                "当前时间：{time}",
-            ]),
+            response: ResponseTemplate::new(vec!["现在是 {time}。", "当前时间：{time}"]),
             priority: 80,
             context_aware: false,
             handler: None,
         });
-        
+
         // 8. Date queries
         self.register_command(Command {
             id: "date_query".to_string(),
@@ -541,14 +567,12 @@ impl System1Enhanced {
                 Pattern::Exact("今天星期几".to_string()),
                 Pattern::Contains("today's date".to_string()),
             ],
-            response: ResponseTemplate::new(vec![
-                "今天是 {date}，{day}。",
-            ]),
+            response: ResponseTemplate::new(vec!["今天是 {date}，{day}。"]),
             priority: 80,
             context_aware: false,
             handler: None,
         });
-        
+
         // 9. Emotion/How are you
         self.register_command(Command {
             id: "emotion_howareyou".to_string(),
@@ -570,7 +594,7 @@ impl System1Enhanced {
             context_aware: true,
             handler: None,
         });
-        
+
         // 10. Gratitude
         self.register_command(Command {
             id: "gratitude_thanks".to_string(),
@@ -596,7 +620,7 @@ impl System1Enhanced {
             context_aware: true,
             handler: None,
         });
-        
+
         // 11. Farewell
         self.register_command(Command {
             id: "farewell_goodbye".to_string(),
@@ -623,7 +647,7 @@ impl System1Enhanced {
             context_aware: true,
             handler: None,
         });
-        
+
         // 12. Confirmation
         self.register_command(Command {
             id: "confirm_yes".to_string(),
@@ -643,16 +667,12 @@ impl System1Enhanced {
                 Pattern::Exact("没错".to_string()),
                 Pattern::Exact("对".to_string()),
             ],
-            response: ResponseTemplate::new(vec![
-                "好的！",
-                "明白！",
-                "收到！",
-            ]),
+            response: ResponseTemplate::new(vec!["好的！", "明白！", "收到！"]),
             priority: 70,
             context_aware: true,
             handler: None,
         });
-        
+
         // 13. Negation
         self.register_command(Command {
             id: "negation_no".to_string(),
@@ -677,7 +697,7 @@ impl System1Enhanced {
             context_aware: true,
             handler: None,
         });
-        
+
         // 14. Joke request
         self.register_command(Command {
             id: "joke_request".to_string(),
@@ -699,7 +719,7 @@ impl System1Enhanced {
             context_aware: false,
             handler: None,
         });
-        
+
         // 15. Compliment
         self.register_command(Command {
             id: "compliment_received".to_string(),
@@ -728,7 +748,7 @@ impl System1Enhanced {
             context_aware: true,
             handler: None,
         });
-        
+
         // 16. Apology/Complaint
         self.register_command(Command {
             id: "apology_response".to_string(),
@@ -749,7 +769,7 @@ impl System1Enhanced {
             context_aware: true,
             handler: None,
         });
-        
+
         // 17. Opinion
         self.register_command(Command {
             id: "opinion_what".to_string(),
@@ -769,7 +789,7 @@ impl System1Enhanced {
             context_aware: true,
             handler: None,
         });
-        
+
         // 18. Weather (placeholder - would need integration)
         self.register_command(Command {
             id: "weather_query".to_string(),
@@ -788,7 +808,7 @@ impl System1Enhanced {
             context_aware: false,
             handler: None,
         });
-        
+
         // 19. Clarification
         self.register_command(Command {
             id: "clarification_what".to_string(),
@@ -809,7 +829,7 @@ impl System1Enhanced {
             context_aware: true,
             handler: None,
         });
-        
+
         // 20. Small talk
         self.register_command(Command {
             id: "smalltalk_general".to_string(),
@@ -824,59 +844,62 @@ impl System1Enhanced {
                 Pattern::Exact("有意思".to_string()),
                 Pattern::Exact("酷".to_string()),
             ],
-            response: ResponseTemplate::new(vec![
-                "是啊！",
-                "没错！",
-                "😊",
-            ]),
+            response: ResponseTemplate::new(vec!["是啊！", "没错！", "😊"]),
             priority: 50,
             context_aware: true,
             handler: None,
         });
-        
+
         // Sort by priority (highest first)
         self.commands.sort_by(|a, b| b.priority.cmp(&a.priority));
     }
-    
+
     /// Register a new command
     pub fn register_command(&mut self, command: Command) {
         self.commands.push(command);
     }
-    
+
     /// Find best matching command
-    pub fn find_best_match(&self, input: &str, context: &[Message]) -> Option<(MatchResult, &Command)> {
+    pub fn find_best_match(
+        &self,
+        input: &str,
+        context: &[Message],
+    ) -> Option<(MatchResult, &Command)> {
         let mut best_match: Option<(MatchResult, &Command)> = None;
         let mut best_confidence = MatchConfidence::None;
-        
+
         let mut matcher = PatternMatcher::new();
-        
+
         for command in &self.commands {
             for pattern in &command.patterns {
                 if let Some((confidence, params)) = matcher.match_pattern(input, pattern) {
                     if confidence > best_confidence {
                         best_confidence = confidence;
-                        best_match = Some((MatchResult {
-                            command_id: command.id.clone(),
-                            confidence,
-                            matched_pattern: format!("{:?}", pattern),
-                            extracted_params: params,
-                            match_type: match pattern {
-                                Pattern::Exact(_) => MatchType::Exact,
-                                Pattern::Prefix(_) => MatchType::Prefix,
-                                Pattern::Contains(_) => MatchType::Prefix,
-                                Pattern::Regex(_) => MatchType::Regex,
-                                Pattern::Fuzzy(_, _) => MatchType::Fuzzy,
+                        best_match = Some((
+                            MatchResult {
+                                command_id: command.id.clone(),
+                                confidence,
+                                matched_pattern: format!("{:?}", pattern),
+                                extracted_params: params,
+                                match_type: match pattern {
+                                    Pattern::Exact(_) => MatchType::Exact,
+                                    Pattern::Prefix(_) => MatchType::Prefix,
+                                    Pattern::Contains(_) => MatchType::Prefix,
+                                    Pattern::Regex(_) => MatchType::Regex,
+                                    Pattern::Fuzzy(_, _) => MatchType::Fuzzy,
+                                },
                             },
-                        }, command));
+                            command,
+                        ));
                     }
                 }
             }
         }
-        
+
         // Check context-based matching for context-aware commands
         if best_match.is_none() || best_confidence < MatchConfidence::Medium {
             let ctx_info = ContextHandler::analyze_context(context);
-            
+
             // Context-based matching logic
             if ctx_info.expecting_confirmation {
                 // Look for confirmation commands
@@ -884,33 +907,44 @@ impl System1Enhanced {
                     if command.category == CommandCategory::Confirmation {
                         // Simple check for yes/no patterns
                         let input_lower = input.trim().to_lowercase();
-                        if ["yes", "y", "yeah", "好的", "可以", "no", "n", "nah", "不用"].contains(&input_lower.as_str()) {
-                            return Some((MatchResult {
-                                command_id: command.id.clone(),
-                                confidence: MatchConfidence::Medium,
-                                matched_pattern: "context_confirmation".to_string(),
-                                extracted_params: HashMap::new(),
-                                match_type: MatchType::Contextual,
-                            }, command));
+                        if ["yes", "y", "yeah", "好的", "可以", "no", "n", "nah", "不用"]
+                            .contains(&input_lower.as_str())
+                        {
+                            return Some((
+                                MatchResult {
+                                    command_id: command.id.clone(),
+                                    confidence: MatchConfidence::Medium,
+                                    matched_pattern: "context_confirmation".to_string(),
+                                    extracted_params: HashMap::new(),
+                                    match_type: MatchType::Contextual,
+                                },
+                                command,
+                            ));
                         }
                     }
                 }
             }
         }
-        
+
         best_match
     }
-    
+
     /// Generate response from matched command
-    fn generate_response(&self, command: &Command, input: &str, params: &HashMap<String, String>, context: &[Message]) -> String {
+    fn generate_response(
+        &self,
+        command: &Command,
+        input: &str,
+        params: &HashMap<String, String>,
+        context: &[Message],
+    ) -> String {
         // Use custom handler if available
         if let Some(handler) = &command.handler {
             return handler(input, params, context);
         }
-        
+
         // Use template-based response
         let vars = params.clone();
-        
+
         // Add context modifier if applicable
         let ctx_info = ContextHandler::analyze_context(context);
         if command.context_aware {
@@ -919,7 +953,7 @@ impl System1Enhanced {
                 return format!("{}{}", modifier, base_response);
             }
         }
-        
+
         command.response.render(&vars)
     }
 }
@@ -929,12 +963,13 @@ impl CognitiveSystem for System1Enhanced {
     fn name(&self) -> &str {
         "System 1 (Enhanced Intuitive)"
     }
-    
+
     async fn process(&self, input: &str, context: &[Message]) -> Result<(String, Vec<TraceStep>)> {
         // Find best matching command
         if let Some((match_result, command)) = self.find_best_match(input, context) {
-            let response = self.generate_response(command, input, &match_result.extracted_params, context);
-            
+            let response =
+                self.generate_response(command, input, &match_result.extracted_params, context);
+
             let trace = vec![TraceStep {
                 step: 0,
                 thought: format!(
@@ -945,10 +980,10 @@ impl CognitiveSystem for System1Enhanced {
                 action_input: Some(input.to_string()),
                 observation: Some(format!("Matched pattern: {}", match_result.matched_pattern)),
             }];
-            
+
             return Ok((response, trace));
         }
-        
+
         // No match found - return error to fall through to System 2
         Err(CrabletError::NotFound(format!(
             "No System 1 match for: '{}'",
@@ -965,12 +1000,20 @@ mod tests {
     #[tokio::test]
     async fn test_greeting_patterns() {
         let system = System1Enhanced::new();
-        
+
         let greetings = vec![
-            "hello", "hi", "hey", "你好", "您好", "嗨", "哈喽",
-            "Hello there", "Hi!", "HELLO",
+            "hello",
+            "hi",
+            "hey",
+            "你好",
+            "您好",
+            "嗨",
+            "哈喽",
+            "Hello there",
+            "Hi!",
+            "HELLO",
         ];
-        
+
         for greeting in greetings {
             let result = system.process(greeting, &[]).await;
             assert!(result.is_ok(), "Failed to match greeting: {}", greeting);
@@ -978,16 +1021,20 @@ mod tests {
             assert!(!response.is_empty());
         }
     }
-    
+
     #[tokio::test]
     async fn test_identity_patterns() {
         let system = System1Enhanced::new();
-        
+
         let identity_queries = vec![
-            "who are you", "你是谁", "what is your name", "你叫什么",
-            "who r u", "what's your name",
+            "who are you",
+            "你是谁",
+            "what is your name",
+            "你叫什么",
+            "who r u",
+            "what's your name",
         ];
-        
+
         for query in identity_queries {
             let result = system.process(query, &[]).await;
             assert!(result.is_ok(), "Failed to match identity query: {}", query);
@@ -995,82 +1042,87 @@ mod tests {
             assert!(response.contains("Crablet"));
         }
     }
-    
+
     #[tokio::test]
     async fn test_time_queries() {
         let system = System1Enhanced::new();
-        
-        let time_queries = vec![
-            "what time is it", "time", "几点了", "现在几点",
-        ];
-        
+
+        let time_queries = vec!["what time is it", "time", "几点了", "现在几点"];
+
         for query in time_queries {
             let result = system.process(query, &[]).await;
             assert!(result.is_ok(), "Failed to match time query: {}", query);
         }
     }
-    
+
     #[tokio::test]
     async fn test_gratitude_patterns() {
         let system = System1Enhanced::new();
-        
+
         let thanks = vec![
-            "thanks", "thank you", "thx", "ty", "谢谢", "感谢", "多谢",
-            "thanks a lot", "thank you so much",
+            "thanks",
+            "thank you",
+            "thx",
+            "ty",
+            "谢谢",
+            "感谢",
+            "多谢",
+            "thanks a lot",
+            "thank you so much",
         ];
-        
+
         for t in thanks {
             let result = system.process(t, &[]).await;
             assert!(result.is_ok(), "Failed to match gratitude: {}", t);
         }
     }
-    
+
     #[tokio::test]
     async fn test_confirmation_patterns() {
         let system = System1Enhanced::new();
-        
+
         let confirmations = vec![
-            "yes", "y", "yeah", "yep", "sure", "ok", "okay",
-            "好的", "可以", "行", "是的", "没错", "对",
+            "yes", "y", "yeah", "yep", "sure", "ok", "okay", "好的", "可以", "行", "是的", "没错",
+            "对",
         ];
-        
+
         for c in confirmations {
             let result = system.process(c, &[]).await;
             assert!(result.is_ok(), "Failed to match confirmation: {}", c);
         }
     }
-    
+
     #[tokio::test]
     async fn test_no_match_fallback() {
         let system = System1Enhanced::new();
-        
+
         // Complex queries should fall through to System 2
         let complex_queries = vec![
             "analyze the stock market trends for the past year",
             "write a rust function to implement a binary search tree",
             "explain quantum computing in detail",
         ];
-        
+
         for query in complex_queries {
             let result = system.process(query, &[]).await;
             assert!(result.is_err(), "Should not match complex query: {}", query);
         }
     }
-    
+
     #[tokio::test]
     async fn test_context_awareness() {
         let system = System1Enhanced::new();
-        
+
         // Create context with previous message
-        let context = vec![
-            Message {
-                role: "assistant".to_string(),
-                content: Some(vec![ContentPart::Text { text: "Do you want me to proceed?".to_string() }]),
-                tool_calls: None,
-                tool_call_id: None,
-            }
-        ];
-        
+        let context = vec![Message {
+            role: "assistant".to_string(),
+            content: Some(vec![ContentPart::Text {
+                text: "Do you want me to proceed?".to_string(),
+            }]),
+            tool_calls: None,
+            tool_call_id: None,
+        }];
+
         // Simple "yes" should match in context
         let result = system.process("yes", &context).await;
         assert!(result.is_ok());

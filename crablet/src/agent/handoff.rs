@@ -1,7 +1,7 @@
-use serde::{Serialize, Deserialize};
-use std::collections::HashMap;
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Handoff {
@@ -44,7 +44,7 @@ impl Handoff {
             timestamp: Utc::now(),
         }
     }
-    
+
     pub fn with_artifact(mut self, name: &str, content: &str) -> Self {
         self.context.artifacts.push(HandoffArtifact {
             name: name.to_string(),
@@ -53,7 +53,7 @@ impl Handoff {
         });
         self
     }
-    
+
     pub fn with_variable(mut self, key: &str, value: Value) -> Self {
         self.context.variables.insert(key.to_string(), value);
         self

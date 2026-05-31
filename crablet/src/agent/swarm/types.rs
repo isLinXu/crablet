@@ -1,7 +1,8 @@
-use serde::{Serialize, Deserialize};
+use crate::agent::harness_agent::HarnessExecutionState;
+use crate::types::Message as ChatMessage;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use uuid::Uuid;
-use crate::types::Message as ChatMessage;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct AgentId(pub String);
@@ -16,7 +17,7 @@ impl AgentId {
     pub fn new() -> Self {
         Self(Uuid::new_v4().to_string())
     }
-    
+
     pub fn from_name(name: &str) -> Self {
         Self(name.to_string())
     }
@@ -47,17 +48,23 @@ pub enum SwarmMessage {
     Error {
         task_id: String,
         error: String,
-    }
+    },
 }
 
 #[async_trait::async_trait]
 pub trait SwarmAgent: Send + Sync {
     fn id(&self) -> &AgentId;
     fn name(&self) -> &str;
-    fn description(&self) -> &str { "" }
+    fn description(&self) -> &str {
+        ""
+    }
     // Capabilities: e.g. ["coding", "python", "analysis"]
-    fn capabilities(&self) -> Vec<String> { vec![] }
-    fn subscriptions(&self) -> Vec<String> { vec![] }
+    fn capabilities(&self) -> Vec<String> {
+        vec![]
+    }
+    fn subscriptions(&self) -> Vec<String> {
+        vec![]
+    }
     async fn receive(&mut self, message: SwarmMessage, sender: AgentId) -> Option<SwarmMessage>;
 }
 
@@ -66,8 +73,40 @@ pub enum TaskStatus {
     Pending,
     Running { started_at: i64 },
     Paused { paused_at: i64 },
+    Cancelled { cancelled_at: i64, reason: String },
     Completed { duration: u64 },
     Failed { error: String, retries: u32 },
+}
+
+impl TaskStatus {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Pending => "Pending",
+            Self::Running { .. } => "Running",
+            Self::Paused { .. } => "Paused",
+            Self::Cancelled { .. } => "Cancelled",
+            Self::Completed { .. } => "Completed",
+            Self::Failed { .. } => "Failed",
+        }
+    }
+
+    pub fn is_running(&self) -> bool {
+        matches!(self, Self::Running { .. })
+    }
+
+    pub fn is_recoverable(&self) -> bool {
+        matches!(self, Self::Paused { .. } | Self::Cancelled { .. })
+    }
+
+    pub fn is_retriable(&self) -> bool {
+        matches!(
+            self,
+            Self::Failed { .. }
+                | Self::Completed { .. }
+                | Self::Paused { .. }
+                | Self::Cancelled { .. }
+        )
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -87,11 +126,31 @@ pub struct TaskNode {
     pub max_retries: u32,
     #[serde(default)]
     pub retry_count: u32,
+    #[serde(default)]
+    pub execution_state: Option<HarnessExecutionState>,
 }
 
-fn default_priority() -> u8 { 128 }
-fn default_timeout_ms() -> u64 { 30000 }
-fn default_max_retries() -> u32 { 3 }
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct NodeRecoveryOptions {
+    #[serde(default)]
+    pub agent_role: Option<String>,
+    #[serde(default)]
+    pub prompt: Option<String>,
+    #[serde(default)]
+    pub dependencies: Option<Vec<String>>,
+    #[serde(default)]
+    pub resume_graph: bool,
+}
+
+fn default_priority() -> u8 {
+    128
+}
+fn default_timeout_ms() -> u64 {
+    30000
+}
+fn default_max_retries() -> u32 {
+    3
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TaskGraph {
@@ -107,6 +166,17 @@ pub enum GraphStatus {
     Paused,
     Completed,
     Failed,
+}
+
+impl GraphStatus {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Active => "Active",
+            Self::Paused => "Paused",
+            Self::Completed => "Completed",
+            Self::Failed => "Failed",
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -126,7 +196,7 @@ impl Default for TaskGraph {
 
 impl TaskGraph {
     pub fn new() -> Self {
-        Self { 
+        Self {
             nodes: HashMap::new(),
             status: GraphStatus::Active,
             goal: String::new(),
@@ -137,37 +207,67 @@ impl TaskGraph {
         self.goal = goal;
         self
     }
-    
+
     pub fn add_task(&mut self, id: String, role: String, prompt: String, deps: Vec<String>) {
-        self.nodes.insert(id.clone(), TaskNode {
-            id,
-            agent_role: role,
-            prompt,
-            dependencies: deps,
-            status: TaskStatus::Pending,
-            result: None,
-            logs: Vec::new(),
-            priority: default_priority(),
-            timeout_ms: default_timeout_ms(),
-            max_retries: default_max_retries(),
-            retry_count: 0,
-        });
+        self.nodes.insert(
+            id.clone(),
+            TaskNode {
+                id,
+                agent_role: role,
+                prompt,
+                dependencies: deps,
+                status: TaskStatus::Pending,
+                result: None,
+                logs: Vec::new(),
+                priority: default_priority(),
+                timeout_ms: default_timeout_ms(),
+                max_retries: default_max_retries(),
+                retry_count: 0,
+                execution_state: None,
+            },
+        );
     }
-    
+
     pub fn get_ready_tasks(&self) -> Vec<String> {
-        self.nodes.iter()
+        self.nodes
+            .iter()
             .filter(|(_, node)| {
-                matches!(node.status, TaskStatus::Pending) &&
-                node.dependencies.iter().all(|dep_id| {
-                    if let Some(dep) = self.nodes.get(dep_id) {
-                        matches!(dep.status, TaskStatus::Completed { .. })
-                    } else {
-                        false // Dependency missing
-                    }
-                })
+                matches!(node.status, TaskStatus::Pending)
+                    && node.dependencies.iter().all(|dep_id| {
+                        if let Some(dep) = self.nodes.get(dep_id) {
+                            matches!(dep.status, TaskStatus::Completed { .. })
+                        } else {
+                            false // Dependency missing
+                        }
+                    })
             })
             .map(|(id, _)| id.clone())
             .collect()
+    }
+
+    pub fn running_task_count(&self) -> usize {
+        self.nodes
+            .values()
+            .filter(|node| node.status.is_running())
+            .count()
+    }
+
+    pub fn cancelled_task_count(&self) -> usize {
+        self.nodes
+            .values()
+            .filter(|node| matches!(node.status, TaskStatus::Cancelled { .. }))
+            .count()
+    }
+
+    pub fn recoverable_task_count(&self) -> usize {
+        self.nodes
+            .values()
+            .filter(|node| node.status.is_recoverable())
+            .count()
+    }
+
+    pub fn is_draining(&self) -> bool {
+        matches!(self.status, GraphStatus::Paused) && self.running_task_count() > 0
     }
 
     pub fn detects_cycle(&self, node_id: &str, new_dependencies: &[String]) -> bool {
@@ -181,14 +281,18 @@ impl TaskGraph {
 
     pub fn depends_on(&self, subject: &str, target: &str) -> bool {
         // Does 'subject' depend on 'target'? (i.e. is there a path target -> ... -> subject)
-        if subject == target { return true; }
-        
+        if subject == target {
+            return true;
+        }
+
         let mut stack = vec![subject.to_string()];
         let mut visited = std::collections::HashSet::new();
-        
+
         while let Some(current) = stack.pop() {
-            if !visited.insert(current.clone()) { continue; }
-            
+            if !visited.insert(current.clone()) {
+                continue;
+            }
+
             if let Some(node) = self.nodes.get(&current) {
                 for dep in &node.dependencies {
                     if dep == target {
@@ -209,19 +313,34 @@ mod tests {
     #[test]
     fn test_task_graph_cycle_detection() {
         let mut graph = TaskGraph::new();
-        
+
         // A -> B -> C
-        graph.add_task("A".to_string(), "coder".to_string(), "task A".to_string(), vec![]);
-        graph.add_task("B".to_string(), "coder".to_string(), "task B".to_string(), vec!["A".to_string()]);
-        graph.add_task("C".to_string(), "coder".to_string(), "task C".to_string(), vec!["B".to_string()]);
-        
+        graph.add_task(
+            "A".to_string(),
+            "coder".to_string(),
+            "task A".to_string(),
+            vec![],
+        );
+        graph.add_task(
+            "B".to_string(),
+            "coder".to_string(),
+            "task B".to_string(),
+            vec!["A".to_string()],
+        );
+        graph.add_task(
+            "C".to_string(),
+            "coder".to_string(),
+            "task C".to_string(),
+            vec!["B".to_string()],
+        );
+
         // No cycle initially
         assert!(!graph.detects_cycle("A", &[]));
         assert!(!graph.detects_cycle("C", &["B".to_string()]));
-        
+
         // Try adding edge C -> A (Cycle!)
         assert!(graph.detects_cycle("A", &["C".to_string()]));
-        
+
         // Try adding edge A -> C (Redundant but safe)
         assert!(!graph.detects_cycle("C", &["A".to_string()]));
     }
@@ -229,46 +348,103 @@ mod tests {
     #[test]
     fn test_task_graph_dependency_resolution() {
         let mut graph = TaskGraph::new();
-        
-        graph.add_task("A".to_string(), "coder".to_string(), "task A".to_string(), vec![]);
-        graph.add_task("B".to_string(), "coder".to_string(), "task B".to_string(), vec!["A".to_string()]);
-        graph.add_task("C".to_string(), "coder".to_string(), "task C".to_string(), vec!["A".to_string()]);
-        graph.add_task("D".to_string(), "coder".to_string(), "task D".to_string(), vec!["B".to_string(), "C".to_string()]);
-        
+
+        graph.add_task(
+            "A".to_string(),
+            "coder".to_string(),
+            "task A".to_string(),
+            vec![],
+        );
+        graph.add_task(
+            "B".to_string(),
+            "coder".to_string(),
+            "task B".to_string(),
+            vec!["A".to_string()],
+        );
+        graph.add_task(
+            "C".to_string(),
+            "coder".to_string(),
+            "task C".to_string(),
+            vec!["A".to_string()],
+        );
+        graph.add_task(
+            "D".to_string(),
+            "coder".to_string(),
+            "task D".to_string(),
+            vec!["B".to_string(), "C".to_string()],
+        );
+
         // Initially only A is ready
         let ready = graph.get_ready_tasks();
         assert_eq!(ready.len(), 1);
         assert_eq!(ready[0], "A");
-        
+
         // Complete A
         if let Some(node) = graph.nodes.get_mut("A") {
             node.status = TaskStatus::Completed { duration: 100 };
         }
-        
+
         // Now B and C should be ready
         let mut ready = graph.get_ready_tasks();
         ready.sort(); // Sort for deterministic assertion
         assert_eq!(ready.len(), 2);
         assert_eq!(ready, vec!["B", "C"]);
-        
+
         // Complete B
         if let Some(node) = graph.nodes.get_mut("B") {
             node.status = TaskStatus::Completed { duration: 100 };
         }
-        
+
         // D still not ready (needs C)
         let ready = graph.get_ready_tasks();
         assert_eq!(ready.len(), 1);
         assert_eq!(ready[0], "C");
-        
+
         // Complete C
         if let Some(node) = graph.nodes.get_mut("C") {
             node.status = TaskStatus::Completed { duration: 100 };
         }
-        
+
         // Now D is ready
         let ready = graph.get_ready_tasks();
         assert_eq!(ready.len(), 1);
         assert_eq!(ready[0], "D");
+    }
+
+    #[test]
+    fn test_task_graph_observability_counts() {
+        let mut graph = TaskGraph::new();
+        graph.status = GraphStatus::Paused;
+
+        graph.add_task(
+            "run".to_string(),
+            "coder".to_string(),
+            "running task".to_string(),
+            vec![],
+        );
+        graph.add_task(
+            "cancel".to_string(),
+            "coder".to_string(),
+            "cancelled task".to_string(),
+            vec![],
+        );
+        graph.add_task(
+            "pause".to_string(),
+            "coder".to_string(),
+            "paused task".to_string(),
+            vec![],
+        );
+
+        graph.nodes.get_mut("run").unwrap().status = TaskStatus::Running { started_at: 1 };
+        graph.nodes.get_mut("cancel").unwrap().status = TaskStatus::Cancelled {
+            cancelled_at: 2,
+            reason: "manual cancel".to_string(),
+        };
+        graph.nodes.get_mut("pause").unwrap().status = TaskStatus::Paused { paused_at: 3 };
+
+        assert_eq!(graph.running_task_count(), 1);
+        assert_eq!(graph.cancelled_task_count(), 1);
+        assert_eq!(graph.recoverable_task_count(), 2);
+        assert!(graph.is_draining());
     }
 }

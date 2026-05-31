@@ -2,8 +2,8 @@
 //!
 //! Event system for real-time monitoring and WebSocket broadcasting.
 
-use super::{AgentSpan, ExecutionContext, BreakpointAction};
-use serde::{Serialize, Deserialize};
+use super::{AgentSpan, BreakpointAction, ExecutionContext};
+use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
 
 /// Event publisher for observability events

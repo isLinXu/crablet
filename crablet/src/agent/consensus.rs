@@ -323,7 +323,7 @@ impl ConsensusCalculator {
         // Find winner
         let (decision, winning_weight) = weighted_tally
             .into_iter()
-            .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap())
+            .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
             .unwrap_or_else(|| ("No decision".to_string(), 0.0));
 
         let reached = winning_weight >= threshold_weight;
@@ -399,7 +399,7 @@ impl ConsensusCalculator {
 
         let (decision, winning_bid) = bids
             .into_iter()
-            .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap())
+            .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
             .unwrap_or_else(|| ("No decision".to_string(), 0.0));
 
         let confidence = if total_bids > 0.0 {
@@ -462,7 +462,7 @@ impl ConsensusCalculator {
 
         let (decision, winning_cost) = choice_cost
             .into_iter()
-            .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap())
+            .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
             .unwrap_or_else(|| ("No decision".to_string(), 0.0));
 
         let confidence = if total_cost > 0.0 {

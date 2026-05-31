@@ -1,4 +1,8 @@
-//! Optimized System Integration
+//! Optimized System Integration — DEPRECATED
+//!
+//! ⚠️ This module is deprecated since v0.6.0 and will be removed in a future version.
+//! This module is not declared in any `mod.rs` and is effectively dead code.
+//! It depends on the deprecated `adaptive_router` module.
 //!
 //! This module demonstrates how to integrate all the optimization components
 //! into the existing Crablet system.

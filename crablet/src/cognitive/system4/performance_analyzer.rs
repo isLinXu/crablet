@@ -2,10 +2,10 @@
 //!
 //! 分析 System1-3 的执行性能，识别瓶颈和优化机会
 
-use std::collections::HashMap;
-use std::sync::Arc;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, info};
 
@@ -137,23 +137,26 @@ impl PerformanceAnalyzer {
     /// 记录执行指标
     pub async fn record_metrics(&self, metrics: ExecutionMetrics) {
         let mut history = self.metrics_history.write().await;
-        
+
         // 限制历史大小
         if history.len() >= self.max_history_size {
             // 移除最旧的 10%
             let remove_count = self.max_history_size / 10;
             history.drain(0..remove_count);
         }
-        
+
         history.push(metrics);
-        debug!("Recorded execution metrics, history size: {}", history.len());
+        debug!(
+            "Recorded execution metrics, history size: {}",
+            history.len()
+        );
     }
 
     /// 生成性能报告
     pub async fn generate_report(&self, window_hours: u32) -> PerformanceReport {
         let history = self.metrics_history.read().await;
         let cutoff_time = Utc::now() - chrono::Duration::hours(window_hours as i64);
-        
+
         // 过滤时间窗口内的数据
         let recent_metrics: Vec<_> = history
             .iter()
@@ -166,7 +169,11 @@ impl PerformanceAnalyzer {
         let mut trends = Vec::new();
 
         // 分析每个系统
-        for system_type in [CognitiveSystemType::System1, CognitiveSystemType::System2, CognitiveSystemType::System3] {
+        for system_type in [
+            CognitiveSystemType::System1,
+            CognitiveSystemType::System2,
+            CognitiveSystemType::System3,
+        ] {
             let system_metrics: Vec<_> = recent_metrics
                 .iter()
                 .filter(|m| m.system_type == system_type)
@@ -284,7 +291,9 @@ impl PerformanceAnalyzer {
                 },
                 description: format!("Error rate is {:.1}%", stats.error_rate * 100.0),
                 affected_queries: self.get_affected_queries(metrics),
-                recommendation: "Consider increasing retry limits or switching to more reliable system".to_string(),
+                recommendation:
+                    "Consider increasing retry limits or switching to more reliable system"
+                        .to_string(),
             });
         }
 
@@ -300,7 +309,8 @@ impl PerformanceAnalyzer {
                 },
                 description: format!("P95 latency is {:.0}ms", stats.p95_latency_ms),
                 affected_queries: self.get_affected_queries(metrics),
-                recommendation: "Consider using faster system or optimizing context length".to_string(),
+                recommendation: "Consider using faster system or optimizing context length"
+                    .to_string(),
             });
         }
 
@@ -311,9 +321,13 @@ impl PerformanceAnalyzer {
                 system_type,
                 bottleneck_type: BottleneckType::ContextLength,
                 severity: Severity::Medium,
-                description: format!("{}% of queries have long context", long_context_count * 100 / metrics.len()),
+                description: format!(
+                    "{}% of queries have long context",
+                    long_context_count * 100 / metrics.len()
+                ),
                 affected_queries: self.get_affected_queries(metrics),
-                recommendation: "Consider implementing context compression or summarization".to_string(),
+                recommendation: "Consider implementing context compression or summarization"
+                    .to_string(),
             });
         }
 
@@ -372,7 +386,10 @@ impl PerformanceAnalyzer {
         let mut insights = Vec::new();
 
         // 比较系统性能
-        if let (Some(s1), Some(s2)) = (stats.get(&CognitiveSystemType::System1), stats.get(&CognitiveSystemType::System2)) {
+        if let (Some(s1), Some(s2)) = (
+            stats.get(&CognitiveSystemType::System1),
+            stats.get(&CognitiveSystemType::System2),
+        ) {
             if s1.avg_latency_ms < s2.avg_latency_ms / 10.0 {
                 insights.push(format!(
                     "System1 is {:.1}x faster than System2 on average",
@@ -395,13 +412,15 @@ impl PerformanceAnalyzer {
                 TrendDirection::Improving => {
                     insights.push(format!(
                         "{:?} performance is improving ({:.1}% better)",
-                        trend.system_type, trend.change_percent.abs()
+                        trend.system_type,
+                        trend.change_percent.abs()
                     ));
                 }
                 TrendDirection::Degrading => {
                     insights.push(format!(
                         "{:?} performance is degrading ({:.1}% worse)",
-                        trend.system_type, trend.change_percent.abs()
+                        trend.system_type,
+                        trend.change_percent.abs()
                     ));
                 }
                 _ => {}
@@ -449,24 +468,29 @@ mod tests {
 
         // 记录一些测试指标
         for i in 0..10 {
-            analyzer.record_metrics(ExecutionMetrics {
-                system_type: CognitiveSystemType::System2,
-                query: format!("test query {}", i),
-                latency_ms: 1000 + (i * 100) as u64,
-                success: i < 8, // 2 failures
-                token_count: 100,
-                tool_calls: 2,
-                agent_count: 1,
-                timestamp: Utc::now(),
-                context_length: 500,
-                retry_count: 0,
-            }).await;
+            analyzer
+                .record_metrics(ExecutionMetrics {
+                    system_type: CognitiveSystemType::System2,
+                    query: format!("test query {}", i),
+                    latency_ms: 1000 + (i * 100) as u64,
+                    success: i < 8, // 2 failures
+                    token_count: 100,
+                    tool_calls: 2,
+                    agent_count: 1,
+                    timestamp: Utc::now(),
+                    context_length: 500,
+                    retry_count: 0,
+                })
+                .await;
         }
 
         let report = analyzer.generate_report(24).await;
         assert!(!report.overall_stats.is_empty());
-        
-        let s2_stats = report.overall_stats.get(&CognitiveSystemType::System2).unwrap();
+
+        let s2_stats = report
+            .overall_stats
+            .get(&CognitiveSystemType::System2)
+            .unwrap();
         assert_eq!(s2_stats.total_requests, 10);
         assert_eq!(s2_stats.failed_requests, 2);
         assert!(s2_stats.error_rate > 0.19 && s2_stats.error_rate < 0.21);
@@ -476,7 +500,7 @@ mod tests {
     fn test_percentile() {
         let analyzer = PerformanceAnalyzer::new();
         let data = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-        
+
         assert_eq!(analyzer.percentile(&data, 0.5), 6.0);
         assert_eq!(analyzer.percentile(&data, 0.95), 10.0);
     }

@@ -6,44 +6,44 @@ mod sqlx_compat;
 pub use sqlx_compat::*;
 extern crate self as sqlx;
 
-pub mod cognitive;
-pub mod memory;
-pub mod safety;
-pub mod tools;
+pub mod agent;
 pub mod channels;
+pub mod cognitive;
 pub mod config;
 pub mod constants;
-pub mod types;
-#[cfg(feature = "scripting")]
-pub mod scripting;
+pub mod error;
+pub mod events;
 #[cfg(feature = "knowledge")]
 pub mod knowledge;
-pub mod skills;
-pub mod events;
-pub mod plugins;
-pub mod agent;
-pub mod error;
-pub mod sandbox;
-pub mod workflow;
+pub mod memory;
 pub mod observability;
+pub mod plugins;
+pub mod safety;
+pub mod sandbox;
+#[cfg(feature = "scripting")]
+pub mod scripting;
+pub mod skills;
 pub mod storage;
+pub mod tools;
+pub mod types;
+pub mod workflow;
 
-pub mod heartbeat;
-pub mod background;
 pub mod audit;
 #[cfg(feature = "web")]
 pub mod auth;
-pub mod health;
+pub mod background;
 #[cfg(feature = "web")]
 pub mod gateway;
-pub mod telemetry;
+pub mod health;
+pub mod heartbeat;
 pub mod protocols;
+pub mod telemetry;
 pub mod testing;
 
 // Auto-Working & RPA modules
 #[cfg(feature = "auto-working")]
 pub mod auto_working;
 #[cfg(feature = "auto-working")]
-pub mod rpa;
-#[cfg(feature = "auto-working")]
 pub mod connectors;
+#[cfg(feature = "auto-working")]
+pub mod rpa;

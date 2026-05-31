@@ -1,16 +1,25 @@
-use tokio::sync::broadcast;
+use crate::agent::swarm::SwarmMessage;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use crate::agent::swarm::SwarmMessage;
+use tokio::sync::broadcast;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum GatewayEvent {
     ClientConnected(String),
     ClientDisconnected(String),
-    MessageReceived { session_id: String, content: String },
+    MessageReceived {
+        session_id: String,
+        content: String,
+    },
     SystemAlert(String),
-    AgentThinking { agent_id: String, thought: String },
-    AgentAction { agent_id: String, action: String },
+    AgentThinking {
+        agent_id: String,
+        thought: String,
+    },
+    AgentAction {
+        agent_id: String,
+        action: String,
+    },
     CanvasUpdate {
         session_id: String,
         action: String,
@@ -34,7 +43,10 @@ impl EventBus {
         self.sender.subscribe()
     }
 
-    pub fn publish(&self, event: GatewayEvent) -> Result<usize, broadcast::error::SendError<GatewayEvent>> {
+    pub fn publish(
+        &self,
+        event: GatewayEvent,
+    ) -> Result<usize, broadcast::error::SendError<GatewayEvent>> {
         self.sender.send(event)
     }
 }
@@ -64,7 +76,8 @@ mod tests {
         let mut rx1 = bus.subscribe();
         let mut rx2 = bus.subscribe();
 
-        bus.publish(GatewayEvent::SystemAlert("test".to_string())).expect("publish");
+        bus.publish(GatewayEvent::SystemAlert("test".to_string()))
+            .expect("publish");
 
         let r1 = rx1.recv().await.expect("rx1 receive");
         let r2 = rx2.recv().await.expect("rx2 receive");

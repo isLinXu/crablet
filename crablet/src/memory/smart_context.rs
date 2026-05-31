@@ -350,7 +350,7 @@ impl HierarchicalSummarizer {
             }
         }
         
-        Some(&self.levels.last().unwrap())  // 最低级别
+        self.levels.last()  // 最低级别
     }
 }
 

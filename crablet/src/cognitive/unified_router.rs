@@ -1,28 +1,32 @@
-//! Unified Router - 统一路由架构
+//! Unified Router - 统一路由架构 — DEPRECATED
+//!
+//! ⚠️ This module is deprecated since v0.6.0 and will be removed in a future version.
+//! Use `FusionRouter` (`cognitive::fusion_router`) instead, which provides
+//! the same unified routing capabilities with better integration.
 //!
 //! 合并 router.rs / meta_router.rs / adaptive_router.rs 的功能
 //! 提供单一、高效、可维护的路由入口
 
+use anyhow::Result;
+use dashmap::DashMap;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
-use anyhow::Result;
-use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
-use tracing::{info, debug, instrument};
-use dashmap::DashMap;
+use tracing::{debug, info, instrument};
 
 use crate::cognitive::{
-    intent_classifier::{Intent, IntentClassifier, ClassificationResult},
+    intent_classifier::{ClassificationResult, Intent, IntentClassifier},
     system1::System1,
     system2::System2,
     system3::System3,
     system4::System4,
 };
+use crate::memory::manager::MemoryManager;
 use crate::skills::{
-    hybrid_matcher::{HybridMatcher, HybridMatch, ConversationContext, ConfidenceTier},
+    hybrid_matcher::{ConfidenceTier, ConversationContext, HybridMatch, HybridMatcher},
     registry::SkillRegistry,
 };
-use crate::memory::manager::MemoryManager;
 use crate::types::TraceStep;
 
 /// 统一路由决策
@@ -162,7 +166,11 @@ impl ContextualBandit {
     }
 
     /// 选择最佳目标
-    async fn select(&self, features: &ContextFeatures, candidates: &[RoutingTarget]) -> RoutingTarget {
+    async fn select(
+        &self,
+        features: &ContextFeatures,
+        candidates: &[RoutingTarget],
+    ) -> RoutingTarget {
         if candidates.len() == 1 {
             return candidates[0].clone();
         }
@@ -172,7 +180,8 @@ impl ContextualBandit {
 
         let mut best_target = candidates[0].clone();
         let mut best_score = f32::MIN;
-        let total_n = context_arms.as_ref()
+        let total_n = context_arms
+            .as_ref()
             .map(|a| a.values().map(|arm| arm.count).sum::<u64>())
             .unwrap_or(0) as f32
             + global_arms.values().map(|arm| arm.count).sum::<u64>() as f32
@@ -184,11 +193,8 @@ impl ContextualBandit {
                 .and_then(|a| a.get(target))
                 .map(|arm| arm.mean())
                 .unwrap_or(0.5);
-            
-            let global_mean = global_arms
-                .get(target)
-                .map(|arm| arm.mean())
-                .unwrap_or(0.5);
+
+            let global_mean = global_arms.get(target).map(|arm| arm.mean()).unwrap_or(0.5);
 
             // 混合本地和全局估计
             let local_count = context_arms
@@ -196,7 +202,7 @@ impl ContextualBandit {
                 .and_then(|a| a.get(target))
                 .map(|arm| arm.count)
                 .unwrap_or(0);
-            
+
             let blended = if local_count == 0 {
                 0.3 * local_mean + 0.7 * global_mean
             } else {
@@ -313,19 +319,28 @@ impl UnifiedRouter {
         conversation_ctx: Option<&ConversationContext>,
     ) -> Result<UnifiedRoutingDecision> {
         let start_time = std::time::Instant::now();
-        
+
         // 1. 意图分类
         let intent_result = self.intent_classifier.classify(query);
-        debug!("Intent classified: {:?} with confidence {:.2}",
-            intent_result.intent, intent_result.confidence);
+        debug!(
+            "Intent classified: {:?} with confidence {:.2}",
+            intent_result.intent, intent_result.confidence
+        );
 
         // 2. 技能匹配
         let ctx = conversation_ctx.cloned().unwrap_or_default();
-        let skill_matches = self.hybrid_matcher.read().await.find_matches(query, &ctx, 10).await?;
+        let skill_matches = self
+            .hybrid_matcher
+            .read()
+            .await
+            .find_matches(query, &ctx, 10)
+            .await?;
 
         // 3. 确定候选目标
-        let candidates = self.determine_candidates(&intent_result, &skill_matches).await;
-        
+        let candidates = self
+            .determine_candidates(&intent_result, &skill_matches)
+            .await;
+
         // 4. 使用 bandit 选择最佳目标
         let features = self.extract_features(&intent_result, query);
         let selected_target = if self.config.read().await.enable_adaptive {
@@ -335,19 +350,18 @@ impl UnifiedRouter {
         };
 
         // 5. 构建决策
-        let decision = self.build_decision(
-            selected_target,
-            &intent_result,
-            &skill_matches,
-            &candidates,
-        ).await;
+        let decision = self
+            .build_decision(selected_target, &intent_result, &skill_matches, &candidates)
+            .await;
 
         // 6. 记录历史
         let latency = start_time.elapsed().as_millis() as u64;
         self.record_history(query, decision.clone(), latency).await;
 
-        info!("Routing decision: {:?} (confidence: {:.2}, latency: {}ms)",
-            decision.target, decision.confidence, latency);
+        info!(
+            "Routing decision: {:?} (confidence: {:.2}, latency: {}ms)",
+            decision.target, decision.confidence, latency
+        );
 
         Ok(decision)
     }
@@ -371,11 +385,14 @@ impl UnifiedRouter {
         if !high_confidence_skills.is_empty() {
             if high_confidence_skills.len() == 1 {
                 candidates.push(RoutingTarget::Skill(
-                    high_confidence_skills[0].skill_name.clone()
+                    high_confidence_skills[0].skill_name.clone(),
                 ));
             } else {
                 candidates.push(RoutingTarget::MultiSkill(
-                    high_confidence_skills.iter().map(|s| s.skill_name.clone()).collect()
+                    high_confidence_skills
+                        .iter()
+                        .map(|s| s.skill_name.clone())
+                        .collect(),
                 ));
             }
         }
@@ -425,12 +442,18 @@ impl UnifiedRouter {
     }
 
     /// 提取特征
-    fn extract_features(&self, intent_result: &ClassificationResult, query: &str) -> ContextFeatures {
+    fn extract_features(
+        &self,
+        intent_result: &ClassificationResult,
+        query: &str,
+    ) -> ContextFeatures {
         let query_lower = query.to_lowercase();
         ContextFeatures {
             intent: intent_result.intent.clone(),
             complexity_bucket: self.estimate_complexity(query),
-            has_code: query_lower.contains("```") || query_lower.contains("fn ") || query_lower.contains("class "),
+            has_code: query_lower.contains("```")
+                || query_lower.contains("fn ")
+                || query_lower.contains("class "),
             has_question: query.contains('?'),
         }
     }
@@ -456,7 +479,7 @@ impl UnifiedRouter {
         candidates: &[RoutingTarget],
     ) -> UnifiedRoutingDecision {
         let config = self.config.read().await;
-        
+
         let (estimated_latency, reasoning): (u32, String) = match &target {
             RoutingTarget::System1 => (200, "Simple query, using fast System1".to_string()),
             RoutingTarget::System2 => (1500, "Balanced reasoning with System2".to_string()),
@@ -481,7 +504,10 @@ impl UnifiedRouter {
             .collect();
 
         let requires_confirmation = intent_result.confidence < config.skill_auto_execute_threshold
-            && matches!(target, RoutingTarget::Skill(_) | RoutingTarget::MultiSkill(_));
+            && matches!(
+                target,
+                RoutingTarget::Skill(_) | RoutingTarget::MultiSkill(_)
+            );
 
         UnifiedRoutingDecision {
             target,
@@ -507,7 +533,7 @@ impl UnifiedRouter {
 
         let mut history = self.history.write().await;
         history.push(entry);
-        
+
         // 限制历史大小
         let max_size = self.config.read().await.max_history_size;
         let history_len = history.len();
@@ -524,30 +550,17 @@ impl UnifiedRouter {
 
         // 根据决策执行
         match &decision.target {
-            RoutingTarget::System1 => {
-                self.execute_system1(query).await
-            }
-            RoutingTarget::System2 => {
-                self.execute_system2(query, false).await
-            }
-            RoutingTarget::System2Local => {
-                self.execute_system2(query, true).await
-            }
-            RoutingTarget::System3 => {
-                self.execute_system3(query).await
-            }
-            RoutingTarget::Skill(skill_name) => {
-                self.execute_skill(skill_name, query).await
-            }
-            RoutingTarget::MultiSkill(skills) => {
-                self.execute_multi_skill(skills, query).await
-            }
-            RoutingTarget::Clarification => {
-                Ok(("我需要更多信息来回答您的问题。您能详细说明一下吗？".to_string(), vec![]))
-            }
-            RoutingTarget::Cached(response) => {
-                Ok((response.clone(), vec![]))
-            }
+            RoutingTarget::System1 => self.execute_system1(query).await,
+            RoutingTarget::System2 => self.execute_system2(query, false).await,
+            RoutingTarget::System2Local => self.execute_system2(query, true).await,
+            RoutingTarget::System3 => self.execute_system3(query).await,
+            RoutingTarget::Skill(skill_name) => self.execute_skill(skill_name, query).await,
+            RoutingTarget::MultiSkill(skills) => self.execute_multi_skill(skills, query).await,
+            RoutingTarget::Clarification => Ok((
+                "我需要更多信息来回答您的问题。您能详细说明一下吗？".to_string(),
+                vec![],
+            )),
+            RoutingTarget::Cached(response) => Ok((response.clone(), vec![])),
         }
     }
 
@@ -570,7 +583,11 @@ impl UnifiedRouter {
     }
 
     /// 执行 System2
-    async fn execute_system2(&self, _query: &str, use_local: bool) -> Result<(String, Vec<TraceStep>)> {
+    async fn execute_system2(
+        &self,
+        _query: &str,
+        use_local: bool,
+    ) -> Result<(String, Vec<TraceStep>)> {
         if use_local {
             let _sys2 = self.sys2_local.read().await;
             // 调用 System2 处理
@@ -588,14 +605,22 @@ impl UnifiedRouter {
     }
 
     /// 执行技能
-    async fn execute_skill(&self, skill_name: &str, query: &str) -> Result<(String, Vec<TraceStep>)> {
+    async fn execute_skill(
+        &self,
+        skill_name: &str,
+        query: &str,
+    ) -> Result<(String, Vec<TraceStep>)> {
         let _registry = self.skill_registry.read().await;
         // 执行技能逻辑
         Ok((format!("执行技能 {}: {}", skill_name, query), vec![]))
     }
 
     /// 执行多技能
-    async fn execute_multi_skill(&self, skills: &[String], query: &str) -> Result<(String, Vec<TraceStep>)> {
+    async fn execute_multi_skill(
+        &self,
+        skills: &[String],
+        query: &str,
+    ) -> Result<(String, Vec<TraceStep>)> {
         let mut results = Vec::new();
         for skill in skills {
             let (result, _) = self.execute_skill(skill, query).await?;
@@ -635,14 +660,15 @@ impl UnifiedRouter {
         if success {
             entry.successful_requests += 1;
         }
-        
+
         // 更新平均延迟
         let old_avg = entry.average_latency_ms;
         let count = entry.total_requests as f32;
         entry.average_latency_ms = (old_avg * (count - 1.0) + latency_ms as f32) / count;
 
         if let Some(rating) = user_rating {
-            entry.user_satisfaction = (entry.user_satisfaction * (count - 1.0) + rating as f32) / count;
+            entry.user_satisfaction =
+                (entry.user_satisfaction * (count - 1.0) + rating as f32) / count;
         }
 
         info!("Feedback recorded for {:?}: reward={:.2}", target, reward);
@@ -661,11 +687,19 @@ impl UnifiedRouter {
     }
 
     /// 记录执行到 System4
-    async fn record_to_system4(&self, target: &RoutingTarget, query: &str, result: &(String, Vec<TraceStep>), latency_ms: u64, success: bool) {
+    async fn record_to_system4(
+        &self,
+        target: &RoutingTarget,
+        query: &str,
+        result: &(String, Vec<TraceStep>),
+        latency_ms: u64,
+        success: bool,
+    ) {
         if let Some(ref sys4) = self.sys4 {
             match target {
                 RoutingTarget::System1 => {
-                    sys4.record_system1_execution(query, latency_ms, success).await;
+                    sys4.record_system1_execution(query, latency_ms, success)
+                        .await;
                 }
                 RoutingTarget::System2 | RoutingTarget::System2Local => {
                     sys4.record_system2_execution(
@@ -675,7 +709,8 @@ impl UnifiedRouter {
                         success,
                         result.0.len(),
                         0,
-                    ).await;
+                    )
+                    .await;
                 }
                 RoutingTarget::System3 => {
                     sys4.record_system3_execution(
@@ -685,7 +720,8 @@ impl UnifiedRouter {
                         success,
                         1,
                         None,
-                    ).await;
+                    )
+                    .await;
                 }
                 _ => {}
             }
@@ -698,9 +734,7 @@ impl UnifiedRouter {
             let report = sys4.get_status_report().await;
             Some(format!(
                 "System4 Enabled | Executions: {} | Pending Proposals: {} | Applied Changes: {}",
-                report.total_executions_recorded,
-                report.pending_proposals,
-                report.applied_changes
+                report.total_executions_recorded, report.pending_proposals, report.applied_changes
             ))
         } else {
             None

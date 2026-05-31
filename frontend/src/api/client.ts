@@ -1,17 +1,6 @@
 import axios from 'axios';
-import { LOCAL_STORAGE_KEYS, getApiBaseUrl } from '../utils/constants';
+import { LOCAL_STORAGE_KEYS, getApiBaseUrl, isGatewayApiBaseUrl } from '../utils/constants';
 import toast from 'react-hot-toast';
-
-const isGatewayLocalApi = (baseURL?: string) => {
-  if (!baseURL) return true;
-  if (baseURL.startsWith('/api')) return true;
-  try {
-    const parsed = new URL(baseURL);
-    return parsed.port === '18789' && parsed.pathname.startsWith('/api');
-  } catch {
-    return /127\.0\.0\.1:18789\/api/.test(baseURL) || /localhost:18789\/api/.test(baseURL);
-  }
-};
 
 const client = axios.create({
   baseURL: getApiBaseUrl(),
@@ -27,7 +16,7 @@ client.interceptors.request.use(
     config.baseURL = getApiBaseUrl();
     const token = localStorage.getItem(LOCAL_STORAGE_KEYS.AUTH_TOKEN);
     const apiKey = localStorage.getItem(LOCAL_STORAGE_KEYS.API_KEY);
-    const shouldSendAuth = isGatewayLocalApi(config.baseURL);
+    const shouldSendAuth = isGatewayApiBaseUrl(config.baseURL);
     if (token && shouldSendAuth) {
       config.headers.Authorization = `Bearer ${token}`;
     } else if (apiKey && shouldSendAuth) {
@@ -68,7 +57,7 @@ client.interceptors.response.use(
     
     // Handle 401 Unauthorized
     if (error.response?.status === 401) {
-      if (isGatewayLocalApi(error.config?.baseURL)) {
+      if (isGatewayApiBaseUrl(error.config?.baseURL)) {
         localStorage.removeItem(LOCAL_STORAGE_KEYS.AUTH_TOKEN);
       }
       toast.error('Session expired or Unauthorized. Please check your settings.');

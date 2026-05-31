@@ -1,4 +1,7 @@
-use super::types::{CreateWorkflowRequest, NodeTypeDefinition, NodePort, UpdateWorkflowRequest, ValidationResult, Workflow, next_id, now_rfc3339};
+use super::types::{
+    next_id, now_rfc3339, CreateWorkflowRequest, NodePort, NodeTypeDefinition,
+    UpdateWorkflowRequest, ValidationResult, Workflow,
+};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -93,7 +96,11 @@ impl WorkflowRegistry {
                 icon: "Play".to_string(),
                 color: "#10b981".to_string(),
                 inputs: None,
-                outputs: Some(vec![NodePort { name: "output".to_string(), r#type: "any".to_string(), optional: None }]),
+                outputs: Some(vec![NodePort {
+                    name: "output".to_string(),
+                    r#type: "any".to_string(),
+                    optional: None,
+                }]),
             },
             NodeTypeDefinition {
                 r#type: "end".to_string(),
@@ -102,7 +109,11 @@ impl WorkflowRegistry {
                 category: "control".to_string(),
                 icon: "Square".to_string(),
                 color: "#ef4444".to_string(),
-                inputs: Some(vec![NodePort { name: "input".to_string(), r#type: "any".to_string(), optional: None }]),
+                inputs: Some(vec![NodePort {
+                    name: "input".to_string(),
+                    r#type: "any".to_string(),
+                    optional: None,
+                }]),
                 outputs: None,
             },
             NodeTypeDefinition {
@@ -112,10 +123,22 @@ impl WorkflowRegistry {
                 category: "control".to_string(),
                 icon: "GitBranch".to_string(),
                 color: "#ec4899".to_string(),
-                inputs: Some(vec![NodePort { name: "input".to_string(), r#type: "any".to_string(), optional: Some(false) }]),
+                inputs: Some(vec![NodePort {
+                    name: "input".to_string(),
+                    r#type: "any".to_string(),
+                    optional: Some(false),
+                }]),
                 outputs: Some(vec![
-                    NodePort { name: "true".to_string(), r#type: "any".to_string(), optional: None },
-                    NodePort { name: "false".to_string(), r#type: "any".to_string(), optional: None },
+                    NodePort {
+                        name: "true".to_string(),
+                        r#type: "any".to_string(),
+                        optional: None,
+                    },
+                    NodePort {
+                        name: "false".to_string(),
+                        r#type: "any".to_string(),
+                        optional: None,
+                    },
                 ]),
             },
             NodeTypeDefinition {
@@ -125,8 +148,16 @@ impl WorkflowRegistry {
                 category: "control".to_string(),
                 icon: "Repeat".to_string(),
                 color: "#84cc16".to_string(),
-                inputs: Some(vec![NodePort { name: "items".to_string(), r#type: "array".to_string(), optional: Some(false) }]),
-                outputs: Some(vec![NodePort { name: "item".to_string(), r#type: "any".to_string(), optional: None }]),
+                inputs: Some(vec![NodePort {
+                    name: "items".to_string(),
+                    r#type: "array".to_string(),
+                    optional: Some(false),
+                }]),
+                outputs: Some(vec![NodePort {
+                    name: "item".to_string(),
+                    r#type: "any".to_string(),
+                    optional: None,
+                }]),
             },
             // AI & Agents
             NodeTypeDefinition {
@@ -137,10 +168,22 @@ impl WorkflowRegistry {
                 icon: "Brain".to_string(),
                 color: "#8b5cf6".to_string(),
                 inputs: Some(vec![
-                    NodePort { name: "prompt".to_string(), r#type: "string".to_string(), optional: Some(false) },
-                    NodePort { name: "system_prompt".to_string(), r#type: "string".to_string(), optional: Some(true) },
+                    NodePort {
+                        name: "prompt".to_string(),
+                        r#type: "string".to_string(),
+                        optional: Some(false),
+                    },
+                    NodePort {
+                        name: "system_prompt".to_string(),
+                        r#type: "string".to_string(),
+                        optional: Some(true),
+                    },
                 ]),
-                outputs: Some(vec![NodePort { name: "text".to_string(), r#type: "string".to_string(), optional: None }]),
+                outputs: Some(vec![NodePort {
+                    name: "text".to_string(),
+                    r#type: "string".to_string(),
+                    optional: None,
+                }]),
             },
             NodeTypeDefinition {
                 r#type: "agent".to_string(),
@@ -149,8 +192,16 @@ impl WorkflowRegistry {
                 category: "ai".to_string(),
                 icon: "Bot".to_string(),
                 color: "#3b82f6".to_string(),
-                inputs: Some(vec![NodePort { name: "task".to_string(), r#type: "string".to_string(), optional: Some(false) }]),
-                outputs: Some(vec![NodePort { name: "result".to_string(), r#type: "string".to_string(), optional: None }]),
+                inputs: Some(vec![NodePort {
+                    name: "task".to_string(),
+                    r#type: "string".to_string(),
+                    optional: Some(false),
+                }]),
+                outputs: Some(vec![NodePort {
+                    name: "result".to_string(),
+                    r#type: "string".to_string(),
+                    optional: None,
+                }]),
             },
             NodeTypeDefinition {
                 r#type: "knowledge".to_string(),
@@ -159,8 +210,16 @@ impl WorkflowRegistry {
                 category: "ai".to_string(),
                 icon: "Book".to_string(),
                 color: "#a855f7".to_string(),
-                inputs: Some(vec![NodePort { name: "query".to_string(), r#type: "string".to_string(), optional: Some(false) }]),
-                outputs: Some(vec![NodePort { name: "results".to_string(), r#type: "array".to_string(), optional: None }]),
+                inputs: Some(vec![NodePort {
+                    name: "query".to_string(),
+                    r#type: "string".to_string(),
+                    optional: Some(false),
+                }]),
+                outputs: Some(vec![NodePort {
+                    name: "results".to_string(),
+                    r#type: "array".to_string(),
+                    optional: None,
+                }]),
             },
             // Processing
             NodeTypeDefinition {
@@ -170,8 +229,16 @@ impl WorkflowRegistry {
                 category: "processing".to_string(),
                 icon: "Code".to_string(),
                 color: "#f59e0b".to_string(),
-                inputs: Some(vec![NodePort { name: "input".to_string(), r#type: "any".to_string(), optional: Some(true) }]),
-                outputs: Some(vec![NodePort { name: "result".to_string(), r#type: "any".to_string(), optional: None }]),
+                inputs: Some(vec![NodePort {
+                    name: "input".to_string(),
+                    r#type: "any".to_string(),
+                    optional: Some(true),
+                }]),
+                outputs: Some(vec![NodePort {
+                    name: "result".to_string(),
+                    r#type: "any".to_string(),
+                    optional: None,
+                }]),
             },
             NodeTypeDefinition {
                 r#type: "template".to_string(),
@@ -180,8 +247,16 @@ impl WorkflowRegistry {
                 category: "processing".to_string(),
                 icon: "FileText".to_string(),
                 color: "#14b8a6".to_string(),
-                inputs: Some(vec![NodePort { name: "variables".to_string(), r#type: "object".to_string(), optional: Some(true) }]),
-                outputs: Some(vec![NodePort { name: "result".to_string(), r#type: "string".to_string(), optional: None }]),
+                inputs: Some(vec![NodePort {
+                    name: "variables".to_string(),
+                    r#type: "object".to_string(),
+                    optional: Some(true),
+                }]),
+                outputs: Some(vec![NodePort {
+                    name: "result".to_string(),
+                    r#type: "string".to_string(),
+                    optional: None,
+                }]),
             },
             // Integration
             NodeTypeDefinition {
@@ -191,10 +266,22 @@ impl WorkflowRegistry {
                 category: "integration".to_string(),
                 icon: "Globe".to_string(),
                 color: "#06b6d4".to_string(),
-                inputs: Some(vec![NodePort { name: "url".to_string(), r#type: "string".to_string(), optional: Some(false) }]),
+                inputs: Some(vec![NodePort {
+                    name: "url".to_string(),
+                    r#type: "string".to_string(),
+                    optional: Some(false),
+                }]),
                 outputs: Some(vec![
-                    NodePort { name: "status".to_string(), r#type: "number".to_string(), optional: None },
-                    NodePort { name: "body".to_string(), r#type: "any".to_string(), optional: None },
+                    NodePort {
+                        name: "status".to_string(),
+                        r#type: "number".to_string(),
+                        optional: None,
+                    },
+                    NodePort {
+                        name: "body".to_string(),
+                        r#type: "any".to_string(),
+                        optional: None,
+                    },
                 ]),
             },
             // Data
@@ -205,8 +292,16 @@ impl WorkflowRegistry {
                 category: "data".to_string(),
                 icon: "Database".to_string(),
                 color: "#6366f1".to_string(),
-                inputs: Some(vec![NodePort { name: "value".to_string(), r#type: "any".to_string(), optional: Some(true) }]),
-                outputs: Some(vec![NodePort { name: "result".to_string(), r#type: "any".to_string(), optional: None }]),
+                inputs: Some(vec![NodePort {
+                    name: "value".to_string(),
+                    r#type: "any".to_string(),
+                    optional: Some(true),
+                }]),
+                outputs: Some(vec![NodePort {
+                    name: "result".to_string(),
+                    r#type: "any".to_string(),
+                    optional: None,
+                }]),
             },
         ]
     }

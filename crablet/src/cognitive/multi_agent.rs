@@ -516,8 +516,8 @@ impl Agent {
 fn current_timestamp() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_secs()
+        .map(|duration| duration.as_secs())
+        .unwrap_or(0)
 }
 
 /// Agent team for multi-agent collaboration

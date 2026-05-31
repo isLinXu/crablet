@@ -28,47 +28,48 @@
 //! ```
 
 use async_trait::async_trait;
+use regex;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tokio::sync::mpsc;
 use tracing::{info, warn};
 
-pub mod email;
-pub mod webhook;
-pub mod filesystem;
-pub mod database;
 pub mod calendar;
+pub mod database;
+pub mod email;
+pub mod filesystem;
+pub mod webhook;
 
-pub use email::EmailConnector;
-pub use webhook::WebhookConnector;
-pub use filesystem::FileSystemConnector;
-pub use database::DatabaseConnector;
 pub use calendar::CalendarConnector;
+pub use database::DatabaseConnector;
+pub use email::EmailConnector;
+pub use filesystem::FileSystemConnector;
+pub use webhook::WebhookConnector;
 
 /// Connector error types
 #[derive(Debug, thiserror::Error)]
 pub enum ConnectorError {
     #[error("Connection failed: {0}")]
     ConnectionError(String),
-    
+
     #[error("Authentication failed: {0}")]
     AuthenticationError(String),
-    
+
     #[error("Configuration error: {0}")]
     ConfigurationError(String),
-    
+
     #[error("IO error: {0}")]
     IoError(#[from] std::io::Error),
-    
+
     #[error("Parse error: {0}")]
     ParseError(String),
-    
+
     #[error("Timeout")]
     Timeout,
-    
+
     #[error("Not connected")]
     NotConnected,
-    
+
     #[error("Other: {0}")]
     Other(String),
 }
@@ -88,7 +89,7 @@ pub enum ConnectorEvent {
         attachments: Vec<AttachmentInfo>,
         timestamp: chrono::DateTime<chrono::Utc>,
     },
-    
+
     WebhookReceived {
         connector_id: String,
         webhook_id: String,
@@ -98,7 +99,7 @@ pub enum ConnectorEvent {
         body: serde_json::Value,
         timestamp: chrono::DateTime<chrono::Utc>,
     },
-    
+
     FileChanged {
         connector_id: String,
         watch_id: String,
@@ -107,7 +108,7 @@ pub enum ConnectorEvent {
         metadata: Option<FileMetadata>,
         timestamp: chrono::DateTime<chrono::Utc>,
     },
-    
+
     DatabaseChange {
         connector_id: String,
         table: String,
@@ -116,7 +117,7 @@ pub enum ConnectorEvent {
         new_data: Option<serde_json::Value>,
         timestamp: chrono::DateTime<chrono::Utc>,
     },
-    
+
     CalendarEvent {
         connector_id: String,
         event_type: CalendarEventType,
@@ -227,34 +228,34 @@ pub enum TransformType {
 pub trait Connector: Send + Sync {
     /// Get connector ID
     fn id(&self) -> &str;
-    
+
     /// Get connector name
     fn name(&self) -> &str;
-    
+
     /// Get connector type
     fn connector_type(&self) -> &str;
-    
+
     /// Check if connector is connected
     fn is_connected(&self) -> bool;
-    
+
     /// Connect to the external system
     async fn connect(&mut self) -> ConnectorResult<()>;
-    
+
     /// Disconnect from the external system
     async fn disconnect(&mut self) -> ConnectorResult<()>;
-    
+
     /// Start listening for events
     async fn start(&mut self) -> ConnectorResult<()>;
-    
+
     /// Stop listening for events
     async fn stop(&mut self) -> ConnectorResult<()>;
-    
+
     /// Get event receiver
     fn event_receiver(&mut self) -> Option<mpsc::Receiver<ConnectorEvent>>;
-    
+
     /// Test connection
     async fn test(&self) -> ConnectorResult<()>;
-    
+
     /// Get health status
     async fn health(&self) -> ConnectorHealth;
 }
@@ -292,23 +293,30 @@ impl ConnectorManager {
             event_rx: Some(event_rx),
         }
     }
-    
-    pub async fn add_connector(&mut self, mut connector: Box<dyn Connector>) -> ConnectorResult<()> {
+
+    pub async fn add_connector(
+        &mut self,
+        mut connector: Box<dyn Connector>,
+    ) -> ConnectorResult<()> {
         let id = connector.id().to_string();
-        
+
         // Connect and test
         connector.connect().await?;
         connector.test().await?;
-        
+
         // Start the connector
         connector.start().await?;
-        
-        info!("Connector '{}' ({}) started successfully", connector.name(), id);
-        
+
+        info!(
+            "Connector '{}' ({}) started successfully",
+            connector.name(),
+            id
+        );
+
         self.connectors.insert(id, connector);
         Ok(())
     }
-    
+
     pub async fn remove_connector(&mut self, id: &str) -> ConnectorResult<()> {
         if let Some(mut connector) = self.connectors.remove(id) {
             connector.stop().await?;
@@ -317,23 +325,23 @@ impl ConnectorManager {
         }
         Ok(())
     }
-    
+
     pub fn get_connector(&self, id: &str) -> Option<&dyn Connector> {
         self.connectors.get(id).map(|c| c.as_ref())
     }
-    
+
     pub fn get_connector_mut(&mut self, id: &str) -> Option<&mut Box<dyn Connector>> {
         self.connectors.get_mut(id)
     }
-    
+
     pub fn list_connectors(&self) -> Vec<&dyn Connector> {
         self.connectors.values().map(|c| c.as_ref()).collect()
     }
-    
+
     pub fn take_event_receiver(&mut self) -> Option<mpsc::Receiver<ConnectorEvent>> {
         self.event_rx.take()
     }
-    
+
     pub async fn shutdown(&mut self) -> ConnectorResult<()> {
         for (id, connector) in self.connectors.iter_mut() {
             if let Err(e) = connector.stop().await {
@@ -370,67 +378,101 @@ fn apply_filter(event: &ConnectorEvent, filter: &EventFilter) -> bool {
         Some(v) => v,
         None => return false,
     };
-    
+
     match filter.operator {
         FilterOperator::Equals => field_value == filter.value,
         FilterOperator::NotEquals => field_value != filter.value,
         FilterOperator::Contains => {
-            if let (Some(field_str), Some(filter_str)) = (
-                field_value.as_str(),
-                filter.value.as_str()
-            ) {
+            if let (Some(field_str), Some(filter_str)) =
+                (field_value.as_str(), filter.value.as_str())
+            {
                 field_str.contains(filter_str)
             } else {
                 false
             }
         }
         FilterOperator::StartsWith => {
-            if let (Some(field_str), Some(filter_str)) = (
-                field_value.as_str(),
-                filter.value.as_str()
-            ) {
+            if let (Some(field_str), Some(filter_str)) =
+                (field_value.as_str(), filter.value.as_str())
+            {
                 field_str.starts_with(filter_str)
             } else {
                 false
             }
         }
         FilterOperator::EndsWith => {
-            if let (Some(field_str), Some(filter_str)) = (
-                field_value.as_str(),
-                filter.value.as_str()
-            ) {
+            if let (Some(field_str), Some(filter_str)) =
+                (field_value.as_str(), filter.value.as_str())
+            {
                 field_str.ends_with(filter_str)
             } else {
                 false
             }
         }
-        _ => true, // TODO: Implement other operators
+        _ => {
+            // Handle remaining operators
+            match filter.operator {
+                FilterOperator::Regex => {
+                    if let (Some(field_str), Some(pattern)) =
+                        (field_value.as_str(), filter.value.as_str())
+                    {
+                        regex::Regex::new(pattern)
+                            .map(|re| re.is_match(field_str))
+                            .unwrap_or(false)
+                    } else {
+                        false
+                    }
+                }
+                FilterOperator::GreaterThan => {
+                    match (field_value.as_f64(), filter.value.as_f64()) {
+                        (Some(field_num), Some(filter_num)) => field_num > filter_num,
+                        _ => false,
+                    }
+                }
+                FilterOperator::LessThan => match (field_value.as_f64(), filter.value.as_f64()) {
+                    (Some(field_num), Some(filter_num)) => field_num < filter_num,
+                    _ => false,
+                },
+                FilterOperator::In => {
+                    if let Some(arr) = filter.value.as_array() {
+                        arr.contains(field_value)
+                    } else {
+                        false
+                    }
+                }
+                FilterOperator::NotIn => {
+                    if let Some(arr) = filter.value.as_array() {
+                        !arr.contains(field_value)
+                    } else {
+                        true
+                    }
+                }
+                // Already handled above, but include for completeness
+                _ => true,
+            }
+        }
     }
 }
 
 fn extract_field(event: &ConnectorEvent, field: &str) -> Option<serde_json::Value> {
     match event {
-        ConnectorEvent::EmailReceived { subject, from, .. } => {
-            match field {
-                "subject" => Some(serde_json::Value::String(subject.clone())),
-                "from" => Some(serde_json::Value::String(from.clone())),
-                _ => None,
-            }
-        }
-        ConnectorEvent::WebhookReceived { path, method, .. } => {
-            match field {
-                "path" => Some(serde_json::Value::String(path.clone())),
-                "method" => Some(serde_json::Value::String(method.clone())),
-                _ => None,
-            }
-        }
-        ConnectorEvent::FileChanged { path, change_type, .. } => {
-            match field {
-                "path" => Some(serde_json::Value::String(path.clone())),
-                "change_type" => Some(serde_json::json!(format!("{:?}", change_type))),
-                _ => None,
-            }
-        }
+        ConnectorEvent::EmailReceived { subject, from, .. } => match field {
+            "subject" => Some(serde_json::Value::String(subject.clone())),
+            "from" => Some(serde_json::Value::String(from.clone())),
+            _ => None,
+        },
+        ConnectorEvent::WebhookReceived { path, method, .. } => match field {
+            "path" => Some(serde_json::Value::String(path.clone())),
+            "method" => Some(serde_json::Value::String(method.clone())),
+            _ => None,
+        },
+        ConnectorEvent::FileChanged {
+            path, change_type, ..
+        } => match field {
+            "path" => Some(serde_json::Value::String(path.clone())),
+            "change_type" => Some(serde_json::json!(format!("{:?}", change_type))),
+            _ => None,
+        },
         _ => None,
     }
 }

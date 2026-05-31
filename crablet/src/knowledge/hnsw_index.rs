@@ -133,7 +133,10 @@ impl HnswIndex {
             return Ok(());
         }
 
-        let entry_id = entry.clone().unwrap();
+        let entry_id = match entry.clone() {
+            Some(id) => id,
+            None => return Err(anyhow!("No entry point in HNSW index")),
+        };
         
         // Update entry point if this node has higher level
         if level > *max_l {
@@ -191,7 +194,10 @@ impl HnswIndex {
         let entry = self.entry_point.read();
         let max_l = *self.max_layer.read();
         
-        let entry_id = entry.clone().unwrap();
+        let entry_id = match entry.clone() {
+            Some(id) => id,
+            None => return Ok(Vec::new()),
+        };
         let mut current = entry_id.clone();
 
         // Search from top layer down to layer 0
@@ -213,7 +219,7 @@ impl HnswIndex {
             })
             .collect();
 
-        results.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+        results.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
         results.truncate(k);
 
         Ok(results)
@@ -244,7 +250,7 @@ impl HnswIndex {
             // Find new entry point (node with max layer)
             let mut new_entry: Option<(String, usize)> = None;
             for (node_id, node) in nodes.iter() {
-                if new_entry.is_none() || node.max_layer > new_entry.as_ref().unwrap().1 {
+                if new_entry.is_none() || node.max_layer > new_entry.as_ref().map(|e| e.1).unwrap_or(0) {
                     new_entry = Some((node_id.clone(), node.max_layer));
                 }
             }
@@ -300,13 +306,20 @@ impl HnswIndex {
         layer: usize,
     ) -> String {
         let mut current = entry_id.to_string();
+        let entry_node = match nodes.get(&current) {
+            Some(n) => n,
+            None => return entry_id.to_string(),
+        };
         let mut current_dist = self.metric.calculate(
             query,
-            &nodes.get(&current).unwrap().vector,
+            &entry_node.vector,
         );
 
         loop {
-            let node = nodes.get(&current).unwrap();
+            let node = match nodes.get(&current) {
+                Some(n) => n,
+                None => break,
+            };
             if layer >= node.connections.len() {
                 break;
             }
@@ -364,7 +377,7 @@ impl HnswIndex {
 
         impl Ord for Candidate {
             fn cmp(&self, other: &Self) -> Ordering {
-                other.distance.partial_cmp(&self.distance).unwrap()
+                other.distance.partial_cmp(&self.distance).unwrap_or(Ordering::Equal)
             }
         }
 
@@ -372,9 +385,13 @@ impl HnswIndex {
         let mut candidates: BinaryHeap<Candidate> = BinaryHeap::new();
         let mut results: BinaryHeap<Candidate> = BinaryHeap::new();
 
+        let entry_node = match nodes.get(entry_id) {
+            Some(n) => n,
+            None => return Vec::new(),
+        };
         let entry_dist = self.metric.calculate(
             query,
-            &nodes.get(entry_id).unwrap().vector,
+            &entry_node.vector,
         );
 
         candidates.push(Candidate {

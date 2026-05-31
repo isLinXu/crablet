@@ -206,14 +206,14 @@ impl QTable {
             let qvalues = CognitiveAction::all().iter().map(|&action| QValue::new(action)).collect();
             self.entries.insert(key.clone(), qvalues);
         }
-        self.entries.get_mut(&key).unwrap()
+        self.entries.get_mut(&key).expect("key was just inserted")
     }
 
     pub fn select_action(&mut self, features: &TaskFeatures) -> CognitiveAction {
         let exploration_rate = self.exploration_rate;
         let qvalues = self.get_or_create(features);
         if fastrand::f32() < exploration_rate {
-            CognitiveAction::from_index(fastrand::usize(..4)).unwrap()
+            CognitiveAction::from_index(fastrand::usize(..4)).unwrap_or(CognitiveAction::System1)
         } else {
             qvalues.iter()
                 .max_by(|a, b| {

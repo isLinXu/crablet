@@ -3,11 +3,11 @@
 //! 提供技能完整性验证和来源认证，防止供应链攻击。
 
 use anyhow::Result;
-use tracing::info;
-use std::path::Path;
-use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::path::Path;
 use tokio::fs;
+use tracing::info;
 
 /// 签名验证结果
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -19,19 +19,13 @@ pub enum VerificationResult {
         timestamp: i64,
     },
     /// 已验证但不在信任列表中
-    Untrusted {
-        fingerprint: String,
-    },
+    Untrusted { fingerprint: String },
     /// 未签名
     Unsigned,
     /// 签名无效
-    Invalid {
-        reason: String,
-    },
+    Invalid { reason: String },
     /// 验证过程中出错
-    Error {
-        message: String,
-    },
+    Error { message: String },
 }
 
 impl VerificationResult {
@@ -73,7 +67,7 @@ impl PublicKey {
         // 实际生产环境应该使用 ed25519 或 RSA
         let computed_hash = Self::compute_hash(data);
         let signature_hash = Self::decode_signature(signature)?;
-        
+
         Ok(computed_hash == signature_hash)
     }
 
@@ -81,7 +75,7 @@ impl PublicKey {
     fn compute_hash(data: &[u8]) -> String {
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
-        
+
         let mut hasher = DefaultHasher::new();
         data.hash(&mut hasher);
         format!("{:x}", hasher.finish())
@@ -122,11 +116,11 @@ impl SkillSignatureVerifier {
     /// 从配置加载可信密钥
     pub fn with_config(config: &SignatureConfig) -> Self {
         let mut verifier = Self::new();
-        
+
         for key in &config.trusted_keys {
             verifier.add_trusted_key(key.clone());
         }
-        
+
         verifier.allow_expired_keys = config.allow_expired_keys;
         verifier
     }
@@ -147,14 +141,14 @@ impl SkillSignatureVerifier {
         // 1. 查找签名文件
         let sig_file = skill_dir.join(".skill.sig");
         let manifest_file = skill_dir.join("skill.yaml");
-        
+
         if !sig_file.exists() {
             // 检查是否有其他格式的签名
             let alt_sig_files = [
                 skill_dir.join("signature.json"),
                 skill_dir.join(".signature"),
             ];
-            
+
             let found_alt = alt_sig_files.iter().find(|p| p.exists());
             if found_alt.is_none() {
                 return VerificationResult::Unsigned;
@@ -238,7 +232,7 @@ impl SkillSignatureVerifier {
     fn compute_manifest_hash(content: &str) -> String {
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
-        
+
         let mut hasher = DefaultHasher::new();
         content.hash(&mut hasher);
         format!("{:x}", hasher.finish())
@@ -252,10 +246,10 @@ impl SkillSignatureVerifier {
     ) -> Result<SkillSignature> {
         let manifest_hash = Self::compute_manifest_hash(manifest_content);
         let timestamp = chrono::Utc::now().timestamp();
-        
+
         // 这里简化实现，实际应该使用加密签名
         let signature = format!("{}:{}", fingerprint, manifest_hash);
-        
+
         Ok(SkillSignature {
             version: "1.0".to_string(),
             fingerprint: fingerprint.to_string(),
@@ -297,31 +291,27 @@ pub struct SignatureTool;
 
 impl SignatureTool {
     /// 为技能生成签名
-    pub async fn sign_skill(
-        skill_dir: &Path,
-        private_key: &str,
-        fingerprint: &str,
-    ) -> Result<()> {
+    pub async fn sign_skill(skill_dir: &Path, private_key: &str, fingerprint: &str) -> Result<()> {
         let manifest_path = skill_dir.join("skill.yaml");
         let manifest_content = fs::read_to_string(&manifest_path).await?;
-        
-        let signature = SkillSignatureVerifier::sign_manifest(
-            &manifest_content,
-            private_key,
-            fingerprint,
-        )?;
-        
+
+        let signature =
+            SkillSignatureVerifier::sign_manifest(&manifest_content, private_key, fingerprint)?;
+
         let sig_content = serde_json::to_string_pretty(&signature)?;
         fs::write(skill_dir.join(".skill.sig"), sig_content).await?;
-        
+
         info!("Generated signature for skill at {:?}", skill_dir);
         Ok(())
     }
 
     /// 验证技能签名（CLI 工具）
-    pub async fn verify_skill(skill_dir: &Path, trusted_keys_path: Option<&Path>) -> Result<VerificationResult> {
+    pub async fn verify_skill(
+        skill_dir: &Path,
+        trusted_keys_path: Option<&Path>,
+    ) -> Result<VerificationResult> {
         let mut verifier = SkillSignatureVerifier::new();
-        
+
         // 加载可信密钥
         if let Some(keys_path) = trusted_keys_path {
             let keys_content = fs::read_to_string(keys_path).await?;
@@ -330,7 +320,7 @@ impl SignatureTool {
                 verifier.add_trusted_key(key);
             }
         }
-        
+
         Ok(verifier.verify(skill_dir).await)
     }
 }
