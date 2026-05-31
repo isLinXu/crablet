@@ -1,10 +1,10 @@
+use anyhow::Result;
+use async_trait::async_trait;
+use crablet::cognitive::llm::LlmClient;
 use crablet::cognitive::router::CognitiveRouter;
 use crablet::cognitive::system2::System2;
-use crablet::cognitive::llm::LlmClient;
-use crablet::types::{Message, ContentPart};
 use crablet::events::EventBus;
-use async_trait::async_trait;
-use anyhow::Result;
+use crablet::types::{ContentPart, Message};
 use std::sync::{Arc, Mutex};
 
 fn test_config() -> crablet::config::Config {
@@ -33,7 +33,11 @@ impl LlmClient for SpyLlmClient {
         Ok("Mock Response".to_string())
     }
 
-    async fn chat_complete_with_tools(&self, messages: &[Message], _tools: &[serde_json::Value]) -> Result<Message> {
+    async fn chat_complete_with_tools(
+        &self,
+        messages: &[Message],
+        _tools: &[serde_json::Value],
+    ) -> Result<Message> {
         let content = self.chat_complete(messages).await?;
         Ok(Message::new("assistant", &content))
     }
@@ -63,13 +67,13 @@ async fn test_context_retention() {
     // 1. Setup Spy LLM
     let spy_client = SpyLlmClient::new();
     let last_context = spy_client.last_context.clone();
-    
+
     let event_bus = Arc::new(EventBus::new(100));
     let config = test_config();
 
     // 2. Setup System 2 with Spy Client
     let sys2 = System2::with_client(Box::new(spy_client), event_bus.clone()).await;
-    
+
     // 3. Setup Router
     let router = CognitiveRouter::with_system2_async(&config, None, sys2, event_bus.clone()).await;
 
@@ -77,39 +81,47 @@ async fn test_context_retention() {
     // "My name is Alice" is short, but we want to force System 2 or ensure System 1 doesn't catch it.
     // System 1 catches "hello", "hi", "/help", "who are you".
     // "My name is Alice" should go to System 2.
-    let _ = router.process("My name is Alice", "test_session").await.unwrap();
-    
+    let _ = router
+        .process("My name is Alice", "test_session")
+        .await
+        .unwrap();
+
     // 5. Interaction 2: Ask question (System 2 fallback)
-    let _ = router.process("What is my name?", "test_session").await.unwrap();
+    let _ = router
+        .process("What is my name?", "test_session")
+        .await
+        .unwrap();
 
     // 6. Verify Context
     let context = last_context.lock().unwrap();
-    
+
     // Context should contain:
     // 1. User: My name is Alice
     // 2. Assistant: Mock Response (since it went to System 2 SpyClient)
     // 3. User: What is my name?
     // 4. (Potentially System prompts if injected by Middleware)
-    
+
     // We expect at least the user messages.
     // Let's find the message "My name is Alice"
-    
+
     let has_alice = context.iter().any(|m| {
-        m.role == "user" && m.content.as_ref().map_or(false, |parts| {
-            parts.iter().any(|p| match p {
-                ContentPart::Text { text } => text == "My name is Alice",
-                _ => false,
+        m.role == "user"
+            && m.content.as_ref().map_or(false, |parts| {
+                parts.iter().any(|p| match p {
+                    ContentPart::Text { text } => text == "My name is Alice",
+                    _ => false,
+                })
             })
-        })
     });
-    
+
     let has_question = context.iter().any(|m| {
-        m.role == "user" && m.content.as_ref().map_or(false, |parts| {
-            parts.iter().any(|p| match p {
-                ContentPart::Text { text } => text == "What is my name?",
-                _ => false,
+        m.role == "user"
+            && m.content.as_ref().map_or(false, |parts| {
+                parts.iter().any(|p| match p {
+                    ContentPart::Text { text } => text == "What is my name?",
+                    _ => false,
+                })
             })
-        })
     });
 
     assert!(has_alice, "Context should contain 'My name is Alice'");

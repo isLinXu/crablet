@@ -10,12 +10,10 @@ use crablet::rpa::desktop::{DesktopStep, DesktopWorkflow, Key, MouseButton, Poin
 fn test_desktop_workflow_find_and_click_serialization() {
     let workflow = DesktopWorkflow {
         name: "Image Click Test".to_string(),
-        steps: vec![
-            DesktopStep::FindAndClick {
-                image: "button.png".to_string(),
-                confidence: 0.85,
-            },
-        ],
+        steps: vec![DesktopStep::FindAndClick {
+            image: "button.png".to_string(),
+            confidence: 0.85,
+        }],
         variables: std::collections::HashMap::new(),
     };
 
@@ -40,7 +38,9 @@ fn test_desktop_workflow_multiple_steps() {
             DesktopStep::KeyboardType {
                 text: "Hello World".to_string(),
             },
-            DesktopStep::MouseClick { button: MouseButton::Left },
+            DesktopStep::MouseClick {
+                button: MouseButton::Left,
+            },
         ],
         variables: std::collections::HashMap::new(),
     };

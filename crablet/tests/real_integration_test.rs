@@ -1,7 +1,7 @@
 use crablet::cognitive::router::CognitiveRouter;
 use crablet::events::EventBus;
-use std::sync::Arc;
 use std::env;
+use std::sync::Arc;
 use tokio::time::{timeout, Duration};
 
 #[tokio::test]
@@ -13,7 +13,7 @@ async fn test_real_llm_integration() {
         println!("Skipping real LLM integration test: set CRABLET_RUN_REAL_LLM_TESTS=1 to enable");
         return;
     }
-    
+
     // Set OLLAMA_MODEL to qwen3:4b as requested
     env::set_var("OLLAMA_MODEL", "qwen3:4b");
     // Ensure OPENAI_API_KEY is NOT set so it falls back to Ollama
@@ -22,7 +22,7 @@ async fn test_real_llm_integration() {
 
     let event_bus = Arc::new(EventBus::new(100));
     let config = crablet::config::Config::default();
-    
+
     // Initialize Router (this will pick up OLLAMA_MODEL and use OllamaClient)
     let router = CognitiveRouter::new(&config, None, event_bus).await;
 
@@ -30,9 +30,13 @@ async fn test_real_llm_integration() {
 
     // Simple prompt
     let prompt = "What is the capital of France? Answer in one word.";
-    
+
     // Set a timeout because real LLM can be slow
-    let result = timeout(Duration::from_secs(300), router.process(prompt, "test_session_real")).await;
+    let result = timeout(
+        Duration::from_secs(300),
+        router.process(prompt, "test_session_real"),
+    )
+    .await;
 
     match result {
         Ok(Ok((response, _traces))) => {
@@ -41,9 +45,12 @@ async fn test_real_llm_integration() {
             assert!(response.to_lowercase().contains("paris"));
         }
         Ok(Err(e)) => {
-            // If Ollama is not running, this will fail. 
+            // If Ollama is not running, this will fail.
             // We should print a helpful message.
-            eprintln!("Integration test failed: {}. Make sure Ollama is running with qwen3:4b.", e);
+            eprintln!(
+                "Integration test failed: {}. Make sure Ollama is running with qwen3:4b.",
+                e
+            );
             // We fail the test to signal verification failure
             panic!("Integration test failed: {}", e);
         }
@@ -69,7 +76,7 @@ async fn test_real_llm_tool_usage() {
 
     let event_bus = Arc::new(EventBus::new(100));
     let config = crablet::config::Config::default();
-    
+
     // Initialize Router (this will pick up OLLAMA_MODEL and use OllamaClient)
     let router = CognitiveRouter::new(&config, None, event_bus).await;
 
@@ -80,14 +87,18 @@ async fn test_real_llm_tool_usage() {
     // Let's try something simple that might trigger a tool if the model supports it.
     // "List files in current directory" -> `ls -la`
     let prompt = "List the files in the current directory using bash.";
-    
-    let result = timeout(Duration::from_secs(300), router.process(prompt, "test_session_tool")).await;
+
+    let result = timeout(
+        Duration::from_secs(300),
+        router.process(prompt, "test_session_tool"),
+    )
+    .await;
 
     match result {
         Ok(Ok((response, traces))) => {
             println!("Response: {}", response);
             println!("Traces: {:?}", traces);
-            
+
             // Check if tool was used
             let tool_used = traces.iter().any(|t| t.action.is_some());
             if tool_used {

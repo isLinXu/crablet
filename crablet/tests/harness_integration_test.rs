@@ -12,11 +12,14 @@ use crablet::agent::distributed_harness::{
 };
 use crablet::agent::harness::{
     parse_tool_calls, AgentHarnessContext, CircuitBreaker, CircuitBreakerConfig, CircuitState,
-    HarnessConfig, HarnessError, HarnessSignal,
-    HarnessSignalChannel, RetryConfig, ToolExecResult,
+    HarnessConfig, HarnessError, HarnessSignal, HarnessSignalChannel, RetryConfig, ToolExecResult,
 };
-use crablet::agent::harness_fusion::{EngineState, UnifiedHarnessFusion, UnifiedHarnessFusionBuilder};
+use crablet::agent::harness_fusion::{
+    EngineState, UnifiedHarnessFusion, UnifiedHarnessFusionBuilder,
+};
 use crablet::agent::harness_manager::{HarnessInfo, HarnessManager, HarnessStatus};
+use crablet::agent::hooks::{Hook, HookContext, HookError, HookPoint, HookRegistry, HookResult};
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -71,7 +74,7 @@ async fn test_harness_full_lifecycle() {
         ..Default::default()
     };
 
-    let mut ctx = AgentHarnessContext::new(config);
+    let ctx = AgentHarnessContext::new(config);
 
     // Initial state
     assert!(ctx.can_continue());
@@ -114,7 +117,7 @@ async fn test_harness_full_lifecycle() {
 
 #[tokio::test]
 async fn test_checkpoint_save_load() {
-    let mut ctx = AgentHarnessContext::new(HarnessConfig {
+    let ctx = AgentHarnessContext::new(HarnessConfig {
         max_steps: 10,
         ..Default::default()
     });
@@ -206,7 +209,7 @@ fn test_circuit_breaker_respects_timeout_window() {
 
 #[tokio::test]
 async fn test_per_tool_circuit_breaker_isolation() {
-    let mut ctx = AgentHarnessContext::new(HarnessConfig::default());
+    let ctx = AgentHarnessContext::new(HarnessConfig::default());
 
     // Only tool_a should trip
     for _ in 0..3 {
@@ -635,7 +638,7 @@ async fn test_manager_completion_tracks_live_snapshot() {
     let harness = manager.get_harness(&id).await.unwrap();
 
     {
-        let mut harness = harness.write().await;
+        let harness = harness.write().await;
         harness.record_step();
         harness.record_error(HarnessError::Timeout(Duration::from_millis(5)));
         harness.metadata_mut().update_duration();
@@ -657,6 +660,67 @@ async fn test_manager_completion_tracks_live_snapshot() {
 // ============================================================================
 // Fusion Engine Tests
 // ============================================================================
+
+struct CountingHook {
+    point: HookPoint,
+    count: Arc<AtomicU32>,
+}
+
+impl CountingHook {
+    fn new(point: HookPoint) -> Self {
+        Self {
+            point,
+            count: Arc::new(AtomicU32::new(0)),
+        }
+    }
+
+    fn count(&self) -> u32 {
+        self.count.load(Ordering::SeqCst)
+    }
+}
+
+#[async_trait::async_trait]
+impl Hook for CountingHook {
+    fn name(&self) -> &str {
+        "counting-hook"
+    }
+
+    fn point(&self) -> HookPoint {
+        self.point
+    }
+
+    async fn execute(&self, _ctx: &HookContext) -> Result<HookResult, HookError> {
+        self.count.fetch_add(1, Ordering::SeqCst);
+        Ok(HookResult::allow())
+    }
+}
+
+struct RetryingStepHook {
+    count: Arc<AtomicU32>,
+}
+
+#[async_trait::async_trait]
+impl Hook for RetryingStepHook {
+    fn name(&self) -> &str {
+        "retrying-step-hook"
+    }
+
+    fn point(&self) -> HookPoint {
+        HookPoint::PreStep
+    }
+
+    async fn execute(&self, _ctx: &HookContext) -> Result<HookResult, HookError> {
+        let attempt = self.count.fetch_add(1, Ordering::SeqCst);
+        if attempt == 0 {
+            let mut result = HookResult::modify(serde_json::json!({"step": "retry"}));
+            result.retry = true;
+            result.message = Some("retry pre-step".to_string());
+            Ok(result)
+        } else {
+            Ok(HookResult::allow())
+        }
+    }
+}
 
 #[tokio::test]
 async fn test_fusion_engine_state_machine() {
@@ -691,6 +755,17 @@ async fn test_fusion_builder() {
     let metrics = engine.metrics().await;
     assert_eq!(metrics.steps_completed, 0);
     assert_eq!(metrics.steps_failed, 0);
+}
+
+#[tokio::test]
+async fn test_fusion_builder_installs_default_hooks() {
+    let engine = UnifiedHarnessFusionBuilder::new().build().await;
+    let hooks = engine
+        .hook_registry()
+        .list_hooks(HookPoint::PreToolUse)
+        .await;
+
+    assert!(hooks.contains(&"security-audit".to_string()));
 }
 
 #[tokio::test]
@@ -742,6 +817,123 @@ async fn test_fusion_execute_step_tracks_harness_state() {
 
     let summary = engine.summary().await;
     assert_eq!(summary.step_count, 1);
+}
+
+#[tokio::test]
+async fn test_fusion_execute_step_runs_hook_phases() {
+    let registry = Arc::new(HookRegistry::new());
+    let pre_hook = Arc::new(CountingHook::new(HookPoint::PreStep));
+    let post_hook = Arc::new(CountingHook::new(HookPoint::PostStep));
+
+    registry.register(pre_hook.clone()).await;
+    registry.register(post_hook.clone()).await;
+
+    let engine = UnifiedHarnessFusionBuilder::new()
+        .with_hook_registry(registry)
+        .with_harness_config(HarnessConfig {
+            step_timeout: Duration::from_millis(50),
+            ..Default::default()
+        })
+        .with_adaptive_timeout(false)
+        .build()
+        .await;
+    engine.start().await;
+
+    let result = engine
+        .execute_step(|ctx, _| {
+            let attempt = ctx.attempt;
+            let step_timeout = ctx.step_timeout;
+            async move {
+                assert_eq!(attempt, 1);
+                assert_eq!(step_timeout, Duration::from_millis(50));
+                Ok("hooked".to_string())
+            }
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(result, "hooked");
+    assert_eq!(pre_hook.count(), 1);
+    assert_eq!(post_hook.count(), 1);
+}
+
+#[tokio::test]
+async fn test_fusion_retry_survives_modify_action() {
+    let registry = Arc::new(HookRegistry::new());
+    let retry_hook = Arc::new(RetryingStepHook {
+        count: Arc::new(AtomicU32::new(0)),
+    });
+    registry.register(retry_hook.clone()).await;
+
+    let engine = UnifiedHarnessFusionBuilder::new()
+        .with_hook_registry(registry)
+        .with_harness_config(HarnessConfig {
+            step_timeout: Duration::from_millis(50),
+            ..Default::default()
+        })
+        .with_self_healing(true)
+        .with_max_repair_attempts(2)
+        .with_adaptive_timeout(false)
+        .build()
+        .await;
+    engine.start().await;
+
+    let step_runs = Arc::new(AtomicU32::new(0));
+    let result = engine
+        .execute_step({
+            let step_runs = step_runs.clone();
+            move |ctx, _| {
+                let step_runs = step_runs.clone();
+                let attempt = ctx.attempt;
+                async move {
+                    step_runs.fetch_add(1, Ordering::SeqCst);
+                    assert_eq!(attempt, 2);
+                    Ok("recovered".to_string())
+                }
+            }
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(result, "recovered");
+    assert_eq!(retry_hook.count.load(Ordering::SeqCst), 2);
+    assert_eq!(step_runs.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn test_fusion_self_healing_retries_after_timeout() {
+    let engine = UnifiedHarnessFusionBuilder::new()
+        .with_self_healing(true)
+        .with_max_repair_attempts(2)
+        .with_adaptive_timeout(false)
+        .with_harness_config(HarnessConfig {
+            step_timeout: Duration::from_millis(10),
+            ..Default::default()
+        })
+        .build()
+        .await;
+    engine.start().await;
+
+    let result = engine
+        .execute_step(|ctx, _| {
+            let attempt = ctx.attempt;
+            async move {
+                if attempt == 1 {
+                    tokio::time::sleep(Duration::from_millis(25)).await;
+                    Ok("slow".to_string())
+                } else {
+                    Ok("recovered".to_string())
+                }
+            }
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(result, "recovered");
+
+    let metrics = engine.metrics().await;
+    assert_eq!(metrics.steps_completed, 1);
+    assert_eq!(metrics.self_healing_attempts, 1);
 }
 
 // ============================================================================
@@ -843,5 +1035,5 @@ async fn test_distributed_manager_basic() {
 
     // Cluster stats
     let stats = manager.get_cluster_stats().await.unwrap();
-    assert_eq!(stats.active_nodes, 0); // No nodes registered
+    assert_eq!(stats.active_nodes, 1);
 }

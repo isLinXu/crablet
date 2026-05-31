@@ -4,8 +4,8 @@
 
 #[cfg(test)]
 mod tests {
-    use crablet::agent::hooks::*;
     use crablet::agent::harness_fusion::UnifiedHarnessFusionBuilder;
+    use crablet::agent::hooks::*;
     use std::sync::Arc;
 
     /// Hook that counts how many times it was called
@@ -67,7 +67,9 @@ mod tests {
         }
         async fn execute(&self, ctx: &HookContext) -> Result<HookResult, HookError> {
             let mut result = HookResult::allow();
-            result.metadata.insert(self.key.to_string(), self.value.to_string());
+            result
+                .metadata
+                .insert(self.key.to_string(), self.value.to_string());
             result
                 .metadata
                 .insert("tool".to_string(), ctx.tool_name.clone());
@@ -170,10 +172,7 @@ mod tests {
         );
         let result = registry.run_pre_tool_use(&ctx).await.unwrap();
         assert!(matches!(result.action, HookAction::Allow));
-        assert_eq!(
-            result.message.as_deref(),
-            Some("Follow safety guidelines")
-        );
+        assert_eq!(result.message.as_deref(), Some("Follow safety guidelines"));
     }
 
     #[tokio::test]
@@ -211,9 +210,7 @@ mod tests {
     #[tokio::test]
     async fn test_registry_clone_shares_state() {
         let registry = HookRegistry::new();
-        registry
-            .register(Arc::new(SecurityAuditHook::new()))
-            .await;
+        registry.register(Arc::new(SecurityAuditHook::new())).await;
 
         let cloned = registry.clone();
         let hooks = cloned.list_hooks(HookPoint::PreToolUse).await;

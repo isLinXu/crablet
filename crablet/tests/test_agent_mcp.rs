@@ -1,6 +1,6 @@
 use crablet::agent::coder::CoderAgent;
-use crablet::agent::swarm::{SwarmAgent};
-use crablet::cognitive::llm::{OllamaClient};
+use crablet::agent::swarm::SwarmAgent;
+use crablet::cognitive::llm::OllamaClient;
 use std::sync::Arc;
 use tokio;
 
