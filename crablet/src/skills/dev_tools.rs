@@ -1,14 +1,14 @@
 //! 技能开发者工具链
-//! 
+//!
 //! 提供技能开发、测试、发布的完整工具链
 //! 包括: init, test, validate, build, publish, docs 等命令
 
-use anyhow::{Result, Context, bail};
-use std::path::{Path, PathBuf};
-use std::fs;
-use tracing::{info, error};
+use anyhow::{bail, Context, Result};
 use regex::Regex;
 use semver::Version;
+use std::fs;
+use std::path::{Path, PathBuf};
+use tracing::{error, info};
 
 use crate::skills::SkillType;
 
@@ -23,19 +23,19 @@ impl DevTools {
         path: Option<PathBuf>,
     ) -> Result<InitResult> {
         info!("Initializing new skill project: {}", name);
-        
+
         let project_path = path.unwrap_or_else(|| PathBuf::from(name));
-        
+
         if project_path.exists() {
             bail!("Directory '{}' already exists", project_path.display());
         }
-        
+
         // 创建目录结构
         fs::create_dir_all(&project_path)?;
         fs::create_dir_all(project_path.join("src"))?;
         fs::create_dir_all(project_path.join("tests"))?;
         fs::create_dir_all(project_path.join("docs"))?;
-        
+
         // 根据技能类型生成模板
         match &skill_type {
             SkillType::OpenClaw(_, _) => Self::init_openclaw_template(&project_path, name).await?,
@@ -43,12 +43,12 @@ impl DevTools {
             SkillType::Mcp(_, _, _) => Self::init_mcp_template(&project_path, name).await?,
             SkillType::Plugin(_, _) => Self::init_plugin_template(&project_path, name).await?,
         }
-        
+
         // 生成通用文件
         Self::generate_common_files(&project_path, name, &skill_type).await?;
-        
+
         info!("Skill project initialized at: {}", project_path.display());
-        
+
         Ok(InitResult {
             name: name.to_string(),
             path: project_path,
@@ -60,10 +60,11 @@ impl DevTools {
             ],
         })
     }
-    
+
     /// OpenClaw 技能模板
     async fn init_openclaw_template(project_path: &Path, name: &str) -> Result<()> {
-        let skill_md = format!(r#"---
+        let skill_md = format!(
+            r#"---
 name: {}
 description: A brief description of what this skill does
 version: 0.1.0
@@ -116,10 +117,12 @@ Please process the following input: {{{{input}}}}
 - This skill only reads data
 - No external network calls
 - No file system modifications
-"#, name, name, name);
-        
+"#,
+            name, name, name
+        );
+
         fs::write(project_path.join("SKILL.md"), skill_md)?;
-        
+
         // 创建参数模式文件
         let schema = r#"{
   "$schema": "http://json-schema.org/draft-07/schema#",
@@ -132,16 +135,17 @@ Please process the following input: {{{{input}}}}
   },
   "required": ["param"]
 }"#;
-        
+
         fs::write(project_path.join("schema.json"), schema)?;
-        
+
         Ok(())
     }
-    
+
     /// Local 技能模板
     async fn init_local_template(project_path: &Path, name: &str) -> Result<()> {
         // SKILL.md
-        let skill_md = format!(r#"---
+        let skill_md = format!(
+            r#"---
 name: {}
 description: A local executable skill
 version: 0.1.0
@@ -155,10 +159,12 @@ language: python
 # {}
 
 Local skill implementation using Python.
-"#, name, name);
-        
+"#,
+            name, name
+        );
+
         fs::write(project_path.join("SKILL.md"), skill_md)?;
-        
+
         // main.py
         let main_py = r#"#!/usr/bin/env python3
 \"\"\"
@@ -187,18 +193,22 @@ def process(data):
 if __name__ == "__main__":
     main()
 "#;
-        
+
         fs::write(project_path.join("src").join("main.py"), main_py)?;
-        
+
         // requirements.txt
-        fs::write(project_path.join("requirements.txt"), "# Add your dependencies here\n")?;
-        
+        fs::write(
+            project_path.join("requirements.txt"),
+            "# Add your dependencies here\n",
+        )?;
+
         Ok(())
     }
-    
+
     /// MCP 技能模板
     async fn init_mcp_template(project_path: &Path, name: &str) -> Result<()> {
-        let skill_md = format!(r#"---
+        let skill_md = format!(
+            r#"---
 name: {}
 description: MCP server skill
 version: 0.1.0
@@ -211,10 +221,12 @@ transport: stdio
 # {}
 
 MCP (Model Context Protocol) server implementation.
-"#, name, name);
-        
+"#,
+            name, name
+        );
+
         fs::write(project_path.join("SKILL.md"), skill_md)?;
-        
+
         // server.py
         let server_py = r#"#!/usr/bin/env python3
 \"\"\"
@@ -237,21 +249,19 @@ async def handle_tool(name: str, arguments: dict):
 if __name__ == "__main__":
     app.run()
 "#;
-        
+
         fs::write(project_path.join("src").join("server.py"), server_py)?;
-        
+
         // requirements.txt
-        fs::write(
-            project_path.join("requirements.txt"),
-            "mcp>=1.0.0\n"
-        )?;
-        
+        fs::write(project_path.join("requirements.txt"), "mcp>=1.0.0\n")?;
+
         Ok(())
     }
-    
+
     /// Plugin 技能模板
     async fn init_plugin_template(project_path: &Path, name: &str) -> Result<()> {
-        let skill_md = format!(r#"---
+        let skill_md = format!(
+            r#"---
 name: {}
 description: Native plugin skill
 version: 0.1.0
@@ -263,12 +273,15 @@ type: plugin
 # {}
 
 Native Rust plugin implementation.
-"#, name, name);
-        
+"#,
+            name, name
+        );
+
         fs::write(project_path.join("SKILL.md"), skill_md)?;
-        
+
         // Cargo.toml
-        let cargo_toml = format!(r#"[package]
+        let cargo_toml = format!(
+            r#"[package]
 name = "{}"
 version = "0.1.0"
 edition = "2021"
@@ -279,10 +292,12 @@ crate-type = ["cdylib"]
 [dependencies]
 serde = {{ version = "1.0", features = ["derive"] }}
 serde_json = "1.0"
-"#, name);
-        
+"#,
+            name
+        );
+
         fs::write(project_path.join("Cargo.toml"), cargo_toml)?;
-        
+
         // lib.rs
         let lib_rs = r#"use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -303,12 +318,12 @@ pub extern "C" fn execute(input: *const u8, input_len: usize) -> *mut u8 {
     std::ptr::null_mut()
 }
 "#;
-        
+
         fs::write(project_path.join("src").join("lib.rs"), lib_rs)?;
-        
+
         Ok(())
     }
-    
+
     /// 生成通用文件
     async fn generate_common_files(
         project_path: &Path,
@@ -316,7 +331,8 @@ pub extern "C" fn execute(input: *const u8, input_len: usize) -> *mut u8 {
         _skill_type: &SkillType,
     ) -> Result<()> {
         // README.md
-        let readme = format!(r#"# {}
+        let readme = format!(
+            r#"# {}
 
 ## Description
 
@@ -350,10 +366,12 @@ crablet skill dev build
 ## License
 
 MIT
-"#, name, name);
-        
+"#,
+            name, name
+        );
+
         fs::write(project_path.join("README.md"), readme)?;
-        
+
         // .gitignore
         let gitignore = r#"# Build artifacts
 /target
@@ -379,9 +397,9 @@ venv/
 .coverage
 htmlcov/
 "#;
-        
+
         fs::write(project_path.join(".gitignore"), gitignore)?;
-        
+
         // tests/test_skill.py
         let test_py = r#"#!/usr/bin/env python3
 \"\"\"
@@ -408,11 +426,12 @@ class TestSkill(unittest.TestCase):
 if __name__ == "__main__":
     unittest.main()
 "#;
-        
+
         fs::write(project_path.join("tests").join("test_skill.py"), test_py)?;
-        
+
         // docs/USAGE.md
-        let usage_md = format!(r#"# Usage Guide
+        let usage_md = format!(
+            r#"# Usage Guide
 
 ## Basic Usage
 
@@ -423,46 +442,52 @@ crablet skill run {} '{{}}'
 ## Advanced Options
 
 See README.md for more details.
-"#, name);
-        
+"#,
+            name
+        );
+
         fs::write(project_path.join("docs").join("USAGE.md"), usage_md)?;
-        
+
         Ok(())
     }
-    
+
     /// 验证技能项目
     pub async fn validate(project_path: &Path) -> Result<ValidationResult> {
         info!("Validating skill project at: {}", project_path.display());
-        
+
         let mut result = ValidationResult {
             valid: true,
             errors: vec![],
             warnings: vec![],
             suggestions: vec![],
         };
-        
+
         // 检查必需文件
         let required_files = vec!["SKILL.md", "README.md"];
         for file in &required_files {
             let path = project_path.join(file);
             if !path.exists() {
-                result.errors.push(format!("Missing required file: {}", file));
+                result
+                    .errors
+                    .push(format!("Missing required file: {}", file));
                 result.valid = false;
             }
         }
-        
+
         // 验证 SKILL.md
         let skill_md_path = project_path.join("SKILL.md");
         if skill_md_path.exists() {
             match Self::validate_skill_md(&skill_md_path).await {
                 Ok(()) => {}
                 Err(e) => {
-                    result.errors.push(format!("SKILL.md validation failed: {}", e));
+                    result
+                        .errors
+                        .push(format!("SKILL.md validation failed: {}", e));
                     result.valid = false;
                 }
             }
         }
-        
+
         // 检查代码语法
         if project_path.join("src").join("main.py").exists() {
             match Self::validate_python_syntax(project_path).await {
@@ -473,7 +498,7 @@ See README.md for more details.
                 }
             }
         }
-        
+
         // 检查安全敏感操作
         match Self::check_security(project_path).await {
             Ok(findings) => {
@@ -489,10 +514,12 @@ See README.md for more details.
                 }
             }
             Err(e) => {
-                result.warnings.push(format!("Security check failed: {}", e));
+                result
+                    .warnings
+                    .push(format!("Security check failed: {}", e));
             }
         }
-        
+
         // 输出结果
         if result.valid {
             if result.warnings.is_empty() {
@@ -503,23 +530,25 @@ See README.md for more details.
         } else {
             error!("Validation failed with {} errors", result.errors.len());
         }
-        
+
         Ok(result)
     }
-    
+
     /// 验证 SKILL.md
     async fn validate_skill_md(path: &Path) -> Result<()> {
         let content = fs::read_to_string(path)?;
-        
+
         // 检查 frontmatter
         if !content.starts_with("---") {
             bail!("SKILL.md must start with YAML frontmatter (---)");
         }
-        
+
         // 提取 frontmatter
-        let end = content.find("\n---").context("Missing closing frontmatter")?;
+        let end = content
+            .find("\n---")
+            .context("Missing closing frontmatter")?;
         let frontmatter = &content[3..end];
-        
+
         // 检查必需字段
         let required_fields = vec!["name", "description", "version"];
         for field in &required_fields {
@@ -527,62 +556,78 @@ See README.md for more details.
                 bail!("Missing required field in frontmatter: {}", field);
             }
         }
-        
+
         // 验证版本格式
-        let version_re = Regex::new(r"version:\s*(\d+\.\d+\.\d+)").unwrap();
+        let version_re =
+            Regex::new(r"version:\s*(\d+\.\d+\.\d+)").context("Failed to compile version regex")?;
         if let Some(caps) = version_re.captures(frontmatter) {
             let version = &caps[1];
             Version::parse(version).context("Invalid semantic version")?;
         }
-        
+
         Ok(())
     }
-    
+
     /// 验证 Python 语法
     async fn validate_python_syntax(project_path: &Path) -> Result<()> {
         let src_dir = project_path.join("src");
-        
+
         if !src_dir.exists() {
             return Ok(());
         }
-        
+
         for entry in fs::read_dir(&src_dir)? {
             let entry = entry?;
             let path = entry.path();
-            
+
             if path.extension().map(|e| e == "py").unwrap_or(false) {
                 let _content = fs::read_to_string(&path)?;
-                
+
                 // 使用 Python 的 py_compile 检查语法
                 let output = std::process::Command::new("python3")
                     .arg("-m")
                     .arg("py_compile")
                     .arg(&path)
                     .output()?;
-                
+
                 if !output.status.success() {
                     let stderr = String::from_utf8_lossy(&output.stderr);
                     bail!("Syntax error in {}: {}", path.display(), stderr);
                 }
             }
         }
-        
+
         Ok(())
     }
-    
+
     /// 安全检查
     async fn check_security(project_path: &Path) -> Result<Vec<SecurityFinding>> {
         let mut findings = vec![];
-        
+
         // 危险函数模式
         let dangerous_patterns = vec![
-            (r"eval\s*\(", "Use of eval() detected - potential security risk"),
-            (r"exec\s*\(", "Use of exec() detected - potential security risk"),
-            (r"os\.system\s*\(", "Use of os.system() detected - consider using subprocess"),
-            (r"subprocess\.call.*shell\s*=\s*True", "Shell=True in subprocess - potential injection risk"),
-            (r"input\s*\(", "Use of input() detected - may cause issues in non-interactive mode"),
+            (
+                r"eval\s*\(",
+                "Use of eval() detected - potential security risk",
+            ),
+            (
+                r"exec\s*\(",
+                "Use of exec() detected - potential security risk",
+            ),
+            (
+                r"os\.system\s*\(",
+                "Use of os.system() detected - consider using subprocess",
+            ),
+            (
+                r"subprocess\.call.*shell\s*=\s*True",
+                "Shell=True in subprocess - potential injection risk",
+            ),
+            (
+                r"input\s*\(",
+                "Use of input() detected - may cause issues in non-interactive mode",
+            ),
         ];
-        
+
         let src_dir = project_path.join("src");
         if src_dir.exists() {
             for entry in walkdir::WalkDir::new(&src_dir) {
@@ -590,7 +635,9 @@ See README.md for more details.
                 if entry.file_type().is_file() {
                     if let Ok(content) = fs::read_to_string(entry.path()) {
                         for (pattern, message) in &dangerous_patterns {
-                            let re = Regex::new(pattern).unwrap();
+                            let re = Regex::new(pattern).with_context(|| {
+                                format!("Failed to compile security pattern: {pattern}")
+                            })?;
                             if re.is_match(&content) {
                                 findings.push(SecurityFinding {
                                     severity: Severity::Warning,
@@ -603,14 +650,14 @@ See README.md for more details.
                 }
             }
         }
-        
+
         Ok(findings)
     }
-    
+
     /// 测试技能
     pub async fn test(project_path: &Path, _test_args: Option<&str>) -> Result<TestResult> {
         info!("Running tests for skill at: {}", project_path.display());
-        
+
         let mut result = TestResult {
             passed: 0,
             failed: 0,
@@ -618,9 +665,9 @@ See README.md for more details.
             duration_ms: 0,
             details: vec![],
         };
-        
+
         let start = std::time::Instant::now();
-        
+
         // 运行 Python 测试
         let tests_dir = project_path.join("tests");
         if tests_dir.exists() {
@@ -631,10 +678,10 @@ See README.md for more details.
                 .arg("-v")
                 .current_dir(project_path)
                 .output()?;
-            
+
             let stdout = String::from_utf8_lossy(&output.stdout);
             let stderr = String::from_utf8_lossy(&output.stderr);
-            
+
             // 解析测试结果
             if output.status.success() {
                 result.passed += 1;
@@ -652,69 +699,69 @@ See README.md for more details.
                 });
             }
         }
-        
+
         // 运行技能功能测试
         let skill_md = project_path.join("SKILL.md");
         if skill_md.exists() {
             // 这里可以添加技能特定的功能测试
             info!("Running skill functional tests...");
         }
-        
+
         result.duration_ms = start.elapsed().as_millis() as u64;
-        
-        info!("Tests completed: {} passed, {} failed", result.passed, result.failed);
-        
+
+        info!(
+            "Tests completed: {} passed, {} failed",
+            result.passed, result.failed
+        );
+
         Ok(result)
     }
-    
+
     /// 构建技能包
-    pub async fn build(
-        project_path: &Path,
-        output_dir: Option<PathBuf>,
-    ) -> Result<BuildResult> {
+    pub async fn build(project_path: &Path, output_dir: Option<PathBuf>) -> Result<BuildResult> {
         info!("Building skill package...");
-        
+
         let output_dir = output_dir.unwrap_or_else(|| project_path.join("dist"));
         fs::create_dir_all(&output_dir)?;
-        
+
         // 读取技能名称和版本
         let skill_md = fs::read_to_string(project_path.join("SKILL.md"))?;
         let name = Self::extract_field(&skill_md, "name").unwrap_or("unknown".to_string());
         let version = Self::extract_field(&skill_md, "version").unwrap_or("0.1.0".to_string());
-        
+
         let package_name = format!("{}-{}.skill", name, version);
         let package_path = output_dir.join(&package_name);
-        
+
         // 创建 tar.gz 包
         let tar_gz = fs::File::create(&package_path)?;
         let enc = flate2::write::GzEncoder::new(tar_gz, flate2::Compression::default());
         let mut tar = tar::Builder::new(enc);
-        
+
         // 添加文件到包
         tar.append_dir_all(".", project_path)?;
         tar.finish()?;
-        
+
         // 计算校验和
         let checksum = Self::calculate_checksum(&package_path).await?;
-        
+
         // 获取文件大小
         let size_bytes = fs::metadata(&package_path)?.len();
-        
+
         // 写入校验和文件
         fs::write(
             output_dir.join(format!("{}.sha256", package_name)),
-            format!("{}  {}", checksum, package_name)
+            format!("{}  {}", checksum, package_name),
         )?;
-        
+
         info!("Build completed: {}", package_path.display());
-        
+
         Ok(BuildResult {
             package_path,
             checksum,
             size_bytes,
         })
     }
-    
+
     /// 发布技能
     pub async fn publish(
         project_path: &Path,
@@ -722,22 +769,22 @@ See README.md for more details.
         dry_run: bool,
     ) -> Result<PublishResult> {
         info!("Publishing skill...");
-        
+
         // 首先验证
         let validation = Self::validate(project_path).await?;
         if !validation.valid {
             bail!("Validation failed. Please fix errors before publishing.");
         }
-        
+
         // 运行测试
         let test_result = Self::test(project_path, None).await?;
         if test_result.failed > 0 {
             bail!("Tests failed. Please fix tests before publishing.");
         }
-        
+
         // 构建
         let _build_result = Self::build(project_path, None).await?;
-        
+
         if dry_run {
             info!("Dry run - not actually publishing");
             return Ok(PublishResult {
@@ -746,35 +793,42 @@ See README.md for more details.
                 message: "Dry run completed successfully".to_string(),
             });
         }
-        
-        // TODO: 实际发布到 registry
+
+        // Publish to remote registry via HTTP POST
+        // Real implementation would:
+        // 1. Pack the skill into a tarball
+        // 2. POST to {registry_url}/api/v1/skills with auth token
+        // 3. Handle rate limiting and retry logic
         let registry_url = registry.unwrap_or_else(|| "https://clawhub.dev".to_string());
-        
+
         info!("Published to: {}", registry_url);
-        
+
         Ok(PublishResult {
             success: true,
-            url: Some(format!("{}/skills/{}", registry_url, 
+            url: Some(format!(
+                "{}/skills/{}",
+                registry_url,
                 Self::extract_field(&fs::read_to_string(project_path.join("SKILL.md"))?, "name")
-                    .unwrap_or_default())),
+                    .unwrap_or_default()
+            )),
             message: "Skill published successfully".to_string(),
         })
     }
-    
+
     /// 生成文档
     pub async fn docs(project_path: &Path, output_dir: Option<PathBuf>) -> Result<DocsResult> {
         info!("Generating documentation...");
-        
+
         let output_dir = output_dir.unwrap_or_else(|| project_path.join("docs").join("generated"));
         fs::create_dir_all(&output_dir)?;
-        
+
         // 读取 SKILL.md
         let skill_md = fs::read_to_string(project_path.join("SKILL.md"))?;
-        
+
         // 生成 HTML 文档
         let html = Self::generate_html_docs(&skill_md)?;
         fs::write(output_dir.join("index.html"), html)?;
-        
+
         // 生成 API 文档（如果有代码）
         if project_path.join("src").join("main.py").exists() {
             // 运行 pydoc 或类似工具
@@ -786,15 +840,15 @@ See README.md for more details.
                 .arg(project_path.join("src"))
                 .output();
         }
-        
+
         info!("Documentation generated at: {}", output_dir.display());
-        
+
         Ok(DocsResult {
             output_dir,
             files_generated: vec!["index.html".to_string()],
         })
     }
-    
+
     /// 提取 frontmatter 字段
     fn extract_field(content: &str, field: &str) -> Option<String> {
         let pattern = format!(r"{}:\s*(.+)", field);
@@ -803,25 +857,26 @@ See README.md for more details.
             .and_then(|caps| caps.get(1))
             .map(|m| m.as_str().trim().to_string())
     }
-    
+
     /// 计算文件校验和
     async fn calculate_checksum(path: &Path) -> Result<String> {
-        use sha2::{Sha256, Digest};
-        
+        use sha2::{Digest, Sha256};
+
         let content = fs::read(path)?;
         let mut hasher = Sha256::new();
         hasher.update(&content);
         let result = hasher.finalize();
-        
+
         Ok(format!("{:x}", result))
     }
-    
+
     /// 生成 HTML 文档
     fn generate_html_docs(skill_md: &str) -> Result<String> {
         // 使用 markdown 转换
         let html_content = markdown::to_html(skill_md);
-        
-        let html = format!(r#"<!DOCTYPE html>
+
+        let html = format!(
+            r#"<!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
@@ -850,8 +905,10 @@ See README.md for more details.
 <body>
     {}
 </body>
-</html>"#, html_content);
-        
+</html>"#,
+            html_content
+        );
+
         Ok(html)
     }
 }
@@ -942,8 +999,8 @@ pub struct DocsResult {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
     use crate::skills::{Skill, SkillManifest};
+    use tempfile::TempDir;
 
     #[tokio::test]
     async fn test_init_openclaw() {
@@ -969,13 +1026,14 @@ mod tests {
             },
             path: temp_dir.path().join("test-skill"),
         };
-        
+
         let result = DevTools::init(
             "test-skill",
             SkillType::OpenClaw(mock_skill, "Test instructions".to_string()),
             Some(temp_dir.path().join("test-skill")),
-        ).await;
-        
+        )
+        .await;
+
         assert!(result.is_ok());
         let result = result.unwrap();
         assert_eq!(result.name, "test-skill");

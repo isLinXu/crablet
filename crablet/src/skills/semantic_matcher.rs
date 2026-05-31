@@ -1,16 +1,16 @@
 //! Semantic Skill Matcher
-//! 
+//!
 //! Provides semantic matching capabilities for skills using embeddings and similarity search.
 //! This enables matching user queries to skills based on meaning rather than exact keyword matches.
 
-use std::collections::HashMap;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use tracing::info;
 
 // Note: Embedder is conditionally available with the "knowledge" feature
 #[cfg(feature = "knowledge")]
-use crate::knowledge::embedder::{Embedder, cosine_similarity};
+use crate::knowledge::embedder::{cosine_similarity, Embedder};
 
 /// Match result with confidence score
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -68,7 +68,10 @@ impl SemanticMatcher {
 
     /// Initialize with embedder
     #[cfg(feature = "knowledge")]
-    pub async fn with_embedder(mut self, embedder: crate::knowledge::embedder::Embedder) -> Result<Self> {
+    pub async fn with_embedder(
+        mut self,
+        embedder: crate::knowledge::embedder::Embedder,
+    ) -> Result<Self> {
         self.embedder = Some(embedder);
         Ok(self)
     }
@@ -99,7 +102,7 @@ impl SemanticMatcher {
                 examples.join(" "),
                 name.replace("_", " ")
             );
-            
+
             let embedding = embedder.embed(&skill_text).await?;
             self.skill_embeddings.insert(name.to_string(), embedding);
             tracing::debug!("Registered skill '{}' with semantic embedding", name);
@@ -115,7 +118,7 @@ impl SemanticMatcher {
 
         // 1. Semantic matching using embeddings
         let semantic_matches = self.semantic_match(query, top_k * 2).await?;
-        
+
         // 2. Keyword matching
         let keyword_matches = self.keyword_match(query);
 
@@ -129,7 +132,9 @@ impl SemanticMatcher {
 
         // Add keyword scores
         for (skill_name, score, keywords) in keyword_matches {
-            let entry = combined_scores.entry(skill_name.clone()).or_insert((0.0, 0.0, vec![]));
+            let entry = combined_scores
+                .entry(skill_name.clone())
+                .or_insert((0.0, 0.0, vec![]));
             entry.1 = score;
             entry.2 = keywords;
         }
@@ -138,7 +143,7 @@ impl SemanticMatcher {
         for (skill_name, (semantic_score, keyword_score, matched_keywords)) in combined_scores {
             // Weight: 60% semantic, 40% keyword
             let confidence = semantic_score * 0.6 + keyword_score * 0.4;
-            
+
             if confidence >= self.threshold {
                 matches.push(SemanticMatch {
                     skill_name,
@@ -151,7 +156,11 @@ impl SemanticMatcher {
         }
 
         // Sort by confidence and take top_k
-        matches.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap());
+        matches.sort_by(|a, b| {
+            b.confidence
+                .partial_cmp(&a.confidence)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         matches.truncate(top_k);
 
         Ok(matches)
@@ -164,7 +173,9 @@ impl SemanticMatcher {
             return Ok(vec![]);
         }
 
-        let embedder = self.embedder.as_ref().unwrap();
+        let Some(embedder) = self.embedder.as_ref() else {
+            return Ok(vec![]);
+        };
         let query_embedding = embedder.embed(query).await?;
 
         let mut similarities: Vec<(String, f32)> = self
@@ -177,7 +188,7 @@ impl SemanticMatcher {
             .collect();
 
         // Sort by similarity descending
-        similarities.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+        similarities.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         similarities.truncate(top_k);
 
         Ok(similarities)
@@ -193,7 +204,7 @@ impl SemanticMatcher {
     fn keyword_match(&self, query: &str) -> Vec<(String, f32, Vec<String>)> {
         let query_lower = query.to_lowercase();
         let query_words: Vec<&str> = query_lower.split_whitespace().collect();
-        
+
         let mut matches: Vec<(String, f32, Vec<String>)> = Vec::new();
 
         for (skill_name, metadata) in &self.skill_metadata {
@@ -209,7 +220,7 @@ impl SemanticMatcher {
             // Check keyword matches
             for keyword in &metadata.keywords {
                 let keyword_lower = keyword.to_lowercase();
-                
+
                 // Exact match
                 if query_lower.contains(&keyword_lower) {
                     total_score += 0.4;
@@ -233,13 +244,15 @@ impl SemanticMatcher {
                 let similarity = strsim::jaro_winkler(&query_lower, &example_lower) as f32;
                 if similarity > 0.7 {
                     total_score += similarity * 0.3;
-                    matched_keywords.push(format!("example: {}", &example[..example.len().min(30)]));
+                    matched_keywords
+                        .push(format!("example: {}", &example[..example.len().min(30)]));
                 }
             }
 
             // Name match bonus
-            if metadata.name.to_lowercase().contains(&query_lower) ||
-               query_lower.contains(&metadata.name.to_lowercase()) {
+            if metadata.name.to_lowercase().contains(&query_lower)
+                || query_lower.contains(&metadata.name.to_lowercase())
+            {
                 total_score += 0.5;
                 matched_keywords.push("name_match".to_string());
             }
@@ -257,16 +270,16 @@ impl SemanticMatcher {
     /// Get skill suggestions for partial queries (autocomplete)
     pub fn suggest_skills(&self, partial_query: &str, limit: usize) -> Vec<String> {
         let partial_lower = partial_query.to_lowercase();
-        
+
         let mut suggestions: Vec<(String, f32)> = self
             .skill_metadata
             .iter()
             .map(|(name, metadata)| {
                 let name_lower = name.to_lowercase();
                 let desc_lower = metadata.description.to_lowercase();
-                
+
                 let mut score = 0.0;
-                
+
                 // Name starts with query
                 if name_lower.starts_with(&partial_lower) {
                     score += 1.0;
@@ -280,18 +293,22 @@ impl SemanticMatcher {
                     score += 0.5;
                 }
                 // Keyword contains query
-                else if metadata.keywords.iter().any(|k| k.to_lowercase().contains(&partial_lower)) {
+                else if metadata
+                    .keywords
+                    .iter()
+                    .any(|k| k.to_lowercase().contains(&partial_lower))
+                {
                     score += 0.6;
                 }
-                
+
                 (name.clone(), score)
             })
             .filter(|(_, score)| *score > 0.0)
             .collect();
 
-        suggestions.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+        suggestions.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         suggestions.truncate(limit);
-        
+
         suggestions.into_iter().map(|(name, _)| name).collect()
     }
 
@@ -303,7 +320,10 @@ impl SemanticMatcher {
         let target_rate = 0.8;
         let adjustment = (success_rate - target_rate) * 0.1;
         self.threshold = (self.threshold - adjustment).clamp(0.3, 0.9);
-        info!("Adapted semantic matcher threshold to {:.2}", self.threshold);
+        info!(
+            "Adapted semantic matcher threshold to {:.2}",
+            self.threshold
+        );
     }
 
     /// Get current threshold
@@ -355,15 +375,21 @@ mod tests {
     #[test]
     fn test_keyword_match() {
         let mut matcher = SemanticMatcher::new();
-        
+
         // Register a skill synchronously for testing
         let metadata = SkillMetadata {
             name: "weather".to_string(),
             description: "Get weather information".to_string(),
-            keywords: vec!["weather".to_string(), "temperature".to_string(), "forecast".to_string()],
+            keywords: vec![
+                "weather".to_string(),
+                "temperature".to_string(),
+                "forecast".to_string(),
+            ],
             examples: vec!["What's the weather today?".to_string()],
         };
-        matcher.skill_metadata.insert("weather".to_string(), metadata);
+        matcher
+            .skill_metadata
+            .insert("weather".to_string(), metadata);
 
         let matches = matcher.keyword_match("weather today");
         assert!(!matches.is_empty());

@@ -1,4 +1,10 @@
-//! RL-based Skill Router
+//! RL-based Skill Router — DEPRECATED
+//!
+//! ⚠️ This module is deprecated since v0.6.0 and will be removed in a future version.
+//! Use `UnifiedRouter` bandit-based routing or `FusionRouter` instead.
+//!
+//! This module is not declared in any `mod.rs` and is effectively dead code.
+//! It is kept only for reference during migration.
 //!
 //! Implements a simplified PPO (Proximal Policy Optimization) agent for
 //! learning optimal skill routing strategies based on query context.

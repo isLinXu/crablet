@@ -558,12 +558,21 @@ impl SwarmOrchestrator {
 
         // Notify agent if task was assigned
         if was_assigned {
-            let task = self.tasks.read().await.get(task_id).unwrap().clone();
-            if let Some(agent_id) = &task.assigned_to {
-                if let Some(agent) = self.agents.read().await.get(agent_id) {
-                    let _ = agent.sender.send(SwarmMessage::CancelTask {
-                        task_id: task_id.to_string(),
-                    }).await;
+            let task = self.tasks.read().await.get(task_id).cloned();
+            if let Some(task) = task {
+                if let Some(agent_id) = &task.assigned_to {
+                    let sender = {
+                        let agents = self.agents.read().await;
+                        agents.get(agent_id).map(|agent| agent.sender.clone())
+                    };
+
+                    if let Some(sender) = sender {
+                        let _ = sender
+                            .send(SwarmMessage::CancelTask {
+                                task_id: task_id.to_string(),
+                            })
+                            .await;
+                    }
                 }
             }
         }
@@ -579,44 +588,80 @@ impl SwarmOrchestrator {
 
     /// Get swarm statistics
     pub async fn stats(&self) -> SwarmStats {
-        let agents = self.agents.read().await;
-        let tasks = self.tasks.read().await;
+        let (
+            total_agents,
+            online_count,
+            busy_count,
+            idle_count,
+            coordinator_count,
+            worker_count,
+            observer_count,
+        ) = {
+            let agents = self.agents.read().await;
 
-        let mut online_count = 0;
-        let mut busy_count = 0;
-        let mut idle_count = 0;
-        let mut coordinator_count = 0;
-        let mut worker_count = 0;
-        let mut observer_count = 0;
+            let mut online_count = 0;
+            let mut busy_count = 0;
+            let mut idle_count = 0;
+            let mut coordinator_count = 0;
+            let mut worker_count = 0;
+            let mut observer_count = 0;
 
-        for info in agents.values() {
-            match info.status {
-                AgentStatus::Online => online_count += 1,
-                AgentStatus::Busy => busy_count += 1,
-                AgentStatus::Idle => idle_count += 1,
-                AgentStatus::Offline => {}
+            for info in agents.values() {
+                match info.status {
+                    AgentStatus::Online => online_count += 1,
+                    AgentStatus::Busy => busy_count += 1,
+                    AgentStatus::Idle => idle_count += 1,
+                    AgentStatus::Offline => {}
+                }
+                match info.role {
+                    AgentRole::Coordinator => coordinator_count += 1,
+                    AgentRole::Worker => worker_count += 1,
+                    AgentRole::Observer => observer_count += 1,
+                }
             }
-            match info.role {
-                AgentRole::Coordinator => coordinator_count += 1,
-                AgentRole::Worker => worker_count += 1,
-                AgentRole::Observer => observer_count += 1,
-            }
-        }
 
-        let pending = tasks.values().filter(|t| t.status == TaskStatus::Pending).count();
-        let in_progress = tasks.values().filter(|t| t.status == TaskStatus::InProgress).count();
-        let completed = tasks.values().filter(|t| t.status == TaskStatus::Completed).count();
-        let failed = tasks.values().filter(|t| t.status == TaskStatus::Failed).count();
+            (
+                agents.len(),
+                online_count,
+                busy_count,
+                idle_count,
+                coordinator_count,
+                worker_count,
+                observer_count,
+            )
+        };
+
+        let (total_tasks, pending, in_progress, completed, failed) = {
+            let tasks = self.tasks.read().await;
+            let pending = tasks
+                .values()
+                .filter(|t| t.status == TaskStatus::Pending)
+                .count();
+            let in_progress = tasks
+                .values()
+                .filter(|t| t.status == TaskStatus::InProgress)
+                .count();
+            let completed = tasks
+                .values()
+                .filter(|t| t.status == TaskStatus::Completed)
+                .count();
+            let failed = tasks
+                .values()
+                .filter(|t| t.status == TaskStatus::Failed)
+                .count();
+
+            (tasks.len(), pending, in_progress, completed, failed)
+        };
 
         SwarmStats {
-            total_agents: agents.len(),
+            total_agents,
             online_agents: online_count,
             busy_agents: busy_count,
             idle_agents: idle_count,
             coordinator_count,
             worker_count,
             observer_count,
-            total_tasks: tasks.len(),
+            total_tasks,
             pending_tasks: pending,
             in_progress_tasks: in_progress,
             completed_tasks: completed,

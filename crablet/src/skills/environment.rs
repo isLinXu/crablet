@@ -2,12 +2,12 @@
 //!
 //! 提供依赖隔离和虚拟环境管理，确保技能依赖不污染系统环境。
 
-use anyhow::{Result, Context, anyhow};
-use tracing::{info, warn};
-use std::path::{Path, PathBuf};
-use tokio::process::Command;
-use tokio::fs;
+use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
+use std::path::{Path, PathBuf};
+use tokio::fs;
+use tokio::process::Command;
+use tracing::{info, warn};
 
 /// 虚拟环境类型
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -23,9 +23,7 @@ pub enum EnvironmentType {
         npm_path: PathBuf,
     },
     /// 容器环境
-    Container {
-        image: String,
-    },
+    Container { image: String },
 }
 
 /// 技能执行环境
@@ -39,19 +37,15 @@ impl SkillEnvironment {
     /// 为技能创建隔离环境
     pub async fn create(skill_dir: &Path, runtime: Option<&str>) -> Result<Self> {
         let env_dir = skill_dir.join(".env");
-        
+
         let env_type = match runtime {
             Some("python3") | Some("python") => {
                 Self::create_python_env(skill_dir, &env_dir).await?
             }
-            Some("node") | Some("nodejs") => {
-                Self::create_node_env(skill_dir, &env_dir).await?
-            }
-            Some("docker") => {
-                EnvironmentType::Container {
-                    image: "alpine:latest".to_string(),
-                }
-            }
+            Some("node") | Some("nodejs") => Self::create_node_env(skill_dir, &env_dir).await?,
+            Some("docker") => EnvironmentType::Container {
+                image: "alpine:latest".to_string(),
+            },
             _ => {
                 // 默认尝试自动检测
                 if skill_dir.join("requirements.txt").exists() {
@@ -76,19 +70,22 @@ impl SkillEnvironment {
         info!("Creating Python virtual environment at {:?}", env_dir);
 
         // 检查 Python 是否可用
-        let python_check = Command::new("which")
-            .arg("python3")
-            .output()
-            .await;
+        let python_check = Command::new("which").arg("python3").output().await;
 
-        if python_check.is_err() || !python_check.unwrap().status.success() {
+        if python_check.is_err()
+            || !python_check
+                .as_ref()
+                .map(|o| o.status.success())
+                .unwrap_or(false)
+        {
             return Err(anyhow!("Python3 is not installed or not in PATH"));
         }
 
         // 创建虚拟环境
         if !env_dir.exists() {
+            let env_dir_str = env_dir.to_str().unwrap_or("");
             let output = Command::new("python3")
-                .args(&["-m", "venv", env_dir.to_str().unwrap()])
+                .args(["-m", "venv", env_dir_str])
                 .current_dir(skill_dir)
                 .output()
                 .await
@@ -118,7 +115,7 @@ impl SkillEnvironment {
         if requirements_file.exists() {
             info!("Installing Python dependencies from requirements.txt");
             let output = Command::new(&pip_path)
-                .args(&["install", "-r", "requirements.txt"])
+                .args(["install", "-r", "requirements.txt"])
                 .current_dir(skill_dir)
                 .output()
                 .await
@@ -130,7 +127,10 @@ impl SkillEnvironment {
             }
         }
 
-        Ok(EnvironmentType::Python { python_path, pip_path })
+        Ok(EnvironmentType::Python {
+            python_path,
+            pip_path,
+        })
     }
 
     /// 创建 Node.js 环境
@@ -138,12 +138,14 @@ impl SkillEnvironment {
         info!("Setting up Node.js environment at {:?}", env_dir);
 
         // 检查 Node 是否可用
-        let node_check = Command::new("which")
-            .arg("node")
-            .output()
-            .await;
+        let node_check = Command::new("which").arg("node").output().await;
 
-        if node_check.is_err() || !node_check.unwrap().status.success() {
+        if node_check.is_err()
+            || !node_check
+                .as_ref()
+                .map(|o| o.status.success())
+                .unwrap_or(false)
+        {
             return Err(anyhow!("Node.js is not installed or not in PATH"));
         }
 
@@ -168,7 +170,10 @@ impl SkillEnvironment {
             }
         }
 
-        Ok(EnvironmentType::Node { node_path, npm_path })
+        Ok(EnvironmentType::Node {
+            node_path,
+            npm_path,
+        })
     }
 
     /// 安装额外依赖
@@ -178,7 +183,7 @@ impl SkillEnvironment {
                 for dep in &dependencies.pip {
                     info!("Installing Python dependency: {}", dep);
                     let output = Command::new(pip_path)
-                        .args(&["install", dep])
+                        .args(["install", dep])
                         .output()
                         .await?;
 
@@ -192,7 +197,7 @@ impl SkillEnvironment {
                 for dep in &dependencies.npm {
                     info!("Installing Node.js dependency: {}", dep);
                     let output = Command::new(npm_path)
-                        .args(&["install", dep])
+                        .args(["install", dep])
                         .current_dir(&self.skill_dir)
                         .output()
                         .await?;
@@ -217,7 +222,8 @@ impl SkillEnvironment {
 
         match &self.env_type {
             EnvironmentType::Python { python_path, .. } => {
-                self.execute_python(python_path, entrypoint, &args_str).await
+                self.execute_python(python_path, entrypoint, &args_str)
+                    .await
             }
             EnvironmentType::Node { node_path, .. } => {
                 self.execute_node(node_path, entrypoint, &args_str).await
@@ -236,7 +242,7 @@ impl SkillEnvironment {
         args: &str,
     ) -> Result<String> {
         let script_path = self.skill_dir.join(entrypoint);
-        
+
         let output = Command::new(python_path)
             .arg(&script_path)
             .arg(args)
@@ -254,14 +260,9 @@ impl SkillEnvironment {
     }
 
     /// 执行 Node.js 脚本
-    async fn execute_node(
-        &self,
-        node_path: &Path,
-        entrypoint: &str,
-        args: &str,
-    ) -> Result<String> {
+    async fn execute_node(&self, node_path: &Path, entrypoint: &str, args: &str) -> Result<String> {
         let script_path = self.skill_dir.join(entrypoint);
-        
+
         let output = Command::new(node_path)
             .arg(&script_path)
             .arg(args)
@@ -279,14 +280,9 @@ impl SkillEnvironment {
     }
 
     /// 在容器中执行
-    async fn execute_container(
-        &self,
-        image: &str,
-        entrypoint: &str,
-        args: &str,
-    ) -> Result<String> {
+    async fn execute_container(&self, image: &str, entrypoint: &str, args: &str) -> Result<String> {
         let output = Command::new("docker")
-            .args(&[
+            .args([
                 "run",
                 "--rm",
                 "-v",
@@ -338,11 +334,8 @@ impl VirtualEnv {
     pub async fn check_system_dependencies(deps: &[String]) -> Result<()> {
         for dep in deps {
             info!("Checking system dependency: {}", dep);
-            
-            let check = Command::new("which")
-                .arg(dep)
-                .output()
-                .await;
+
+            let check = Command::new("which").arg(dep).output().await;
 
             match check {
                 Ok(output) if output.status.success() => {
@@ -362,10 +355,7 @@ impl VirtualEnv {
 
     /// 获取 Python 版本
     pub async fn get_python_version() -> Result<String> {
-        let output = Command::new("python3")
-            .arg("--version")
-            .output()
-            .await?;
+        let output = Command::new("python3").arg("--version").output().await?;
 
         if output.status.success() {
             Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
@@ -376,10 +366,7 @@ impl VirtualEnv {
 
     /// 获取 Node.js 版本
     pub async fn get_node_version() -> Result<String> {
-        let output = Command::new("node")
-            .arg("--version")
-            .output()
-            .await?;
+        let output = Command::new("node").arg("--version").output().await?;
 
         if output.status.success() {
             Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())

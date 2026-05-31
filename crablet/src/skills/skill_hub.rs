@@ -821,7 +821,9 @@ impl PathExt for PathBuf {
         if self.starts_with("~/") {
             let home = std::env::var("HOME")
                 .context("Failed to get HOME environment variable")?;
-            let rest = self.strip_prefix("~/").unwrap();
+            let rest = self
+                .strip_prefix("~/")
+                .context("Failed to strip home-relative prefix")?;
             Ok(PathBuf::from(home).join(rest))
         } else {
             Ok(self)

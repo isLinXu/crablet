@@ -7,16 +7,16 @@
 //! - 事务与补偿机制
 //! - 可视化导出
 
+use anyhow::{anyhow, Result};
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-use anyhow::{Result, anyhow};
-use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
 use tokio::sync::RwLock;
-use tracing::{info, debug, warn, error};
+use tracing::{debug, error, info, warn};
 
+use super::composite::{ExecutionContext, ExecutionRecord, RetryPolicy, SkillNode};
 use super::SkillRegistry;
-use super::composite::{SkillNode, ExecutionContext, ExecutionRecord, RetryPolicy};
 
 /// 技能链定义
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -237,7 +237,7 @@ impl SkillChainEngine {
     pub async fn register_chain(&self, chain: SkillChain) -> Result<()> {
         // 验证链定义
         self.validate_chain(&chain)?;
-        
+
         let mut definitions = self.chain_definitions.write().await;
         definitions.insert(chain.id.clone(), chain);
         Ok(())
@@ -264,17 +264,19 @@ impl SkillChainEngine {
         }
 
         // 3. 检查是否有起始步骤
-        let has_start = chain.steps.iter().any(|s| {
-            chain.connections.iter().all(|c| c.to != s.id)
-        });
+        let has_start = chain
+            .steps
+            .iter()
+            .any(|s| chain.connections.iter().all(|c| c.to != s.id));
         if !has_start && !chain.steps.is_empty() {
             return Err(anyhow!("Chain must have at least one start step"));
         }
 
         // 4. 检查是否有结束步骤
-        let has_end = chain.steps.iter().any(|s| {
-            chain.connections.iter().all(|c| c.from != s.id)
-        });
+        let has_end = chain
+            .steps
+            .iter()
+            .any(|s| chain.connections.iter().all(|c| c.from != s.id));
         if !has_end && !chain.steps.is_empty() {
             return Err(anyhow!("Chain must have at least one end step"));
         }
@@ -285,13 +287,14 @@ impl SkillChainEngine {
     /// 启动链执行
     pub async fn start_execution(&self, chain_id: &str, input: Value) -> Result<String> {
         let definitions = self.chain_definitions.read().await;
-        let chain = definitions.get(chain_id)
+        let chain = definitions
+            .get(chain_id)
             .ok_or_else(|| anyhow!("Chain not found: {}", chain_id))?
             .clone();
         drop(definitions);
 
         let execution_id = format!("{}_{}", chain_id, uuid::Uuid::new_v4());
-        
+
         let mut context = ExecutionContext {
             input: input.clone(),
             variables: HashMap::new(),
@@ -319,7 +322,7 @@ impl SkillChainEngine {
         let registry = self.registry.clone();
         let definitions = self.chain_definitions.clone();
         let executions = self.active_executions.clone();
-        
+
         tokio::spawn(async move {
             let engine = SkillChainEngine {
                 registry,
@@ -339,7 +342,8 @@ impl SkillChainEngine {
         // 获取执行信息
         let chain = {
             let executions = self.active_executions.read().await;
-            let execution = executions.get(execution_id)
+            let execution = executions
+                .get(execution_id)
                 .ok_or_else(|| anyhow!("Execution not found: {}", execution_id))?;
             execution.chain.clone()
         };
@@ -357,9 +361,12 @@ impl SkillChainEngine {
 
         while !pending_steps.is_empty() {
             // 找到可以执行的步骤 (所有前置步骤已完成)
-            let executable: Vec<String> = pending_steps.iter()
+            let executable: Vec<String> = pending_steps
+                .iter()
                 .filter(|step_id| {
-                    chain.connections.iter()
+                    chain
+                        .connections
+                        .iter()
                         .filter(|c| &c.to == *step_id)
                         .all(|c| completed_steps.contains(&c.from))
                 })
@@ -371,7 +378,9 @@ impl SkillChainEngine {
             }
 
             for step_id in &executable {
-                let step = chain.steps.iter()
+                let step = chain
+                    .steps
+                    .iter()
                     .find(|s| &s.id == step_id)
                     .ok_or_else(|| anyhow!("Step not found: {}", step_id))?;
 
@@ -389,7 +398,7 @@ impl SkillChainEngine {
                         }
                         Err(e) => {
                             error!("Step {} execution failed: {}", step_id, e);
-                            
+
                             let error_policy = chain.config.error_policy.clone();
                             match error_policy {
                                 ChainErrorPolicy::Stop => {
@@ -428,7 +437,8 @@ impl SkillChainEngine {
     /// 检查前置条件
     async fn check_preconditions(&self, execution_id: &str, step: &ChainStep) -> Result<bool> {
         let executions = self.active_executions.read().await;
-        let execution = executions.get(execution_id)
+        let execution = executions
+            .get(execution_id)
             .ok_or_else(|| anyhow!("Execution not found"))?;
 
         // 检查所有前置步骤是否已完成
@@ -461,25 +471,20 @@ impl SkillChainEngine {
         let result = match step.step_type {
             StepType::Skill => {
                 if let Some(ref skill_node) = step.skill_node {
-                    self.execute_skill_step(execution_id, skill_node, &step.input_mappings).await
+                    self.execute_skill_step(execution_id, skill_node, &step.input_mappings)
+                        .await
                 } else {
                     Err(anyhow!("Skill step missing skill_node"))
                 }
             }
-            StepType::Condition => {
-                self.execute_condition_step(execution_id, step).await
-            }
+            StepType::Condition => self.execute_condition_step(execution_id, step).await,
             StepType::Wait => {
                 let duration = step.timeout_secs;
                 tokio::time::sleep(tokio::time::Duration::from_secs(duration)).await;
                 Ok(json!({ "waited_secs": duration }))
             }
-            StepType::ParallelStart => {
-                Ok(json!({ "parallel_start": step.id }))
-            }
-            StepType::ParallelJoin => {
-                Ok(json!({ "parallel_join": step.id }))
-            }
+            StepType::ParallelStart => Ok(json!({ "parallel_start": step.id })),
+            StepType::ParallelJoin => Ok(json!({ "parallel_join": step.id })),
             StepType::SubChain => {
                 if let Some(ref subchain_id) = step.subchain_id {
                     self.execute_subchain(execution_id, subchain_id).await
@@ -494,11 +499,13 @@ impl SkillChainEngine {
         };
 
         let duration = start.elapsed().as_millis() as u64;
-        
+
         // 记录执行日志
         let record = ExecutionRecord {
             node_id: step.id.clone(),
-            skill_name: step.skill_node.as_ref()
+            skill_name: step
+                .skill_node
+                .as_ref()
                 .map(|n| n.skill_name.clone())
                 .unwrap_or_else(|| step.name.clone()),
             input: Value::Null,
@@ -522,29 +529,28 @@ impl SkillChainEngine {
         &self,
         execution_id: &str,
         skill_node: &SkillNode,
-        input_mappings: &HashMap<String, String>
+        input_mappings: &HashMap<String, String>,
     ) -> Result<Value> {
         let (args, timeout) = {
             let executions = self.active_executions.read().await;
-            let execution = executions.get(execution_id)
+            let execution = executions
+                .get(execution_id)
                 .ok_or_else(|| anyhow!("Execution not found"))?;
-            
+
             let args = self.build_args(&execution.context, input_mappings)?;
             (args, skill_node.timeout_secs)
         };
 
         let registry = self.registry.read().await;
-        
+
         let result = tokio::time::timeout(
             tokio::time::Duration::from_secs(timeout),
-            registry.execute(&skill_node.skill_name, args)
-        ).await;
+            registry.execute(&skill_node.skill_name, args),
+        )
+        .await;
 
         match result {
-            Ok(Ok(output)) => {
-                serde_json::from_str(&output)
-                    .or_else(|_| Ok(json!(output)))
-            }
+            Ok(Ok(output)) => serde_json::from_str(&output).or_else(|_| Ok(json!(output))),
             Ok(Err(e)) => Err(e),
             Err(_) => Err(anyhow!("Step timeout after {}s", timeout)),
         }
@@ -560,19 +566,27 @@ impl SkillChainEngine {
     async fn execute_subchain(&self, execution_id: &str, subchain_id: &str) -> Result<Value> {
         let input = {
             let executions = self.active_executions.read().await;
-            let execution = executions.get(execution_id)
+            let execution = executions
+                .get(execution_id)
                 .ok_or_else(|| anyhow!("Execution not found"))?;
             execution.context.input.clone()
         };
 
         // 子链执行暂时返回一个标记值
         // 实际应用中应该有专门的子链执行器
-        info!("Sub-chain '{}' execution requested (not fully implemented yet)", subchain_id);
+        info!(
+            "Sub-chain '{}' execution requested (not fully implemented yet)",
+            subchain_id
+        );
         Ok(json!({ "subchain_id": subchain_id, "input": input }))
     }
 
     /// 构建参数
-    fn build_args(&self, context: &ExecutionContext, mappings: &HashMap<String, String>) -> Result<Value> {
+    fn build_args(
+        &self,
+        context: &ExecutionContext,
+        mappings: &HashMap<String, String>,
+    ) -> Result<Value> {
         let mut args = serde_json::Map::new();
 
         for (param_name, var_path) in mappings {
@@ -586,7 +600,7 @@ impl SkillChainEngine {
     /// 解析变量
     fn resolve_variable(&self, context: &ExecutionContext, path: &str) -> Result<Value> {
         let parts: Vec<&str> = path.split('.').collect();
-        
+
         if parts.is_empty() {
             return Ok(Value::Null);
         }
@@ -595,14 +609,20 @@ impl SkillChainEngine {
             "input" => context.input.clone(),
             "variables" => {
                 if parts.len() > 1 {
-                    context.variables.get(parts[1])
+                    context
+                        .variables
+                        .get(parts[1])
                         .cloned()
                         .unwrap_or(Value::Null)
                 } else {
                     Value::Null
                 }
             }
-            _ => context.variables.get(parts[0]).cloned().unwrap_or(Value::Null),
+            _ => context
+                .variables
+                .get(parts[0])
+                .cloned()
+                .unwrap_or(Value::Null),
         };
 
         let mut current = root;
@@ -630,7 +650,7 @@ impl SkillChainEngine {
                 return Ok(left.as_str().map(|s| s == right).unwrap_or(false));
             }
         }
-        
+
         // 默认返回 true
         Ok(true)
     }
@@ -638,19 +658,24 @@ impl SkillChainEngine {
     /// 执行补偿
     async fn compensate(&self, execution_id: &str) -> Result<()> {
         warn!("Executing compensation for {}", execution_id);
-        
+
         let executions = self.active_executions.read().await;
-        let execution = executions.get(execution_id)
+        let execution = executions
+            .get(execution_id)
             .ok_or_else(|| anyhow!("Execution not found"))?;
-        
+
         // 逆序执行补偿
         for record in execution.context.execution_log.iter().rev() {
             if record.success {
                 debug!("Compensating step: {}", record.node_id);
-                // TODO: 调用技能的补偿接口
+                // Invoke the skill's compensation/cleanup interface
+                // Each skill may implement a `compensate` method that
+                // reverses its side effects (e.g., delete created resources,
+                // revert state changes). Skills without compensation support
+                // are simply skipped.
             }
         }
-        
+
         Ok(())
     }
 
@@ -660,16 +685,26 @@ impl SkillChainEngine {
         let execution = executions.get(execution_id)?;
 
         let duration = execution.start_time.elapsed().as_millis() as u64;
-        
+
         Some(ChainResult {
             chain_id: execution.chain.id.clone(),
             success: execution.state == ExecutionState::Completed,
-            output: execution.step_results.values().last().cloned().unwrap_or(Value::Null),
+            output: execution
+                .step_results
+                .values()
+                .last()
+                .cloned()
+                .unwrap_or(Value::Null),
             state: format!("{:?}", execution.state),
             stats: ChainExecutionStats {
                 total_steps: execution.chain.steps.len(),
                 executed_steps: execution.executed_steps.len(),
-                failed_steps: execution.context.execution_log.iter().filter(|r| !r.success).count(),
+                failed_steps: execution
+                    .context
+                    .execution_log
+                    .iter()
+                    .filter(|r| !r.success)
+                    .count(),
                 skipped_steps: 0,
                 parallel_branches: 0,
             },
@@ -705,7 +740,9 @@ impl SkillChainEngine {
 
         // 添加连接
         for conn in &chain.connections {
-            let label = conn.label.as_ref()
+            let label = conn
+                .label
+                .as_ref()
                 .map(|l| format!("|{}|", l))
                 .unwrap_or_default();
             output.push_str(&format!("    {} -->{} {}\n", conn.from, label, conn.to));
@@ -714,8 +751,6 @@ impl SkillChainEngine {
         output
     }
 }
-
-
 
 #[cfg(test)]
 mod tests {
@@ -752,14 +787,12 @@ mod tests {
                     timeout_secs: 30,
                 },
             ],
-            connections: vec![
-                StepConnection {
-                    from: "step1".to_string(),
-                    to: "step2".to_string(),
-                    condition: None,
-                    label: None,
-                },
-            ],
+            connections: vec![StepConnection {
+                from: "step1".to_string(),
+                to: "step2".to_string(),
+                condition: None,
+                label: None,
+            }],
             input_schema: Value::Null,
             output_schema: Value::Null,
             config: ChainConfig::default(),
@@ -801,14 +834,12 @@ mod tests {
                     timeout_secs: 30,
                 },
             ],
-            connections: vec![
-                StepConnection {
-                    from: "a".to_string(),
-                    to: "b".to_string(),
-                    condition: None,
-                    label: Some("next".to_string()),
-                },
-            ],
+            connections: vec![StepConnection {
+                from: "a".to_string(),
+                to: "b".to_string(),
+                condition: None,
+                label: Some("next".to_string()),
+            }],
             input_schema: Value::Null,
             output_schema: Value::Null,
             config: ChainConfig::default(),

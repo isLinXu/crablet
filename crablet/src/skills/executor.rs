@@ -1,16 +1,16 @@
-use anyhow::{Result, Context, anyhow};
-use tracing::{info, debug};
-use tokio::time::Duration;
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
-use chrono::{DateTime, Utc};
-use std::sync::Arc;
-use super::{SkillType, SkillRegistry, OpenClawEngine};
+use super::{OpenClawEngine, SkillRegistry, SkillType};
+use crate::cognitive::llm::LlmClient;
 use crate::sandbox::docker::DockerExecutor;
 use crate::sandbox::local::LocalSandbox;
-use crate::sandbox::{Sandbox, Language};
-use crate::cognitive::llm::LlmClient;
+use crate::sandbox::{Language, Sandbox};
 use crate::tools::manager::ToolManager;
+use anyhow::{anyhow, Context, Result};
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use std::sync::Arc;
+use tokio::time::Duration;
+use tracing::{debug, info};
 
 /// 安全等级定义
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -56,14 +56,21 @@ impl SkillExecutor {
     }
 
     /// 使用 LLM 客户端初始化（用于 OpenClaw 执行）
-    pub fn with_llm_client(mut self, llm_client: Arc<dyn LlmClient>, tool_manager: Arc<ToolManager>) -> Self {
+    pub fn with_llm_client(
+        mut self,
+        llm_client: Arc<dyn LlmClient>,
+        tool_manager: Arc<ToolManager>,
+    ) -> Self {
         self.openclaw_engine = Some(Arc::new(OpenClawEngine::new(llm_client, tool_manager)));
         self
     }
 
     pub async fn execute(registry: &SkillRegistry, name: &str, args: Value) -> Result<String> {
-        let skill_type = registry.skills.get(name).context(format!("Skill not found: {}", name))?;
-        
+        let skill_type = registry
+            .skills
+            .get(name)
+            .context(format!("Skill not found: {}", name))?;
+
         let manifest = match skill_type {
             SkillType::Local(s) => &s.manifest,
             SkillType::Mcp(m, _, _) => m,
@@ -73,24 +80,25 @@ impl SkillExecutor {
 
         // 1. 确定安全等级和沙箱
         let safety_level = Self::determine_safety_level(skill_type);
-        
+
         // 2. 准备执行上下文 (超时等)
         let timeout_duration = Self::get_timeout(manifest);
-        
+
         let start_time = Utc::now();
-        info!("Executing skill {} (Safety: {:?}, Timeout: {:?})", name, safety_level, timeout_duration);
+        info!(
+            "Executing skill {} (Safety: {:?}, Timeout: {:?})",
+            name, safety_level, timeout_duration
+        );
 
         // 3. 执行
         let result = match skill_type {
             SkillType::Local(skill) => {
                 Self::execute_local(skill, safety_level, args.clone(), timeout_duration).await
-            },
+            }
             SkillType::Mcp(_, client, tool_name) => {
                 client.call_tool(tool_name.as_str(), args.clone()).await
-            },
-            SkillType::Plugin(_, plugin) => {
-                plugin.execute(name, args.clone()).await
-            },
+            }
+            SkillType::Plugin(_, plugin) => plugin.execute(name, args.clone()).await,
             SkillType::OpenClaw(_skill, instruction) => {
                 Self::execute_openclaw(name, instruction, args.clone()).await
             }
@@ -98,8 +106,10 @@ impl SkillExecutor {
 
         // 4. 审计日志 (目前仅打印，后续可扩展为持久化存储)
         let end_time = Utc::now();
-        let duration = end_time.signed_duration_since(start_time).num_milliseconds() as u64;
-        
+        let duration = end_time
+            .signed_duration_since(start_time)
+            .num_milliseconds() as u64;
+
         let audit = ExecutionAudit {
             skill_name: name.to_string(),
             skill_type: match skill_type {
@@ -116,7 +126,7 @@ impl SkillExecutor {
             exit_code: if result.is_ok() { 0 } else { -1 },
             duration_ms: duration,
         };
-        
+
         debug!("Execution Audit: {:?}", audit);
 
         result
@@ -127,13 +137,15 @@ impl SkillExecutor {
             SkillType::Local(s) => {
                 // Check if it's a known trusted builtin skill
                 let trusted_builtins = ["help", "status", "version"];
-                if trusted_builtins.contains(&s.manifest.name.as_str()) && s.manifest.permissions.is_empty() {
+                if trusted_builtins.contains(&s.manifest.name.as_str())
+                    && s.manifest.permissions.is_empty()
+                {
                     SafetyLevel::Trust
                 } else {
                     // All other local skills must be isolated
                     SafetyLevel::Isolated
                 }
-            },
+            }
             SkillType::Mcp(_, _, _) => SafetyLevel::Trust, // MCP has its own transport-level isolation
             SkillType::Plugin(_, _) => SafetyLevel::Trust, // Compiled-in plugins are trusted
             SkillType::OpenClaw(_, _) => SafetyLevel::Trust, // Prompt-only, no code execution risk
@@ -142,26 +154,31 @@ impl SkillExecutor {
 
     fn get_timeout(manifest: &super::SkillManifest) -> Duration {
         if let Some(res) = &manifest.resources {
-             if let Some(t) = &res.timeout {
-                 let val: u64 = t.chars().take_while(|c| c.is_numeric()).collect::<String>().parse().unwrap_or(30);
-                 if t.ends_with('m') {
-                     Duration::from_secs(val * 60)
-                 } else {
-                     Duration::from_secs(val)
-                 }
-             } else {
-                 Duration::from_secs(30)
-             }
+            if let Some(t) = &res.timeout {
+                let val: u64 = t
+                    .chars()
+                    .take_while(|c| c.is_numeric())
+                    .collect::<String>()
+                    .parse()
+                    .unwrap_or(30);
+                if t.ends_with('m') {
+                    Duration::from_secs(val * 60)
+                } else {
+                    Duration::from_secs(val)
+                }
+            } else {
+                Duration::from_secs(30)
+            }
         } else {
-             Duration::from_secs(30)
+            Duration::from_secs(30)
         }
     }
 
     async fn execute_local(
-        skill: &super::Skill, 
-        safety: SafetyLevel, 
-        args: Value, 
-        timeout: Duration
+        skill: &super::Skill,
+        safety: SafetyLevel,
+        args: Value,
+        timeout: Duration,
     ) -> Result<String> {
         match safety {
             SafetyLevel::Trust => {
@@ -173,24 +190,28 @@ impl SkillExecutor {
                     Some("lua") => Language::Lua,
                     _ => Language::Shell,
                 };
-                
+
                 // 构建执行代码 (这里简单拼接 entrypoint 和参数)
                 let args_str = serde_json::to_string(&args)?;
                 let code = format!("{} '{}'", skill.manifest.entrypoint, args_str);
-                
+
                 let res = sandbox.execute(lang, &code).await?;
                 if res.exit_code == 0 {
                     Ok(res.stdout)
                 } else {
-                    Err(anyhow!("Execution failed (exit {}): {}", res.exit_code, res.stderr))
+                    Err(anyhow!(
+                        "Execution failed (exit {}): {}",
+                        res.exit_code,
+                        res.stderr
+                    ))
                 }
-            },
+            }
             SafetyLevel::Isolated => {
                 // 使用 Docker 执行
                 let executor = DockerExecutor::strict()
                     .with_work_dir(skill.path.to_string_lossy().to_string())
                     .with_timeout(timeout.as_secs());
-                
+
                 let parts: Vec<&str> = skill.manifest.entrypoint.split_whitespace().collect();
                 if parts.is_empty() {
                     return Err(anyhow!("Invalid entrypoint"));
@@ -204,11 +225,22 @@ impl SkillExecutor {
                 if result.success {
                     Ok(result.stdout)
                 } else {
-                    Err(anyhow!("Docker execution failed ({}): {}", result.exit_code, result.stderr))
+                    Err(anyhow!(
+                        "Docker execution failed ({}): {}",
+                        result.exit_code,
+                        result.stderr
+                    ))
                 }
-            },
+            }
             SafetyLevel::StronglyIsolated => {
-                // TODO: 实现 Wasm 执行器
+                // Wasm execution via wasmtime sandbox.
+                // Real implementation would:
+                // 1. Compile the skill's Wasm module with wasmtime
+                // 2. Set up WASI and fuel limits
+                // 3. Execute the skill's entrypoint function
+                // 4. Capture stdout/stderr from the sandbox
+                // Currently falls back to an error; Wasm execution
+                // will be added when the sandbox subsystem is fully integrated.
                 Err(anyhow!("Wasm isolation not yet implemented"))
             }
         }
@@ -217,7 +249,7 @@ impl SkillExecutor {
     async fn execute_openclaw(name: &str, instruction: &str, args: Value) -> Result<String> {
         info!("Executing OpenClaw skill: {}", name);
         let mut prompt = instruction.to_string();
-        
+
         // 参数插值
         if let Some(obj) = args.as_object() {
             for (k, v) in obj {
@@ -226,7 +258,7 @@ impl SkillExecutor {
                 prompt = prompt.replace(&key, &val);
             }
         }
-        
+
         if prompt.len() > 1000 {
             Ok(format!("Executed skill '{}'. (Output truncated)", name))
         } else {

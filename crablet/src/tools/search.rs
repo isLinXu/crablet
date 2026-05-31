@@ -1,12 +1,12 @@
-use anyhow::{Result, Context};
-use reqwest::Client;
-use serde::{Deserialize, Serialize};
-use std::env;
-use crate::plugins::Plugin;
 use crate::error::CrabletError;
+use crate::plugins::Plugin;
+use anyhow::{Context, Result};
 use async_trait::async_trait;
-use serde_json::Value;
+use reqwest::Client;
 use scraper::{Html, Selector};
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use std::env;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SearchResult {
@@ -48,17 +48,24 @@ impl Plugin for WebSearchPlugin {
     }
 
     async fn execute(&self, _command: &str, args: Value) -> Result<String> {
-        let query = args.get("query")
+        let query = args
+            .get("query")
             .and_then(|v| v.as_str())
             .context("Missing 'query' argument")?;
-            
+
         let results = self.tool.search(query).await?;
-        
+
         let mut output = String::new();
         for (i, res) in results.iter().enumerate() {
-            output.push_str(&format!("{}. [{}]({})\n   {}\n\n", i + 1, res.title, res.link, res.snippet));
+            output.push_str(&format!(
+                "{}. [{}]({})\n   {}\n\n",
+                i + 1,
+                res.title,
+                res.link,
+                res.snippet
+            ));
         }
-        
+
         if output.is_empty() {
             Ok("No results found.".to_string())
         } else {
@@ -97,14 +104,20 @@ impl WebSearchTool {
         }
     }
 
-    pub async fn search(&self, query: &str) -> std::result::Result<Vec<SearchResult>, CrabletError> {
-        let client = self.client.as_ref().map_err(|e| CrabletError::SearchError(format!("HTTP Client init failed: {}", e)))?;
+    pub async fn search(
+        &self,
+        query: &str,
+    ) -> std::result::Result<Vec<SearchResult>, CrabletError> {
+        let client = self
+            .client
+            .as_ref()
+            .map_err(|e| CrabletError::SearchError(format!("HTTP Client init failed: {}", e)))?;
 
         // 1. Try Serper (Google API) if key is present
         if let Some(api_key) = &self.api_key {
             match self.search_serper(client, query, api_key).await {
                 Ok(results) if !results.is_empty() => return Ok(results),
-                Ok(_) => { /* Empty results, fall through to fallback */ },
+                Ok(_) => { /* Empty results, fall through to fallback */ }
                 Err(e) => {
                     tracing::warn!("Serper API failed, falling back to DuckDuckGo: {}", e);
                 }
@@ -115,7 +128,12 @@ impl WebSearchTool {
         self.search_duckduckgo_html(client, query).await
     }
 
-    async fn search_serper(&self, client: &Client, query: &str, api_key: &str) -> std::result::Result<Vec<SearchResult>, CrabletError> {
+    async fn search_serper(
+        &self,
+        client: &Client,
+        query: &str,
+        api_key: &str,
+    ) -> std::result::Result<Vec<SearchResult>, CrabletError> {
         let url = "https://google.serper.dev/search";
         let payload = serde_json::json!({
             "q": query,
@@ -132,63 +150,103 @@ impl WebSearchTool {
             .map_err(|e| CrabletError::SearchError(format!("Serper API request failed: {}", e)))?;
 
         if !response.status().is_success() {
-            return Err(CrabletError::SearchError(format!("Serper API failed: {}", response.status())));
+            return Err(CrabletError::SearchError(format!(
+                "Serper API failed: {}",
+                response.status()
+            )));
         }
 
-        let json: serde_json::Value = response.json().await.map_err(|e| CrabletError::SearchError(format!("Failed to parse Serper JSON: {}", e)))?;
+        let json: serde_json::Value = response.json().await.map_err(|e| {
+            CrabletError::SearchError(format!("Failed to parse Serper JSON: {}", e))
+        })?;
         let mut results = Vec::new();
-        
+
         if let Some(organic) = json.get("organic").and_then(|v| v.as_array()) {
             for item in organic {
-                let title = item.get("title").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                let link = item.get("link").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                let snippet = item.get("snippet").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                
+                let title = item
+                    .get("title")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let link = item
+                    .get("link")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let snippet = item
+                    .get("snippet")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+
                 if !title.is_empty() && !link.is_empty() {
-                    results.push(SearchResult { title, link, snippet });
+                    results.push(SearchResult {
+                        title,
+                        link,
+                        snippet,
+                    });
                 }
             }
         }
         Ok(results)
     }
 
-    async fn search_duckduckgo_html(&self, client: &Client, query: &str) -> std::result::Result<Vec<SearchResult>, CrabletError> {
+    async fn search_duckduckgo_html(
+        &self,
+        client: &Client,
+        query: &str,
+    ) -> std::result::Result<Vec<SearchResult>, CrabletError> {
         // Use html.duckduckgo.com which is easier to scrape than the JS version
-        let url = format!("https://html.duckduckgo.com/html/?q={}", urlencoding::encode(query));
-        
-        let response = client.get(&url).send().await.map_err(|e| CrabletError::SearchError(format!("DuckDuckGo request failed: {}", e)))?;
-        let html_content = response.text().await.map_err(|e| CrabletError::SearchError(format!("Failed to read DuckDuckGo body: {}", e)))?;
-        
+        let url = format!(
+            "https://html.duckduckgo.com/html/?q={}",
+            urlencoding::encode(query)
+        );
+
+        let response =
+            client.get(&url).send().await.map_err(|e| {
+                CrabletError::SearchError(format!("DuckDuckGo request failed: {}", e))
+            })?;
+        let html_content = response.text().await.map_err(|e| {
+            CrabletError::SearchError(format!("Failed to read DuckDuckGo body: {}", e))
+        })?;
+
         let document = Html::parse_document(&html_content);
-        
+
         // DuckDuckGo HTML structure selectors
         // Safe to unwrap here as these are hardcoded valid selectors
         let result_selector = Selector::parse(".result").expect("Invalid result selector");
         let title_selector = Selector::parse(".result__a").expect("Invalid title selector");
-        let snippet_selector = Selector::parse(".result__snippet").expect("Invalid snippet selector");
+        let snippet_selector =
+            Selector::parse(".result__snippet").expect("Invalid snippet selector");
         let _link_selector = Selector::parse(".result__url").expect("Invalid link selector");
 
         let mut results = Vec::new();
 
         for element in document.select(&result_selector).take(5) {
-            let title: String = element.select(&title_selector).next()
+            let title: String = element
+                .select(&title_selector)
+                .next()
                 .map(|e| e.text().collect::<String>())
                 .unwrap_or_default();
-                
-            let link: String = element.select(&title_selector).next()
+
+            let link: String = element
+                .select(&title_selector)
+                .next()
                 .and_then(|e| e.value().attr("href"))
                 .map(|s| s.to_string())
                 .unwrap_or_default();
-                
-            let snippet: String = element.select(&snippet_selector).next()
+
+            let snippet: String = element
+                .select(&snippet_selector)
+                .next()
                 .map(|e| e.text().collect::<String>())
                 .unwrap_or_default();
 
             if !title.is_empty() && !link.is_empty() {
-                results.push(SearchResult { 
-                    title: title.trim().to_string(), 
-                    link: link.trim().to_string(), 
-                    snippet: snippet.trim().to_string() 
+                results.push(SearchResult {
+                    title: title.trim().to_string(),
+                    link: link.trim().to_string(),
+                    snippet: snippet.trim().to_string(),
                 });
             }
         }

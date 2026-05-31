@@ -1,10 +1,10 @@
-use anyhow::{Result, anyhow};
-use std::process::Command;
-use std::path::{Path, PathBuf};
-use std::fs;
-use tracing::info;
-use serde_json::Value;
+use anyhow::{anyhow, Result};
 use async_trait::async_trait;
+use serde_json::Value;
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::process::Command;
+use tracing::info;
 
 /// 工具管理器
 pub struct ToolManager {
@@ -24,9 +24,7 @@ pub trait Tool: Send + Sync {
 impl ToolManager {
     /// 创建新的工具管理器
     pub fn new() -> Self {
-        Self {
-            tools: Vec::new(),
-        }
+        Self { tools: Vec::new() }
     }
 
     /// 添加工具
@@ -78,7 +76,8 @@ impl SkillManagerTool {
         let dir_name = if let Some(n) = name {
             n.to_string()
         } else {
-            url.split('/').next_back()
+            url.split('/')
+                .next_back()
                 .ok_or_else(|| anyhow!("Invalid URL"))?
                 .trim_end_matches(".git")
                 .to_string()
@@ -99,17 +98,26 @@ impl SkillManagerTool {
             .status()?;
 
         if status.success() {
-            Ok(format!("Successfully installed skill '{}' to {:?}", dir_name, target_path))
+            Ok(format!(
+                "Successfully installed skill '{}' to {:?}",
+                dir_name, target_path
+            ))
         } else {
             Err(anyhow!("Failed to clone repository"))
         }
     }
 
     /// Create a new simple Python skill from scratch (Self-Evolution)
-    pub fn create_python_skill(&self, name: &str, description: &str, code: &str, params_json: &str) -> Result<String> {
+    pub fn create_python_skill(
+        &self,
+        name: &str,
+        description: &str,
+        code: &str,
+        params_json: &str,
+    ) -> Result<String> {
         let skill_dir = self.skills_dir.join(name);
         if skill_dir.exists() {
-             return Err(anyhow!("Skill '{}' already exists", name));
+            return Err(anyhow!("Skill '{}' already exists", name));
         }
 
         fs::create_dir_all(&skill_dir)?;
@@ -130,9 +138,12 @@ env: {{}}
 "#,
             name, description, name, params_json
         );
-        
+
         fs::write(skill_dir.join("skill.yaml"), manifest)?;
 
-        Ok(format!("Successfully created skill '{}' in {:?}", name, skill_dir))
+        Ok(format!(
+            "Successfully created skill '{}' in {:?}",
+            name, skill_dir
+        ))
     }
 }

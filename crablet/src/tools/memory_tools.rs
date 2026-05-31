@@ -16,13 +16,13 @@ use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use serde_json::{json, Value};
 use std::sync::Arc;
-use tracing::warn;
 #[cfg(feature = "knowledge")]
 use tracing::info;
+use tracing::warn;
 
-use crate::plugins::Plugin;
-use crate::memory::core::CoreMemoryBlock;
 use crate::events::{AgentEvent, EventBus};
+use crate::memory::core::CoreMemoryBlock;
+use crate::plugins::Plugin;
 
 /// Plugin for appending content to Core Memory blocks
 pub struct CoreMemoryAppendPlugin {
@@ -35,7 +35,10 @@ impl CoreMemoryAppendPlugin {
         memory_manager: Arc<crate::memory::manager::MemoryManager>,
         event_bus: Arc<EventBus>,
     ) -> Self {
-        Self { memory_manager, event_bus }
+        Self {
+            memory_manager,
+            event_bus,
+        }
     }
 }
 
@@ -56,16 +59,22 @@ impl Plugin for CoreMemoryAppendPlugin {
     }
 
     async fn execute(&self, _command: &str, args: Value) -> Result<String> {
-        let block_str = args.get("block")
+        let block_str = args
+            .get("block")
             .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow!("Missing 'block' parameter"))?;
-        
-        let content = args.get("content")
+
+        let content = args
+            .get("content")
             .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow!("Missing 'content' parameter"))?;
 
-        let block = CoreMemoryBlock::from_str(block_str)
-            .ok_or_else(|| anyhow!("Invalid block '{}'. Must be 'persona', 'human', or 'memory'", block_str))?;
+        let block = CoreMemoryBlock::from_str(block_str).ok_or_else(|| {
+            anyhow!(
+                "Invalid block '{}'. Must be 'persona', 'human', or 'memory'",
+                block_str
+            )
+        })?;
 
         match self.memory_manager.core_memory_append(block, content).await {
             Ok(added) => {
@@ -108,7 +117,10 @@ impl CoreMemoryReplacePlugin {
         memory_manager: Arc<crate::memory::manager::MemoryManager>,
         event_bus: Arc<EventBus>,
     ) -> Self {
-        Self { memory_manager, event_bus }
+        Self {
+            memory_manager,
+            event_bus,
+        }
     }
 }
 
@@ -128,22 +140,33 @@ impl Plugin for CoreMemoryReplacePlugin {
     }
 
     async fn execute(&self, _command: &str, args: Value) -> Result<String> {
-        let block_str = args.get("block")
+        let block_str = args
+            .get("block")
             .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow!("Missing 'block' parameter"))?;
-        
-        let old_content = args.get("old_content")
+
+        let old_content = args
+            .get("old_content")
             .and_then(|v| v.as_str())
             .unwrap_or("");
-        
-        let new_content = args.get("new_content")
+
+        let new_content = args
+            .get("new_content")
             .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow!("Missing 'new_content' parameter"))?;
 
-        let block = CoreMemoryBlock::from_str(block_str)
-            .ok_or_else(|| anyhow!("Invalid block '{}'. Must be 'persona', 'human', or 'memory'", block_str))?;
+        let block = CoreMemoryBlock::from_str(block_str).ok_or_else(|| {
+            anyhow!(
+                "Invalid block '{}'. Must be 'persona', 'human', or 'memory'",
+                block_str
+            )
+        })?;
 
-        match self.memory_manager.core_memory_replace(block, old_content, new_content).await {
+        match self
+            .memory_manager
+            .core_memory_replace(block, old_content, new_content)
+            .await
+        {
             Ok(replaced) => {
                 if replaced {
                     self.event_bus.publish(AgentEvent::CoreMemoryUpdated {
@@ -160,7 +183,10 @@ impl Plugin for CoreMemoryReplacePlugin {
                         core.get_limit(block)
                     ))
                 } else {
-                    Ok(format!("Content not found in '{}' block. No changes made.", block_str))
+                    Ok(format!(
+                        "Content not found in '{}' block. No changes made.",
+                        block_str
+                    ))
                 }
             }
             Err(e) => {
@@ -202,13 +228,12 @@ impl Plugin for ConversationSearchPlugin {
     }
 
     async fn execute(&self, _command: &str, args: Value) -> Result<String> {
-        let query = args.get("query")
+        let query = args
+            .get("query")
             .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow!("Missing 'query' parameter"))?;
 
-        let page = args.get("page")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0) as usize;
+        let page = args.get("page").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
 
         // Search through episodic memory if available
         if let Some(ref episodic) = self.memory_manager.episodic {
@@ -218,12 +243,13 @@ impl Plugin for ConversationSearchPlugin {
                     if results.is_empty() {
                         Ok(format!("No conversations found matching '{}'", query))
                     } else {
-                        let formatted: Vec<String> = results.iter()
+                        let formatted: Vec<String> = results
+                            .iter()
                             .map(|(_session_id, role, content, ts)| {
                                 format!("[{}] {}: {}", ts.format("%Y-%m-%d %H:%M"), role, content)
                             })
                             .collect();
-                        
+
                         Ok(format!(
                             "Found {} conversations matching '{}':\n{}",
                             results.len(),
@@ -260,7 +286,10 @@ impl ArchivalMemorySearchPlugin {
         vector_store: Option<Arc<crate::knowledge::vector_store::VectorStore>>,
         memory_manager: Arc<crate::memory::manager::MemoryManager>,
     ) -> Self {
-        Self { vector_store, memory_manager }
+        Self {
+            vector_store,
+            memory_manager,
+        }
     }
 
     #[cfg(not(feature = "knowledge"))]
@@ -285,13 +314,12 @@ impl Plugin for ArchivalMemorySearchPlugin {
     }
 
     async fn execute(&self, _command: &str, args: Value) -> Result<String> {
-        let _query = args.get("query")
+        let _query = args
+            .get("query")
             .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow!("Missing 'query' parameter"))?;
 
-        let _count = args.get("count")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(5) as usize;
+        let _count = args.get("count").and_then(|v| v.as_u64()).unwrap_or(5) as usize;
 
         #[cfg(feature = "knowledge")]
         {
@@ -301,13 +329,14 @@ impl Plugin for ArchivalMemorySearchPlugin {
                         if results.is_empty() {
                             Ok(format!("No archival memories found matching '{}'", _query))
                         } else {
-                            let formatted: Vec<String> = results.iter()
+                            let formatted: Vec<String> = results
+                                .iter()
                                 .enumerate()
                                 .map(|(i, doc)| {
                                     format!("{}. {} (score: {:.3})", i + 1, doc.0, doc.1)
                                 })
                                 .collect();
-                            
+
                             Ok(format!(
                                 "Found {} archival memories matching '{}':\n{}",
                                 results.len(),
@@ -350,7 +379,10 @@ impl ArchivalMemoryInsertPlugin {
         vector_store: Option<Arc<crate::knowledge::vector_store::VectorStore>>,
         event_bus: Arc<EventBus>,
     ) -> Self {
-        Self { vector_store, event_bus }
+        Self {
+            vector_store,
+            event_bus,
+        }
     }
 
     #[cfg(not(feature = "knowledge"))]
@@ -375,13 +407,15 @@ impl Plugin for ArchivalMemoryInsertPlugin {
     }
 
     async fn execute(&self, _command: &str, args: Value) -> Result<String> {
-        let _content = args.get("content")
+        let _content = args
+            .get("content")
             .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow!("Missing 'content' parameter"))?;
 
         #[cfg(feature = "knowledge")]
         {
-            let importance = args.get("importance")
+            let importance = args
+                .get("importance")
                 .and_then(|v| v.as_f64())
                 .unwrap_or(1.0) as f32;
 
@@ -395,8 +429,14 @@ impl Plugin for ArchivalMemoryInsertPlugin {
                 match vs.add_document(_content, Some(metadata)).await {
                     Ok(_) => {
                         info!("Inserted new archival memory");
-                        Ok(format!("Successfully inserted memory into archival storage: '{}'", 
-                            if _content.len() > 100 { &_content[..100] } else { _content }))
+                        Ok(format!(
+                            "Successfully inserted memory into archival storage: '{}'",
+                            if _content.len() > 100 {
+                                &_content[..100]
+                            } else {
+                                _content
+                            }
+                        ))
                     }
                     Err(e) => {
                         warn!("Failed to insert archival memory: {}", e);
@@ -544,7 +584,7 @@ mod tests {
     fn test_tool_definitions() {
         let defs = get_memory_tool_definitions();
         assert_eq!(defs.len(), 5);
-        
+
         // Check each tool has required fields
         for def in defs {
             assert!(def.get("type").is_some());

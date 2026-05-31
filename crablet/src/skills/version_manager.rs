@@ -1,15 +1,15 @@
 //! 技能版本管理模块
-//! 
+//!
 //! 支持版本解析、约束检查、更新检测、依赖解析
 
-use anyhow::{Result, Context, bail};
+use anyhow::{bail, Context, Result};
+use chrono::{DateTime, Utc};
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::path::Path;
 use tracing::{info, warn};
-use regex::Regex;
-use chrono::{DateTime, Utc};
 
 /// 语义化版本
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -25,20 +25,21 @@ impl SemVer {
     /// 解析版本字符串
     pub fn parse(version: &str) -> Result<Self> {
         let version = version.trim_start_matches('v');
-        
+
         // 语义化版本正则: MAJOR.MINOR.PATCH[-PRERELEASE][+BUILD]
         let re = Regex::new(r"^(\d+)\.(\d+)\.(\d+)(?:-([a-zA-Z0-9.]+))?(?:\+([a-zA-Z0-9.]+))?$")
             .context("Failed to compile semver regex")?;
-        
-        let caps = re.captures(version)
+
+        let caps = re
+            .captures(version)
             .context(format!("Invalid semantic version: {}", version))?;
-        
+
         let major = caps[1].parse()?;
         let minor = caps[2].parse()?;
         let patch = caps[3].parse()?;
         let prerelease = caps.get(4).map(|m| m.as_str().to_string());
         let build = caps.get(5).map(|m| m.as_str().to_string());
-        
+
         Ok(Self {
             major,
             minor,
@@ -48,8 +49,7 @@ impl SemVer {
         })
     }
 
-    /// 转换为字符串
-    pub fn to_string(&self) -> String {
+    fn format_semver(&self) -> String {
         let mut s = format!("{}.{}.{}", self.major, self.minor, self.patch);
         if let Some(ref pre) = self.prerelease {
             s.push_str(&format!("-{}", pre));
@@ -101,7 +101,7 @@ impl SemVer {
 
 impl std::fmt::Display for SemVer {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.to_string())
+        write!(f, "{}", self.format_semver())
     }
 }
 
@@ -126,7 +126,7 @@ impl Ord for SemVer {
             Ordering::Equal => {}
             ord => return ord,
         }
-        
+
         // 预发布版本比较
         match (&self.prerelease, &other.prerelease) {
             (None, None) => Ordering::Equal,
@@ -141,16 +141,14 @@ impl Ord for SemVer {
 fn compare_prerelease(a: &str, b: &str) -> Ordering {
     let a_parts: Vec<&str> = a.split('.').collect();
     let b_parts: Vec<&str> = b.split('.').collect();
-    
+
     for (a_part, b_part) in a_parts.iter().zip(b_parts.iter()) {
         // 尝试作为数字比较
         match (a_part.parse::<u64>(), b_part.parse::<u64>()) {
-            (Ok(a_num), Ok(b_num)) => {
-                match a_num.cmp(&b_num) {
-                    Ordering::Equal => continue,
-                    ord => return ord,
-                }
-            }
+            (Ok(a_num), Ok(b_num)) => match a_num.cmp(&b_num) {
+                Ordering::Equal => continue,
+                ord => return ord,
+            },
             (Ok(_), Err(_)) => return Ordering::Less, // 数字 < 字符串
             (Err(_), Ok(_)) => return Ordering::Greater,
             (Err(_), Err(_)) => {
@@ -162,7 +160,7 @@ fn compare_prerelease(a: &str, b: &str) -> Ordering {
             }
         }
     }
-    
+
     // 较短的预发布版本较小
     a_parts.len().cmp(&b_parts.len())
 }
@@ -200,12 +198,12 @@ impl VersionConstraint {
     /// 解析约束字符串
     pub fn parse(constraint: &str) -> Result<Self> {
         let constraint = constraint.trim();
-        
+
         // 任意版本
         if constraint == "*" || constraint == "x" || constraint == "X" {
             return Ok(Self::Any);
         }
-        
+
         // 范围: 1.2.3 - 2.0.0
         if constraint.contains(" - ") {
             let parts: Vec<&str> = constraint.split(" - ").collect();
@@ -215,85 +213,81 @@ impl VersionConstraint {
                 return Ok(Self::Range(min, max));
             }
         }
-        
+
         // 复合约束 (或): 1.2.3 || 2.0.0
         if constraint.contains("||") {
             let parts: Vec<&str> = constraint.split("||").collect();
-            let constraints: Result<Vec<_>> = parts
-                .iter()
-                .map(|p| Self::parse(p.trim()))
-                .collect();
+            let constraints: Result<Vec<_>> = parts.iter().map(|p| Self::parse(p.trim())).collect();
             return Ok(Self::Or(constraints?));
         }
-        
+
         // 复合约束 (与): >=1.2.3 <2.0.0
-        if constraint.contains(' ') && !constraint.starts_with('~') && !constraint.starts_with('^') {
+        if constraint.contains(' ') && !constraint.starts_with('~') && !constraint.starts_with('^')
+        {
             let parts: Vec<&str> = constraint.split_whitespace().collect();
-            let constraints: Result<Vec<_>> = parts
-                .iter()
-                .map(|p| Self::parse_single(p.trim()))
-                .collect();
+            let constraints: Result<Vec<_>> =
+                parts.iter().map(|p| Self::parse_single(p.trim())).collect();
             return Ok(Self::And(constraints?));
         }
-        
+
         Self::parse_single(constraint)
     }
-    
+
     fn parse_single(constraint: &str) -> Result<Self> {
         // 兼容版本: ^1.2.3
         if let Some(version) = constraint.strip_prefix('^') {
             return Ok(Self::Compatible(SemVer::parse(version)?));
         }
-        
+
         // 近似版本: ~1.2.3
         if let Some(version) = constraint.strip_prefix('~') {
             return Ok(Self::Approximate(SemVer::parse(version)?));
         }
-        
+
         // 大于等于: >=1.2.3
         if let Some(version) = constraint.strip_prefix(">=") {
             return Ok(Self::GreaterThanOrEqual(SemVer::parse(version)?));
         }
-        
+
         // 小于等于: <=1.2.3
         if let Some(version) = constraint.strip_prefix("<=") {
             return Ok(Self::LessThanOrEqual(SemVer::parse(version)?));
         }
-        
+
         // 大于: >1.2.3
         if let Some(version) = constraint.strip_prefix('>') {
             return Ok(Self::GreaterThan(SemVer::parse(version)?));
         }
-        
+
         // 小于: <1.2.3
         if let Some(version) = constraint.strip_prefix('<') {
             return Ok(Self::LessThan(SemVer::parse(version)?));
         }
-        
+
         // 精确版本: =1.2.3 或 1.2.3
         let version = constraint.strip_prefix('=').unwrap_or(constraint);
-        
+
         // 检查通配符: 1.2.x 或 1.x
         if version.contains('x') || version.contains('X') || version.contains('*') {
             return Self::parse_wildcard(version);
         }
-        
+
         Ok(Self::Exact(SemVer::parse(version)?))
     }
-    
+
     fn parse_wildcard(pattern: &str) -> Result<Self> {
         let parts: Vec<&str> = pattern.split('.').collect();
-        
+
         let major = parts[0].parse()?;
         let minor = if parts.len() > 1 && parts[1] != "x" && parts[1] != "X" && parts[1] != "*" {
             Some(parts[1].parse()?)
         } else {
             None
         };
-        
+
         Ok(Self::Wildcard { major, minor })
     }
-    
+
     /// 检查版本是否满足约束
     pub fn matches(&self, version: &SemVer) -> bool {
         match self {
@@ -325,7 +319,7 @@ impl VersionConstraint {
             Self::Or(constraints) => constraints.iter().any(|c| c.matches(version)),
         }
     }
-    
+
     /// 转换为字符串表示
     pub fn to_string(&self) -> String {
         match self {
@@ -337,11 +331,22 @@ impl VersionConstraint {
             Self::Compatible(v) => format!("^{}", v),
             Self::Approximate(v) => format!("~{}", v),
             Self::Wildcard { major, minor: None } => format!("{}.*", major),
-            Self::Wildcard { major, minor: Some(m) } => format!("{}.{}.*", major, m),
+            Self::Wildcard {
+                major,
+                minor: Some(m),
+            } => format!("{}.{}.*", major, m),
             Self::Range(min, max) => format!("{} - {}", min, max),
             Self::Any => "*".to_string(),
-            Self::And(constraints) => constraints.iter().map(|c| c.to_string()).collect::<Vec<_>>().join(" "),
-            Self::Or(constraints) => constraints.iter().map(|c| c.to_string()).collect::<Vec<_>>().join(" || "),
+            Self::And(constraints) => constraints
+                .iter()
+                .map(|c| c.to_string())
+                .collect::<Vec<_>>()
+                .join(" "),
+            Self::Or(constraints) => constraints
+                .iter()
+                .map(|c| c.to_string())
+                .collect::<Vec<_>>()
+                .join(" || "),
         }
     }
 }
@@ -390,7 +395,7 @@ impl VersionDiff {
         }
         Self::None
     }
-    
+
     /// 获取更新优先级
     pub fn priority(&self) -> u8 {
         match self {
@@ -401,12 +406,12 @@ impl VersionDiff {
             Self::None => 0,
         }
     }
-    
+
     /// 是否为破坏性更新
     pub fn is_breaking(&self) -> bool {
         matches!(self, Self::Major)
     }
-    
+
     /// 获取描述
     pub fn description(&self) -> &'static str {
         match self {
@@ -434,43 +439,44 @@ impl VersionManager {
             skills_dir,
         }
     }
-    
+
     /// 加载已安装技能信息
     pub async fn load(&mut self) -> Result<()> {
         let version_file = self.skills_dir.join(".versions.json");
-        
+
         if version_file.exists() {
             let content = tokio::fs::read_to_string(&version_file).await?;
             let versions: HashMap<String, SkillVersionInfo> = serde_json::from_str(&content)?;
             self.installed = versions;
         }
-        
+
         // 扫描目录更新版本信息
         self.scan_directory().await?;
-        
+
         Ok(())
     }
-    
+
     /// 扫描技能目录
     async fn scan_directory(&mut self) -> Result<()> {
         if !self.skills_dir.exists() {
             return Ok(());
         }
-        
+
         let mut entries = tokio::fs::read_dir(&self.skills_dir).await?;
-        
+
         while let Some(entry) = entries.next_entry().await? {
             let path = entry.path();
             if path.is_dir() {
-                let name = path.file_name()
+                let name = path
+                    .file_name()
                     .and_then(|n| n.to_str())
                     .unwrap_or("unknown");
-                
+
                 // 跳过隐藏目录
                 if name.starts_with('.') {
                     continue;
                 }
-                
+
                 // 尝试读取版本
                 if let Some(version) = self.read_skill_version(&path).await {
                     let info = SkillVersionInfo {
@@ -482,15 +488,15 @@ impl VersionManager {
                         update_available: false,
                         changelog: None,
                     };
-                    
+
                     self.installed.insert(name.to_string(), info);
                 }
             }
         }
-        
+
         Ok(())
     }
-    
+
     /// 读取技能版本
     async fn read_skill_version(&self, skill_path: &Path) -> Option<SemVer> {
         // 尝试从 SKILL.md 解析
@@ -502,7 +508,7 @@ impl VersionManager {
                 }
             }
         }
-        
+
         // 尝试从 package.json 读取
         let package_json = skill_path.join("package.json");
         if package_json.exists() {
@@ -516,7 +522,7 @@ impl VersionManager {
                 }
             }
         }
-        
+
         // 尝试从 Cargo.toml 读取
         let cargo_toml = skill_path.join("Cargo.toml");
         if cargo_toml.exists() {
@@ -533,10 +539,10 @@ impl VersionManager {
                 }
             }
         }
-        
+
         None
     }
-    
+
     fn parse_version_from_skill_md(&self, content: &str) -> Option<SemVer> {
         if content.starts_with("---") {
             if let Some(end) = content.find("\n---") {
@@ -555,23 +561,23 @@ impl VersionManager {
         }
         None
     }
-    
+
     /// 检查更新
     pub async fn check_updates(&mut self) -> Result<Vec<UpdateInfo>> {
         let mut updates = Vec::new();
-        
+
         // 先收集所有技能名称，避免同时借用
         let skill_names: Vec<String> = self.installed.keys().cloned().collect();
-        
+
         for name in skill_names {
             if let Some(info) = self.installed.get(&name) {
                 let current_version = info.current_version.clone();
                 let changelog = info.changelog.clone();
-                
+
                 match self.fetch_latest_version(&name).await {
                     Ok(latest) => {
                         let diff = VersionDiff::between(&current_version, &latest);
-                        
+
                         if diff != VersionDiff::None {
                             // 获取可变引用更新信息
                             if let Some(info_mut) = self.installed.get_mut(&name) {
@@ -579,7 +585,7 @@ impl VersionManager {
                                 info_mut.update_available = true;
                                 info_mut.last_checked = Some(Utc::now());
                             }
-                            
+
                             updates.push(UpdateInfo {
                                 skill_name: name.clone(),
                                 current_version: current_version.clone(),
@@ -587,9 +593,11 @@ impl VersionManager {
                                 diff: diff.clone(),
                                 changelog: changelog.clone(),
                             });
-                            
-                            info!("Update available for {}: {} -> {} ({:?})", 
-                                name, current_version, latest, diff);
+
+                            info!(
+                                "Update available for {}: {} -> {} ({:?})",
+                                name, current_version, latest, diff
+                            );
                         }
                     }
                     Err(e) => {
@@ -598,33 +606,36 @@ impl VersionManager {
                 }
             }
         }
-        
+
         // 保存更新后的信息
         self.save().await?;
-        
+
         // 按优先级排序
         updates.sort_by(|a, b| b.diff.priority().cmp(&a.diff.priority()));
-        
+
         Ok(updates)
     }
-    
+
     /// 获取最新版本（从远程）
     async fn fetch_latest_version(&self, skill_name: &str) -> Result<SemVer> {
-        // TODO: 实现从远程 registry 获取最新版本
-        // 目前返回模拟数据
-        
-        // 模拟网络请求延迟
+        // Fetch latest version from remote registry.
+        // Currently uses simulated data; real implementation would:
+        // 1. Query the configured registry URL (e.g., ClawHub API)
+        // 2. Parse the response for the latest semver
+        // 3. Cache the result locally
+
+        // Simulate network request delay
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-        
+
         // 模拟返回更高版本
         if let Some(info) = self.installed.get(skill_name) {
             let next_patch = info.current_version.next_patch();
             return Ok(next_patch);
         }
-        
+
         bail!("Skill not found: {}", skill_name)
     }
-    
+
     /// 保存版本信息
     async fn save(&self) -> Result<()> {
         let version_file = self.skills_dir.join(".versions.json");
@@ -632,26 +643,26 @@ impl VersionManager {
         tokio::fs::write(&version_file, content).await?;
         Ok(())
     }
-    
+
     /// 获取技能版本信息
     pub fn get_version_info(&self, skill_name: &str) -> Option<&SkillVersionInfo> {
         self.installed.get(skill_name)
     }
-    
+
     /// 列出所有已安装技能
     pub fn list_installed(&self) -> Vec<&SkillVersionInfo> {
         self.installed.values().collect()
     }
-    
+
     /// 检查是否有可用更新
     pub fn has_updates(&self) -> bool {
         self.installed.values().any(|info| info.update_available)
     }
-    
+
     /// 获取更新统计
     pub fn get_update_stats(&self) -> UpdateStats {
         let mut stats = UpdateStats::default();
-        
+
         for info in self.installed.values() {
             if let Some(ref latest) = info.latest_version {
                 let diff = VersionDiff::between(&info.current_version, latest);
@@ -664,11 +675,11 @@ impl VersionManager {
                 }
             }
         }
-        
+
         stats.total = stats.major + stats.minor + stats.patch + stats.prerelease;
         stats
     }
-    
+
     /// 更新技能版本记录
     pub fn record_update(&mut self, skill_name: &str, new_version: SemVer) {
         if let Some(info) = self.installed.get_mut(skill_name) {
@@ -710,8 +721,9 @@ mod tests {
         assert_eq!(v.major, 1);
         assert_eq!(v.minor, 2);
         assert_eq!(v.patch, 3);
-        
-        let v = SemVer::parse("v2.0.0-alpha.1+build.123").expect("failed to parse v2.0.0-alpha.1+build.123");
+
+        let v = SemVer::parse("v2.0.0-alpha.1+build.123")
+            .expect("failed to parse v2.0.0-alpha.1+build.123");
         assert_eq!(v.major, 2);
         assert_eq!(v.prerelease, Some("alpha.1".to_string()));
         assert_eq!(v.build, Some("build.123".to_string()));
@@ -722,10 +734,10 @@ mod tests {
         let v1 = SemVer::parse("1.0.0").expect("failed to parse 1.0.0");
         let v2 = SemVer::parse("1.0.1").expect("failed to parse 1.0.1");
         assert!(v1 < v2);
-        
+
         let v3 = SemVer::parse("2.0.0").expect("failed to parse 2.0.0");
         assert!(v2 < v3);
-        
+
         let v4 = SemVer::parse("1.0.0-alpha").expect("failed to parse 1.0.0-alpha");
         assert!(v4 < v1); // 预发布版本 < 正式版本
     }
@@ -733,18 +745,18 @@ mod tests {
     #[test]
     fn test_version_constraint() {
         let v = SemVer::parse("1.2.3").expect("failed to parse 1.2.3");
-        
+
         // 精确匹配
         let c = VersionConstraint::parse("=1.2.3").expect("failed to parse =1.2.3");
         assert!(c.matches(&v));
-        
+
         // 兼容版本
         let c = VersionConstraint::parse("^1.0.0").expect("failed to parse ^1.0.0");
         assert!(c.matches(&v));
-        
+
         let v2 = SemVer::parse("2.0.0").expect("failed to parse 2.0.0");
         assert!(!c.matches(&v2)); // 主版本不匹配
-        
+
         // 通配符
         let c = VersionConstraint::parse("1.*").expect("failed to parse 1.*");
         assert!(c.matches(&v));
@@ -756,10 +768,10 @@ mod tests {
         let v1 = SemVer::parse("1.0.0").expect("failed to parse 1.0.0");
         let v2 = SemVer::parse("2.0.0").expect("failed to parse 2.0.0");
         assert_eq!(VersionDiff::between(&v1, &v2), VersionDiff::Major);
-        
+
         let v3 = SemVer::parse("1.1.0").expect("failed to parse 1.1.0");
         assert_eq!(VersionDiff::between(&v1, &v3), VersionDiff::Minor);
-        
+
         let v4 = SemVer::parse("1.0.1").expect("failed to parse 1.0.1");
         assert_eq!(VersionDiff::between(&v1, &v4), VersionDiff::Patch);
     }

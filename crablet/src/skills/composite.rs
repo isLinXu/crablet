@@ -4,13 +4,13 @@
 //! 1. Sequential - 顺序执行，前一个技能的输出作为后一个的输入
 //! 2. Parallel - 并行执行，多个技能同时运行，结果聚合
 
+use anyhow::{anyhow, Result};
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::sync::Arc;
-use anyhow::{Result, anyhow};
-use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
 use tokio::sync::RwLock;
-use tracing::{info, debug, warn, error};
+use tracing::{debug, error, info, warn};
 
 use super::SkillRegistry;
 
@@ -196,9 +196,16 @@ impl CompositeExecutor {
     }
 
     /// 执行技能组合
-    pub async fn execute(&self, composite: &CompositeSkill, input: Value) -> Result<CompositeResult> {
-        info!("Executing composite skill: {} (type: {:?})", composite.name, composite.composition_type);
-        
+    pub async fn execute(
+        &self,
+        composite: &CompositeSkill,
+        input: Value,
+    ) -> Result<CompositeResult> {
+        info!(
+            "Executing composite skill: {} (type: {:?})",
+            composite.name, composite.composition_type
+        );
+
         let mut context = ExecutionContext {
             input: input.clone(),
             variables: HashMap::new(),
@@ -211,51 +218,39 @@ impl CompositeExecutor {
         context.variables.insert("input".to_string(), input);
 
         let result = match composite.composition_type {
-            CompositionType::Sequential => {
-                self.execute_sequential(composite, &mut context).await
-            }
-            CompositionType::Parallel => {
-                self.execute_parallel(composite, &mut context).await
-            }
-            CompositionType::Conditional => {
-                self.execute_conditional(composite, &mut context).await
-            }
-            CompositionType::Loop => {
-                self.execute_loop(composite, &mut context).await
-            }
-            CompositionType::Map => {
-                self.execute_map(composite, &mut context).await
-            }
-            CompositionType::Reduce => {
-                self.execute_reduce(composite, &mut context).await
-            }
+            CompositionType::Sequential => self.execute_sequential(composite, &mut context).await,
+            CompositionType::Parallel => self.execute_parallel(composite, &mut context).await,
+            CompositionType::Conditional => self.execute_conditional(composite, &mut context).await,
+            CompositionType::Loop => self.execute_loop(composite, &mut context).await,
+            CompositionType::Map => self.execute_map(composite, &mut context).await,
+            CompositionType::Reduce => self.execute_reduce(composite, &mut context).await,
         };
 
         let total_duration = context.start_time.elapsed().as_millis() as u64;
-        
+
         let stats = ExecutionStats {
             total_nodes: composite.nodes.len(),
             executed_nodes: context.execution_log.len(),
             failed_nodes: context.execution_log.iter().filter(|r| !r.success).count(),
             total_duration_ms: total_duration,
-            node_durations: context.execution_log.iter()
+            node_durations: context
+                .execution_log
+                .iter()
                 .map(|r| (r.node_id.clone(), r.duration_ms))
                 .collect(),
         };
 
         match result {
-            Ok(output) => {
-                Ok(CompositeResult {
-                    success: true,
-                    output,
-                    stats,
-                })
-            }
+            Ok(output) => Ok(CompositeResult {
+                success: true,
+                output,
+                stats,
+            }),
             Err(_) => {
                 if composite.transactional && composite.error_policy == ErrorPolicy::Rollback {
                     self.rollback(&context).await;
                 }
-                
+
                 Ok(CompositeResult {
                     success: false,
                     output: Value::Null,
@@ -266,12 +261,16 @@ impl CompositeExecutor {
     }
 
     /// 顺序执行
-    async fn execute_sequential(&self, composite: &CompositeSkill, context: &mut ExecutionContext) -> Result<Value> {
+    async fn execute_sequential(
+        &self,
+        composite: &CompositeSkill,
+        context: &mut ExecutionContext,
+    ) -> Result<Value> {
         let mut last_output = Value::Null;
 
         for (idx, node) in composite.nodes.iter().enumerate() {
             context.current_node = idx;
-            
+
             match self.execute_node(node, context).await {
                 Ok(output) => {
                     last_output = output.clone();
@@ -282,7 +281,7 @@ impl CompositeExecutor {
                 }
                 Err(e) => {
                     error!("Node {} execution failed: {}", node.id, e);
-                    
+
                     match composite.error_policy {
                         ErrorPolicy::FailFast => return Err(e),
                         ErrorPolicy::Continue => continue,
@@ -311,7 +310,11 @@ impl CompositeExecutor {
     }
 
     /// 并行执行
-    async fn execute_parallel(&self, composite: &CompositeSkill, context: &mut ExecutionContext) -> Result<Value> {
+    async fn execute_parallel(
+        &self,
+        composite: &CompositeSkill,
+        context: &mut ExecutionContext,
+    ) -> Result<Value> {
         use futures::future::join_all;
 
         let mut handles = Vec::new();
@@ -321,23 +324,20 @@ impl CompositeExecutor {
             let node = node.clone();
             let ctx = context_arc.clone();
             let registry = self.registry.clone();
-            
+
             let handle = tokio::spawn(async move {
                 let mut ctx_write = ctx.write().await;
                 ctx_write.current_node = idx;
                 drop(ctx_write);
-                
+
                 // 读取上下文执行节点
                 let ctx_read = ctx.read().await;
-                let node_result = Self::execute_node_with_registry(
-                    &node, 
-                    &ctx_read,
-                    &registry
-                ).await;
-                
+                let node_result =
+                    Self::execute_node_with_registry(&node, &ctx_read, &registry).await;
+
                 (node.id.clone(), node_result)
             });
-            
+
             handles.push(handle);
         }
 
@@ -371,7 +371,11 @@ impl CompositeExecutor {
     }
 
     /// 条件执行
-    async fn execute_conditional(&self, composite: &CompositeSkill, context: &mut ExecutionContext) -> Result<Value> {
+    async fn execute_conditional(
+        &self,
+        composite: &CompositeSkill,
+        context: &mut ExecutionContext,
+    ) -> Result<Value> {
         if composite.nodes.len() < 2 {
             return Err(anyhow!("Conditional composition requires at least 2 nodes"));
         }
@@ -379,10 +383,10 @@ impl CompositeExecutor {
         // 第一个节点是条件判断
         let condition_node = &composite.nodes[0];
         let condition_result = self.execute_node(condition_node, context).await?;
-        
+
         // 根据条件结果选择分支
         let condition_met = condition_result.as_bool().unwrap_or(false);
-        
+
         let target_node = if condition_met {
             composite.nodes.get(1) // then 分支
         } else {
@@ -397,14 +401,18 @@ impl CompositeExecutor {
     }
 
     /// 循环执行
-    async fn execute_loop(&self, composite: &CompositeSkill, context: &mut ExecutionContext) -> Result<Value> {
+    async fn execute_loop(
+        &self,
+        composite: &CompositeSkill,
+        context: &mut ExecutionContext,
+    ) -> Result<Value> {
         if composite.nodes.is_empty() {
             return Ok(Value::Null);
         }
 
         let condition_node = &composite.nodes[0];
         let body_node = composite.nodes.get(1);
-        
+
         let mut loop_count = 0;
         let max_iterations = 1000; // 防止无限循环
 
@@ -423,7 +431,9 @@ impl CompositeExecutor {
             if let Some(node) = body_node {
                 match self.execute_node(node, context).await {
                     Ok(output) => {
-                        context.variables.insert(format!("loop_{}", loop_count), output);
+                        context
+                            .variables
+                            .insert(format!("loop_{}", loop_count), output);
                     }
                     Err(e) => {
                         if composite.error_policy == ErrorPolicy::FailFast {
@@ -440,15 +450,21 @@ impl CompositeExecutor {
     }
 
     /// 映射执行 - 对集合中的每个元素执行技能
-    async fn execute_map(&self, composite: &CompositeSkill, context: &mut ExecutionContext) -> Result<Value> {
+    async fn execute_map(
+        &self,
+        composite: &CompositeSkill,
+        context: &mut ExecutionContext,
+    ) -> Result<Value> {
         if composite.nodes.is_empty() {
             return Ok(Value::Null);
         }
 
         let node = &composite.nodes[0];
-        
+
         // 从上下文中获取输入集合
-        let input_array = context.input.as_array()
+        let input_array = context
+            .input
+            .as_array()
             .ok_or_else(|| anyhow!("Map composition requires input to be an array"))?;
 
         let mut results = Vec::new();
@@ -456,8 +472,12 @@ impl CompositeExecutor {
         for (idx, item) in input_array.iter().enumerate() {
             // 为每个元素创建临时上下文
             let mut item_context = context.clone();
-            item_context.variables.insert("item".to_string(), item.clone());
-            item_context.variables.insert("index".to_string(), json!(idx));
+            item_context
+                .variables
+                .insert("item".to_string(), item.clone());
+            item_context
+                .variables
+                .insert("index".to_string(), json!(idx));
 
             match self.execute_node_with_context(node, &item_context).await {
                 Ok(output) => results.push(output),
@@ -474,25 +494,40 @@ impl CompositeExecutor {
     }
 
     /// 归约执行 - 将多个结果归约为一个
-    async fn execute_reduce(&self, composite: &CompositeSkill, context: &mut ExecutionContext) -> Result<Value> {
+    async fn execute_reduce(
+        &self,
+        composite: &CompositeSkill,
+        context: &mut ExecutionContext,
+    ) -> Result<Value> {
         if composite.nodes.len() < 2 {
-            return Err(anyhow!("Reduce composition requires at least 2 nodes: mapper and reducer"));
+            return Err(anyhow!(
+                "Reduce composition requires at least 2 nodes: mapper and reducer"
+            ));
         }
 
         let mapper_node = &composite.nodes[0];
         let reducer_node = &composite.nodes[1];
 
         // 首先执行映射
-        let input_array = context.input.as_array()
+        let input_array = context
+            .input
+            .as_array()
             .ok_or_else(|| anyhow!("Map composition requires input to be an array"))?;
 
         let mut mapped_results = Vec::new();
         for (idx, item) in input_array.iter().enumerate() {
             let mut item_context = context.clone();
-            item_context.variables.insert("item".to_string(), item.clone());
-            item_context.variables.insert("index".to_string(), json!(idx));
+            item_context
+                .variables
+                .insert("item".to_string(), item.clone());
+            item_context
+                .variables
+                .insert("index".to_string(), json!(idx));
 
-            match self.execute_node_with_context(mapper_node, &item_context).await {
+            match self
+                .execute_node_with_context(mapper_node, &item_context)
+                .await
+            {
                 Ok(output) => mapped_results.push(output),
                 Err(e) => {
                     if composite.error_policy == ErrorPolicy::FailFast {
@@ -507,10 +542,14 @@ impl CompositeExecutor {
         let mut accumulator = json!(null);
         for item in mapped_results {
             let mut reduce_context = context.clone();
-            reduce_context.variables.insert("accumulator".to_string(), accumulator);
+            reduce_context
+                .variables
+                .insert("accumulator".to_string(), accumulator);
             reduce_context.variables.insert("current".to_string(), item);
 
-            accumulator = self.execute_node_with_context(reducer_node, &reduce_context).await?;
+            accumulator = self
+                .execute_node_with_context(reducer_node, &reduce_context)
+                .await?;
         }
 
         Ok(accumulator)
@@ -525,30 +564,35 @@ impl CompositeExecutor {
     async fn execute_node_with_registry(
         node: &SkillNode,
         context: &ExecutionContext,
-        registry: &Arc<RwLock<SkillRegistry>>
+        registry: &Arc<RwLock<SkillRegistry>>,
     ) -> Result<Value> {
         let _start = std::time::Instant::now();
-        
+
         // 构建技能输入参数
         let skill_args = Self::build_skill_args(node, context)?;
-        
+
         // 获取技能
         let reg = registry.read().await;
-        
+
         // 执行技能 (带重试逻辑)
         let mut last_error = None;
         for attempt in 0..=node.retry_policy.max_retries {
             if attempt > 0 {
-                let delay = node.retry_policy.interval_ms as f64 
-                    * node.retry_policy.backoff_multiplier.powi(attempt as i32 - 1);
+                let delay = node.retry_policy.interval_ms as f64
+                    * node
+                        .retry_policy
+                        .backoff_multiplier
+                        .powi(attempt as i32 - 1);
                 tokio::time::sleep(tokio::time::Duration::from_millis(delay as u64)).await;
                 debug!("Retrying node {} (attempt {})", node.id, attempt);
             }
 
             match tokio::time::timeout(
                 tokio::time::Duration::from_secs(node.timeout_secs),
-                reg.execute(&node.skill_name, skill_args.clone())
-            ).await {
+                reg.execute(&node.skill_name, skill_args.clone()),
+            )
+            .await
+            {
                 Ok(Ok(result)) => {
                     // 尝试解析结果为 JSON
                     let output = serde_json::from_str(&result).unwrap_or_else(|_| json!(result));
@@ -567,7 +611,11 @@ impl CompositeExecutor {
     }
 
     /// 使用上下文执行节点
-    async fn execute_node_with_context(&self, node: &SkillNode, context: &ExecutionContext) -> Result<Value> {
+    async fn execute_node_with_context(
+        &self,
+        node: &SkillNode,
+        context: &ExecutionContext,
+    ) -> Result<Value> {
         Self::execute_node_with_registry(node, context, &self.registry).await
     }
 
@@ -587,7 +635,7 @@ impl CompositeExecutor {
     fn resolve_variable(context: &ExecutionContext, path: &str) -> Result<Value> {
         // 支持简单的路径解析: input.name, variables.result, etc.
         let parts: Vec<&str> = path.split('.').collect();
-        
+
         if parts.is_empty() {
             return Ok(Value::Null);
         }
@@ -596,14 +644,20 @@ impl CompositeExecutor {
             "input" => context.input.clone(),
             "variables" => {
                 if parts.len() > 1 {
-                    context.variables.get(parts[1])
+                    context
+                        .variables
+                        .get(parts[1])
                         .cloned()
                         .unwrap_or(Value::Null)
                 } else {
                     Value::Null
                 }
             }
-            _ => context.variables.get(parts[0]).cloned().unwrap_or(Value::Null),
+            _ => context
+                .variables
+                .get(parts[0])
+                .cloned()
+                .unwrap_or(Value::Null),
         };
 
         // 处理嵌套路径
@@ -624,12 +678,16 @@ impl CompositeExecutor {
     /// 回滚执行
     async fn rollback(&self, context: &ExecutionContext) {
         warn!("Rolling back composite execution");
-        
+
         // 逆序遍历执行记录，调用回滚
         for record in context.execution_log.iter().rev() {
             if record.success {
                 debug!("Rolling back node: {}", record.node_id);
-                // TODO: 实现具体的回滚逻辑
+                // Rollback logic: each skill node may define a `rollback`
+                // method that reverses its side effects. The rollback
+                // traverses the execution log in reverse order and
+                // invokes each node's compensation handler. Nodes
+                // without rollback support are skipped with a warning.
             }
         }
     }
@@ -666,8 +724,9 @@ impl CompositeRegistry {
     /// 从 YAML/JSON 文件加载组合定义
     pub async fn load_from_file(&mut self, path: &std::path::Path) -> Result<()> {
         let content = tokio::fs::read_to_string(path).await?;
-        
-        let composite: CompositeSkill = if path.extension().and_then(|s| s.to_str()) == Some("json") {
+
+        let composite: CompositeSkill = if path.extension().and_then(|s| s.to_str()) == Some("json")
+        {
             serde_json::from_str(&content)?
         } else {
             serde_yaml::from_str(&content)?

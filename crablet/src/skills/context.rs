@@ -7,9 +7,9 @@
 //! - Shared state between skills
 //! - Memory system integration
 
-use std::collections::HashMap;
-use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /// Execution context for skill invocation
 #[derive(Debug, Clone)]
@@ -73,31 +73,31 @@ impl SkillContext {
             max_history_size: 100,
         }
     }
-    
+
     /// Create a new context with extracted arguments
     pub fn with_args(mut self, args: serde_json::Value) -> Self {
         self.extracted_args = args;
         self
     }
-    
+
     /// Create a new context with memory context
     pub fn with_memory(mut self, memory: MemoryContext) -> Self {
         self.memory_context = Some(memory);
         self
     }
-    
+
     /// Set the maximum history size
     pub fn with_max_history(mut self, size: usize) -> Self {
         self.max_history_size = size;
         self
     }
-    
+
     /// Record a skill execution in history
     pub fn record_execution(
-        &mut self, 
-        skill_name: &str, 
-        input: serde_json::Value, 
-        output: &str, 
+        &mut self,
+        skill_name: &str,
+        input: serde_json::Value,
+        output: &str,
         success: bool,
         duration_ms: u64,
     ) {
@@ -109,91 +109,92 @@ impl SkillContext {
             timestamp: Utc::now(),
             duration_ms,
         });
-        
+
         // Trim history if it exceeds max size
         if self.execution_history.len() > self.max_history_size {
             let excess = self.execution_history.len() - self.max_history_size;
             self.execution_history.drain(0..excess);
         }
     }
-    
+
     /// Get a value from shared state
     pub fn get_state(&self, key: &str) -> Option<&serde_json::Value> {
         self.shared_state.get(key)
     }
-    
+
     /// Get a typed value from shared state
     pub fn get_state_typed<T: for<'de> Deserialize<'de>>(&self, key: &str) -> Option<T> {
-        self.shared_state.get(key)
+        self.shared_state
+            .get(key)
             .and_then(|v| serde_json::from_value(v.clone()).ok())
     }
-    
+
     /// Set a value in shared state
     pub fn set_state(&mut self, key: impl Into<String>, value: serde_json::Value) {
         self.shared_state.insert(key.into(), value);
     }
-    
+
     /// Set a typed value in shared state
     pub fn set_state_typed<T: Serialize>(&mut self, key: impl Into<String>, value: T) {
         if let Ok(json_value) = serde_json::to_value(value) {
             self.shared_state.insert(key.into(), json_value);
         }
     }
-    
+
     /// Remove a value from shared state
     pub fn remove_state(&mut self, key: &str) -> Option<serde_json::Value> {
         self.shared_state.remove(key)
     }
-    
+
     /// Check if a key exists in shared state
     pub fn has_state(&self, key: &str) -> bool {
         self.shared_state.contains_key(key)
     }
-    
+
     /// Get the last execution record
     pub fn last_execution(&self) -> Option<&ExecutionRecord> {
         self.execution_history.last()
     }
-    
+
     /// Get execution history for a specific skill
     pub fn executions_of(&self, skill_name: &str) -> Vec<&ExecutionRecord> {
-        self.execution_history.iter()
+        self.execution_history
+            .iter()
             .filter(|r| r.skill_name == skill_name)
             .collect()
     }
-    
+
     /// Check if a skill has been executed successfully in this context
     pub fn has_successful_execution(&self, skill_name: &str) -> bool {
-        self.execution_history.iter()
+        self.execution_history
+            .iter()
             .any(|r| r.skill_name == skill_name && r.success)
     }
-    
+
     /// Get the count of executions in this context
     pub fn execution_count(&self) -> usize {
         self.execution_history.len()
     }
-    
+
     /// Get successful execution count
     pub fn successful_count(&self) -> usize {
-        self.execution_history.iter()
-            .filter(|r| r.success)
-            .count()
+        self.execution_history.iter().filter(|r| r.success).count()
     }
-    
+
     /// Clear execution history
     pub fn clear_history(&mut self) {
         self.execution_history.clear();
     }
-    
+
     /// Clear shared state
     pub fn clear_state(&mut self) {
         self.shared_state.clear();
     }
-    
+
     /// Build a context summary for LLM prompts
     pub fn build_context_summary(&self) -> String {
         let mut parts = Vec::new();
-        
+
         // Add execution history summary
         if !self.execution_history.is_empty() {
             parts.push("## Execution History".to_string());
@@ -201,13 +202,11 @@ impl SkillContext {
                 let status = if record.success { "✓" } else { "✗" };
                 parts.push(format!(
                     "{} {} ({}ms)",
-                    status,
-                    record.skill_name,
-                    record.duration_ms
+                    status, record.skill_name, record.duration_ms
                 ));
             }
         }
-        
+
         // Add shared state summary
         if !self.shared_state.is_empty() {
             parts.push("\n## Shared State".to_string());
@@ -219,29 +218,29 @@ impl SkillContext {
                 parts.push(format!("{}: {}", key, value_str));
             }
         }
-        
+
         parts.join("\n")
     }
-    
+
     /// Merge another context into this one
     pub fn merge(&mut self, other: &SkillContext) {
         // Merge execution history
         for record in &other.execution_history {
             self.execution_history.push(record.clone());
         }
-        
+
         // Merge shared state (other takes precedence)
         for (key, value) in &other.shared_state {
             self.shared_state.insert(key.clone(), value.clone());
         }
-        
+
         // Trim history if needed
         if self.execution_history.len() > self.max_history_size {
             let excess = self.execution_history.len() - self.max_history_size;
             self.execution_history.drain(0..excess);
         }
     }
-    
+
     /// Create a child context for nested skill execution
     pub fn create_child(&self, skill_name: impl Into<String>) -> Self {
         Self {
@@ -267,47 +266,47 @@ impl MemoryContext {
     pub fn new() -> Self {
         Self::default()
     }
-    
+
     /// Add SOUL context
     pub fn with_soul(mut self, soul: impl Into<String>) -> Self {
         self.soul_context = Some(soul.into());
         self
     }
-    
+
     /// Add user preference
     pub fn with_preference(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
         self.user_preferences.insert(key.into(), value.into());
         self
     }
-    
+
     /// Add relevant memory
     pub fn with_memory(mut self, memory: impl Into<String>) -> Self {
         self.relevant_memories.push(memory.into());
         self
     }
-    
+
     /// Build memory context for prompts
     pub fn build_prompt_context(&self) -> String {
         let mut parts = Vec::new();
-        
+
         if let Some(soul) = &self.soul_context {
             parts.push(format!("## Agent Personality\n{}", soul));
         }
-        
+
         if !self.user_preferences.is_empty() {
             parts.push("\n## User Preferences".to_string());
             for (key, value) in &self.user_preferences {
                 parts.push(format!("{}: {}", key, value));
             }
         }
-        
+
         if !self.relevant_memories.is_empty() {
             parts.push("\n## Relevant Memories".to_string());
             for memory in &self.relevant_memories {
                 parts.push(format!("- {}", memory));
             }
         }
-        
+
         parts.join("\n")
     }
 }
@@ -328,25 +327,25 @@ mod tests {
     fn test_context_with_args() {
         let ctx = SkillContext::new("session-123", "Hello")
             .with_args(serde_json::json!({"name": "World"}));
-        
+
         assert_eq!(ctx.extracted_args["name"], "World");
     }
 
     #[test]
     fn test_record_execution() {
         let mut ctx = SkillContext::new("session-123", "Hello");
-        
+
         ctx.record_execution(
             "test-skill",
             serde_json::json!({"arg": 1}),
             "result",
             true,
-            100
+            100,
         );
-        
+
         assert_eq!(ctx.execution_count(), 1);
         assert!(ctx.has_successful_execution("test-skill"));
-        
+
         let last = ctx.last_execution().unwrap();
         assert_eq!(last.skill_name, "test-skill");
         assert!(last.success);
@@ -355,14 +354,14 @@ mod tests {
     #[test]
     fn test_shared_state() {
         let mut ctx = SkillContext::new("session-123", "Hello");
-        
+
         ctx.set_state("key1", serde_json::json!("value1"));
         assert!(ctx.has_state("key1"));
         assert_eq!(ctx.get_state("key1").unwrap(), "value1");
-        
+
         ctx.set_state_typed("key2", 42i32);
         assert_eq!(ctx.get_state_typed::<i32>("key2").unwrap(), 42);
-        
+
         ctx.remove_state("key1");
         assert!(!ctx.has_state("key1"));
     }
@@ -371,9 +370,9 @@ mod tests {
     fn test_child_context() {
         let mut parent = SkillContext::new("session-123", "Hello");
         parent.set_state("shared", serde_json::json!("data"));
-        
+
         let child = parent.create_child("child-skill");
-        
+
         assert!(child.session_id.contains("child-skill"));
         assert_eq!(child.get_state("shared").unwrap(), "data");
         assert!(child.execution_history.is_empty()); // Fresh history
@@ -381,19 +380,18 @@ mod tests {
 
     #[test]
     fn test_history_limit() {
-        let mut ctx = SkillContext::new("session-123", "Hello")
-            .with_max_history(3);
-        
+        let mut ctx = SkillContext::new("session-123", "Hello").with_max_history(3);
+
         for i in 0..5 {
             ctx.record_execution(
                 &format!("skill-{}", i),
                 serde_json::json!({}),
                 "result",
                 true,
-                100
+                100,
             );
         }
-        
+
         assert_eq!(ctx.execution_count(), 3);
         // Should keep the most recent
         assert!(ctx.has_successful_execution("skill-4"));
@@ -406,7 +404,7 @@ mod tests {
             .with_soul("You are a helpful assistant")
             .with_preference("language", "zh-CN")
             .with_memory("User likes Python");
-        
+
         let prompt = mem.build_prompt_context();
         assert!(prompt.contains("helpful assistant"));
         assert!(prompt.contains("language: zh-CN"));

@@ -11,8 +11,8 @@ use std::sync::Arc;
 use tracing::{debug, info, warn};
 
 use crate::cognitive::llm::LlmClient;
-use crate::types::{ContentPart, Message, ToolCall, TraceStep};
 use crate::tools::manager::ToolManager;
+use crate::types::{ContentPart, Message, ToolCall, TraceStep};
 
 /// OpenClaw 执行结果
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -80,10 +80,7 @@ impl OpenClawEngine {
         let user_prompt = self.interpolate_args(skill_instructions, args);
 
         // 3. 构建消息历史
-        let mut messages = vec![
-            Message::system(system_prompt),
-            Message::user(user_prompt),
-        ];
+        let mut messages = vec![Message::system(system_prompt), Message::user(user_prompt)];
 
         // 4. 添加上下文（如果有）
         if let Some(ctx) = context {
@@ -96,7 +93,11 @@ impl OpenClawEngine {
 
         // 5. ReAct 循环
         while iteration < self.max_iterations {
-            debug!("OpenClaw iteration {}/{}", iteration + 1, self.max_iterations);
+            debug!(
+                "OpenClaw iteration {}/{}",
+                iteration + 1,
+                self.max_iterations
+            );
 
             // 获取可用工具定义
             let tools = self.tool_manager.to_tool_definitions();
@@ -106,20 +107,22 @@ impl OpenClawEngine {
                 let response_text = self.llm_client.chat_complete(&messages).await?;
                 Message::assistant(response_text)
             } else {
-                self.llm_client.chat_complete_with_tools(&messages, &tools).await?
+                self.llm_client
+                    .chat_complete_with_tools(&messages, &tools)
+                    .await?
             };
 
             // 解析响应
             match self.parse_response(&response_message) {
                 ResponseType::ToolCall(tool_call) => {
                     debug!("Tool call requested: {}", tool_call.function.name);
-                    
+
                     // 记录追踪
                     traces.push(TraceStep {
                         step: iteration,
-                        thought: format!("Calling tool: {} with args: {}", 
-                            tool_call.function.name, 
-                            tool_call.function.arguments
+                        thought: format!(
+                            "Calling tool: {} with args: {}",
+                            tool_call.function.name, tool_call.function.arguments
                         ),
                         action: Some(tool_call.function.name.clone()),
                         action_input: Some(tool_call.function.arguments.clone()),
@@ -153,10 +156,7 @@ impl OpenClawEngine {
 
                     // 添加工具结果到消息历史
                     messages.push(response_message);
-                    messages.push(Message::tool_result(
-                        tool_call.id,
-                        tool_result.clone(),
-                    ));
+                    messages.push(Message::tool_result(tool_call.id, tool_result.clone()));
 
                     // 更新追踪
                     if let Some(last_trace) = traces.last_mut() {
@@ -188,7 +188,7 @@ impl OpenClawEngine {
             }
 
             iteration += 1;
-            
+
             // 检查是否达到最大迭代次数
             if iteration >= self.max_iterations {
                 warn!("Max iterations reached for OpenClaw skill");
@@ -237,7 +237,7 @@ Execute the skill according to the instructions."#,
     /// 参数插值
     fn interpolate_args(&self, template: &str, args: &Value) -> String {
         let mut result = template.to_string();
-        
+
         if let Some(obj) = args.as_object() {
             for (key, val) in obj {
                 let placeholder = format!("{{{{{}}}}}", key);
@@ -248,26 +248,30 @@ Execute the skill according to the instructions."#,
                 result = result.replace(&placeholder, &replacement);
             }
         }
-        
+
         result
     }
 
     /// 注入上下文到消息历史
-    fn inject_context(&self, mut messages: Vec<Message>, context: ExecutionContext) -> Vec<Message> {
+    fn inject_context(
+        &self,
+        mut messages: Vec<Message>,
+        context: ExecutionContext,
+    ) -> Vec<Message> {
         // 保留系统消息
         let mut result = vec![messages.remove(0)];
-        
+
         // 合并历史消息
         if let Some(history) = context.conversation_history {
             result.extend(history);
         }
-        
+
         // 添加上下文（限制最近 5 条）
         // 这里可以根据 metadata 注入更多信息
-        
+
         // 添加当前用户消息
         result.push(messages[0].clone());
-        
+
         result
     }
 
@@ -304,8 +308,10 @@ Execute the skill according to the instructions."#,
     async fn execute_tool_call(&self, tool_call: &ToolCall) -> Result<String> {
         let args: Value = serde_json::from_str(&tool_call.function.arguments)
             .context("Failed to parse tool arguments")?;
-        
-        self.tool_manager.execute(&tool_call.function.name, args).await
+
+        self.tool_manager
+            .execute(&tool_call.function.name, args)
+            .await
     }
 }
 
@@ -360,7 +366,11 @@ pub struct ToolInfo {
 pub trait ToolManagerTrait: Send + Sync {
     fn list_tools(&self) -> Vec<ToolInfo>;
     fn to_tool_definitions(&self) -> Vec<Value>;
-    fn execute(&self, name: &str, args: Value) -> impl std::future::Future<Output = Result<String>> + Send;
+    fn execute(
+        &self,
+        name: &str,
+        args: Value,
+    ) -> impl std::future::Future<Output = Result<String>> + Send;
     fn is_empty(&self) -> bool;
 }
 

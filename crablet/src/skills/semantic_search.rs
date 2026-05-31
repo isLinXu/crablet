@@ -1,14 +1,13 @@
 //! 语义化技能搜索模块
-//! 
+//!
 //! 基于向量相似度实现智能技能发现
 //! 支持自然语言查询、技能推荐、相似技能发现
 
-use anyhow::{Result, Context};
+use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
-use tracing::{info, debug, warn};
-
+use tracing::{debug, info, warn};
 
 /// 嵌入服务
 #[derive(Debug, Clone)]
@@ -19,13 +18,13 @@ impl EmbeddingService {
         #[cfg(feature = "knowledge")]
         {
             // 使用 fastembed 生成嵌入向量
-            use fastembed::{TextEmbedding, EmbeddingModel, InitOptions};
-            
-            let options = InitOptions::new(EmbeddingModel::BGESmallENV15)
-                .with_show_download_progress(false);
-            
+            use fastembed::{EmbeddingModel, InitOptions, TextEmbedding};
+
+            let options =
+                InitOptions::new(EmbeddingModel::BGESmallENV15).with_show_download_progress(false);
+
             let mut model = TextEmbedding::try_new(options)?;
-            
+
             let embeddings = model.embed(vec![text], None)?;
             if let Some(embedding) = embeddings.first() {
                 Ok(embedding.clone())
@@ -33,7 +32,7 @@ impl EmbeddingService {
                 Ok(vec![])
             }
         }
-        
+
         #[cfg(not(feature = "knowledge"))]
         {
             let _ = text;
@@ -167,9 +166,9 @@ impl SkillSearchIndex {
     /// 从技能目录构建索引
     pub async fn build_from_directory(&mut self, skills_dir: &Path) -> Result<()> {
         info!("Building skill search index from {:?}", skills_dir);
-        
+
         let mut entries = tokio::fs::read_dir(skills_dir).await?;
-        
+
         while let Some(entry) = entries.next_entry().await? {
             let path = entry.path();
             if path.is_dir() {
@@ -178,10 +177,13 @@ impl SkillSearchIndex {
                 }
             }
         }
-        
+
         self.version += 1;
-        info!("Skill search index built: {} skills indexed", self.embeddings.len());
-        
+        info!(
+            "Skill search index built: {} skills indexed",
+            self.embeddings.len()
+        );
+
         Ok(())
     }
 
@@ -197,18 +199,18 @@ impl SkillSearchIndex {
         if skill_md_path.exists() {
             let content = tokio::fs::read_to_string(&skill_md_path).await?;
             let metadata = self.parse_skill_md(&content, skill_name)?;
-            
+
             // 生成嵌入向量
             let text_to_embed = format!(
                 "{} {} {} {}",
                 metadata.name,
                 metadata.description,
                 metadata.tags.join(" "),
-                metadata.category.to_string()
+                metadata.category
             );
-            
+
             let embedding = self.embedding_service.embed(&text_to_embed).await?;
-            
+
             self.embeddings.insert(skill_name.to_string(), embedding);
             self.metadata.insert(skill_name.to_string(), metadata);
         }
@@ -229,12 +231,12 @@ impl SkillSearchIndex {
         if content.starts_with("---") {
             if let Some(end) = content.find("\n---") {
                 let frontmatter = &content[3..end];
-                
+
                 for line in frontmatter.lines() {
                     if let Some((key, value)) = line.split_once(':') {
                         let key = key.trim();
                         let value = value.trim().trim_matches('"').trim_matches('\'');
-                        
+
                         match key {
                             "name" => name = value.to_string(),
                             "description" => description = value.to_string(),
@@ -289,13 +291,13 @@ impl SkillSearchIndex {
 
         // 生成查询向量
         let query_embedding = self.embedding_service.embed(&query.query).await?;
-        
+
         let mut results: Vec<SkillSearchResult> = Vec::new();
 
         for (skill_name, skill_embedding) in &self.embeddings {
             // 计算余弦相似度
             let similarity = cosine_similarity(&query_embedding, skill_embedding);
-            
+
             if similarity < query.min_similarity {
                 continue;
             }
@@ -312,8 +314,14 @@ impl SkillSearchIndex {
                     .iter()
                     .filter(|k| {
                         metadata.name.to_lowercase().contains(&k.to_lowercase())
-                            || metadata.description.to_lowercase().contains(&k.to_lowercase())
-                            || metadata.tags.iter().any(|t| t.to_lowercase() == k.to_lowercase())
+                            || metadata
+                                .description
+                                .to_lowercase()
+                                .contains(&k.to_lowercase())
+                            || metadata
+                                .tags
+                                .iter()
+                                .any(|t| t.to_lowercase() == k.to_lowercase())
                     })
                     .cloned()
                     .collect();
@@ -364,7 +372,11 @@ impl SkillSearchIndex {
         }
 
         if let Some(ref author) = filters.author {
-            if !metadata.author.to_lowercase().contains(&author.to_lowercase()) {
+            if !metadata
+                .author
+                .to_lowercase()
+                .contains(&author.to_lowercase())
+            {
                 return false;
             }
         }
@@ -379,8 +391,13 @@ impl SkillSearchIndex {
     }
 
     /// 获取相似技能推荐
-    pub async fn find_similar(&self, skill_name: &str, limit: usize) -> Result<Vec<SkillSearchResult>> {
-        let skill_embedding = self.embeddings
+    pub async fn find_similar(
+        &self,
+        skill_name: &str,
+        limit: usize,
+    ) -> Result<Vec<SkillSearchResult>> {
+        let skill_embedding = self
+            .embeddings
             .get(skill_name)
             .context("Skill not found in index")?;
 
@@ -392,7 +409,7 @@ impl SkillSearchIndex {
             }
 
             let similarity = cosine_similarity(skill_embedding, embedding);
-            
+
             if let Some(metadata) = self.metadata.get(name) {
                 results.push(SkillSearchResult {
                     skill_name: name.clone(),
@@ -442,7 +459,7 @@ impl SkillSearchIndex {
         }
 
         // 去重并排序
-        suggestions.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap());
+        suggestions.sort_by(|a, b| b.confidence.total_cmp(&a.confidence));
         suggestions.dedup_by(|a, b| a.text == b.text);
         suggestions.truncate(limit);
 
@@ -470,7 +487,8 @@ impl SkillSearchIndex {
         IndexStats {
             total_skills: self.embeddings.len(),
             version: self.version,
-            categories: self.metadata
+            categories: self
+                .metadata
                 .values()
                 .map(|m| m.category.clone())
                 .collect::<std::collections::HashSet<_>>()
@@ -507,7 +525,10 @@ fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
 /// 提取关键词
 fn extract_keywords(text: &str) -> Vec<String> {
     text.split_whitespace()
-        .map(|w| w.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase())
+        .map(|w| {
+            w.trim_matches(|c: char| !c.is_alphanumeric())
+                .to_lowercase()
+        })
         .filter(|w| w.len() > 2)
         .collect()
 }
@@ -542,14 +563,17 @@ impl SkillSearchManager {
             limit,
             min_similarity: 0.5,
         };
-        
+
         self.index.search(&search_query).await
     }
 
     /// 自然语言搜索
-    pub async fn natural_language_search(&self, description: &str) -> Result<Vec<SkillSearchResult>> {
+    pub async fn natural_language_search(
+        &self,
+        description: &str,
+    ) -> Result<Vec<SkillSearchResult>> {
         info!("Performing natural language skill search: {}", description);
-        
+
         // 使用 LLM 提取搜索意图
         let search_query = SearchQuery {
             query: description.to_string(),
@@ -557,9 +581,9 @@ impl SkillSearchManager {
             limit: 10,
             min_similarity: 0.4, // 较低的阈值以获得更多结果
         };
-        
+
         let results = self.index.search(&search_query).await?;
-        
+
         // 如果没有找到结果，尝试更宽泛的搜索
         if results.is_empty() {
             let broad_query = SearchQuery {
@@ -570,7 +594,7 @@ impl SkillSearchManager {
             };
             return self.index.search(&broad_query).await;
         }
-        
+
         Ok(results)
     }
 

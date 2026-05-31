@@ -1,7 +1,7 @@
+use crate::plugins::Plugin;
 use anyhow::Result;
 use async_trait::async_trait;
 use serde_json::Value;
-use crate::plugins::Plugin;
 
 pub struct WeatherPlugin;
 
@@ -15,16 +15,20 @@ impl Plugin for WeatherPlugin {
         "Get current weather for a location. Args: { \"location\": \"city name\" }"
     }
 
-    async fn initialize(&mut self) -> Result<()> { Ok(()) }
+    async fn initialize(&mut self) -> Result<()> {
+        Ok(())
+    }
 
     async fn execute(&self, _command: &str, args: Value) -> Result<String> {
         // Handle args as map
         let location = if let Some(obj) = args.as_object() {
-            obj.get("location").and_then(|v| v.as_str()).unwrap_or("unknown")
+            obj.get("location")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown")
         } else {
-             args.as_str().unwrap_or("unknown")
+            args.as_str().unwrap_or("unknown")
         };
-        
+
         if location.to_lowercase().contains("tokyo") {
             Ok("Weather in Tokyo: Sunny, 25°C, Humidity 60%".to_string())
         } else {
@@ -32,7 +36,9 @@ impl Plugin for WeatherPlugin {
         }
     }
 
-    async fn shutdown(&mut self) -> Result<()> { Ok(()) }
+    async fn shutdown(&mut self) -> Result<()> {
+        Ok(())
+    }
 }
 
 pub struct CalculatorPlugin;
@@ -47,20 +53,26 @@ impl Plugin for CalculatorPlugin {
         "Calculate math expression. Args: { \"expression\": \"math string\" }"
     }
 
-    async fn initialize(&mut self) -> Result<()> { Ok(()) }
+    async fn initialize(&mut self) -> Result<()> {
+        Ok(())
+    }
 
     async fn execute(&self, _command: &str, args: Value) -> Result<String> {
         let expr = if let Some(obj) = args.as_object() {
-            obj.get("expression").and_then(|v| v.as_str()).unwrap_or("0")
+            obj.get("expression")
+                .and_then(|v| v.as_str())
+                .unwrap_or("0")
         } else {
-             args.as_str().unwrap_or("0")
+            args.as_str().unwrap_or("0")
         };
-        
+
         match evalexpr::eval(expr) {
             Ok(result) => Ok(result.to_string()),
             Err(e) => Ok(format!("Error: {}", e)),
         }
     }
 
-    async fn shutdown(&mut self) -> Result<()> { Ok(()) }
+    async fn shutdown(&mut self) -> Result<()> {
+        Ok(())
+    }
 }

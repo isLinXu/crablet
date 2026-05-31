@@ -6,10 +6,10 @@
 //! - Built-in plugins
 //! - Remote registries
 
-use anyhow::Result;
-use tracing::{info, warn, error};
-use crate::skills::{SkillRegistry, SkillTriggerEngine};
 use crate::config::Config;
+use crate::skills::{SkillRegistry, SkillTriggerEngine};
+use anyhow::Result;
+use tracing::{error, info, warn};
 
 /// Result of skill discovery
 #[derive(Debug, Default)]
@@ -33,7 +33,7 @@ impl DiscoveryResult {
     pub fn total(&self) -> usize {
         self.local_count + self.mcp_count + self.plugin_count + self.openclaw_count
     }
-    
+
     /// Check if discovery was successful (no errors)
     pub fn is_success(&self) -> bool {
         self.errors.is_empty()
@@ -50,9 +50,9 @@ impl SkillDiscovery {
         config: &Config,
     ) -> Result<DiscoveryResult> {
         let mut result = DiscoveryResult::default();
-        
+
         info!("Starting skill discovery...");
-        
+
         // 1. Discover local skills
         match Self::discover_local_skills(registry, config).await {
             Ok(count) => {
@@ -65,7 +65,7 @@ impl SkillDiscovery {
                 result.errors.push(msg);
             }
         }
-        
+
         // 2. Discover MCP skills
         match Self::discover_mcp_skills(registry, config).await {
             Ok(count) => {
@@ -78,7 +78,7 @@ impl SkillDiscovery {
                 result.errors.push(msg);
             }
         }
-        
+
         // 3. Discover built-in plugins
         match Self::discover_plugins(registry, config).await {
             Ok(count) => {
@@ -91,7 +91,7 @@ impl SkillDiscovery {
                 result.errors.push(msg);
             }
         }
-        
+
         info!(
             "Skill discovery complete: {} total skills ({} local, {} MCP, {} plugins, {} OpenClaw)",
             result.total(),
@@ -100,36 +100,30 @@ impl SkillDiscovery {
             result.plugin_count,
             result.openclaw_count
         );
-        
+
         Ok(result)
     }
-    
+
     /// Discover local skills from the skills directory
-    async fn discover_local_skills(
-        registry: &mut SkillRegistry,
-        config: &Config,
-    ) -> Result<usize> {
+    async fn discover_local_skills(registry: &mut SkillRegistry, config: &Config) -> Result<usize> {
         let skills_dir = &config.skills_dir;
-        
+
         if !skills_dir.exists() {
             info!("Skills directory does not exist: {:?}", skills_dir);
             return Ok(0);
         }
-        
+
         let initial_count = registry.len();
         registry.load_from_dir(skills_dir).await?;
         let final_count = registry.len();
-        
+
         Ok(final_count - initial_count)
     }
-    
+
     /// Discover skills from MCP servers
-    async fn discover_mcp_skills(
-        registry: &mut SkillRegistry,
-        config: &Config,
-    ) -> Result<usize> {
+    async fn discover_mcp_skills(registry: &mut SkillRegistry, config: &Config) -> Result<usize> {
         let mut total_tools = 0;
-        
+
         for (server_name, server_config) in &config.mcp_servers {
             match Self::connect_mcp_server(registry, server_name, server_config).await {
                 Ok(count) => {
@@ -141,10 +135,10 @@ impl SkillDiscovery {
                 }
             }
         }
-        
+
         Ok(total_tools)
     }
-    
+
     /// Connect to a single MCP server and register its tools
     async fn connect_mcp_server(
         registry: &mut SkillRegistry,
@@ -152,16 +146,16 @@ impl SkillDiscovery {
         server_config: &crate::config::McpServerConfig,
     ) -> Result<usize> {
         use crate::tools::mcp::McpClient;
-        
+
         info!("Connecting to MCP server: {}", server_name);
-        
+
         let client = McpClient::new(&server_config.command, &server_config.args).await?;
         let client_arc = std::sync::Arc::new(client);
-        
+
         // Register tools
         let tools = client_arc.list_tools().await?;
         let mut tool_count = 0;
-        
+
         for tool in tools {
             registry.register_mcp_tool(
                 tool.name.clone(),
@@ -171,103 +165,87 @@ impl SkillDiscovery {
             );
             tool_count += 1;
         }
-        
+
         // Register resources
         if let Ok(resources) = client_arc.list_resources().await {
             for resource in resources {
                 registry.register_mcp_resource(resource, client_arc.clone());
             }
         }
-        
+
         // Register prompts
         if let Ok(prompts) = client_arc.list_prompts().await {
             for prompt in prompts {
                 registry.register_mcp_prompt(prompt, client_arc.clone());
             }
         }
-        
+
         Ok(tool_count)
     }
-    
+
     /// Discover built-in plugins
-    async fn discover_plugins(
-        _registry: &mut SkillRegistry,
-        _config: &Config,
-    ) -> Result<usize> {
+    async fn discover_plugins(_registry: &mut SkillRegistry, _config: &Config) -> Result<usize> {
         // Built-in plugins are registered at compile time
         // This is a placeholder for dynamic plugin discovery in the future
         Ok(0)
     }
-    
+
     /// Build a trigger engine from the registry
     pub fn build_trigger_engine(registry: &SkillRegistry) -> SkillTriggerEngine {
-        let mut engine = SkillTriggerEngine::new();
-        
-        for manifest in registry.list_skills() {
-            // Register explicit triggers from manifest
-            for trigger in &manifest.triggers {
-                engine.register(manifest.name.clone(), trigger.clone());
-            }
-            
-            // Auto-generate triggers if none defined
-            if manifest.triggers.is_empty() {
-                let auto_triggers = Self::generate_triggers(&manifest);
-                for trigger in auto_triggers {
-                    engine.register(manifest.name.clone(), trigger);
-                }
-            }
-        }
-        
-        engine
+        registry.build_trigger_engine()
     }
-    
+
     /// Generate default triggers for a skill
-    fn generate_triggers(manifest: &crate::skills::SkillManifest) -> Vec<crate::skills::SkillTrigger> {
+    fn generate_triggers(
+        manifest: &crate::skills::SkillManifest,
+    ) -> Vec<crate::skills::SkillTrigger> {
         use crate::skills::SkillTrigger;
-        
+
         let mut triggers = Vec::new();
-        
+
         // 1. Command trigger from skill name
         triggers.push(SkillTrigger::Command {
             prefix: format!("/{}", manifest.name.to_lowercase()),
             args_schema: Some(manifest.parameters.clone()),
         });
-        
+
         // 2. Keyword trigger from description
-        let keywords: Vec<String> = manifest.description
+        let keywords: Vec<String> = manifest
+            .description
             .split_whitespace()
             .filter(|w| w.len() > 3)
             .take(5)
-            .map(|w| w.to_lowercase().trim_matches(|c: char| !c.is_alphanumeric()).to_string())
+            .map(|w| {
+                w.to_lowercase()
+                    .trim_matches(|c: char| !c.is_alphanumeric())
+                    .to_string()
+            })
             .filter(|w| !w.is_empty())
             .collect();
-        
+
         if !keywords.is_empty() {
             triggers.push(SkillTrigger::Keyword {
                 keywords,
                 case_sensitive: false,
             });
         }
-        
+
         // 3. Semantic trigger
         triggers.push(SkillTrigger::Semantic {
             description: manifest.description.clone(),
             threshold: 0.75,
         });
-        
+
         triggers
     }
-    
+
     /// Refresh skills from all sources
-    pub async fn refresh(
-        registry: &mut SkillRegistry,
-        config: &Config,
-    ) -> Result<DiscoveryResult> {
+    pub async fn refresh(registry: &mut SkillRegistry, config: &Config) -> Result<DiscoveryResult> {
         info!("Refreshing skills...");
-        
+
         // Clear existing skills
         registry.clear();
-        
+
         // Re-discover
         Self::discover_all(registry, config).await
     }
@@ -285,14 +263,26 @@ impl SkillDiscoveryWatcher {
             skills_dir: skills_dir.into(),
         }
     }
-    
+
     /// Start watching for changes
-    pub async fn start(self, _registry: std::sync::Arc<tokio::sync::RwLock<SkillRegistry>>) -> Result<()> {
-        info!("Starting skill discovery watcher for: {:?}", self.skills_dir);
-        
-        // TODO: Implement file system watching using notify crate
-        // For now, this is a placeholder
-        
+    pub async fn start(
+        self,
+        _registry: std::sync::Arc<tokio::sync::RwLock<SkillRegistry>>,
+    ) -> Result<()> {
+        info!(
+            "Starting skill discovery watcher for: {:?}",
+            self.skills_dir
+        );
+
+        // File system watching using the `notify` crate.
+        // Real implementation would:
+        // 1. Create a RecommendedWatcher with a debounce interval
+        // 2. Watch self.skills_dir for Create/Modify/Delete events
+        // 3. On event, scan the changed path for skill manifests
+        // 4. Register new skills or update existing ones in the registry
+        // Currently a placeholder; file watching will be added when
+        // the discovery subsystem is fully implemented.
+
         Ok(())
     }
 }
@@ -326,11 +316,11 @@ mod tests {
             author: None,
             triggers: vec![],
         };
-        
+
         let triggers = SkillDiscovery::generate_triggers(&manifest);
-        
+
         assert_eq!(triggers.len(), 3);
-        
+
         // Check command trigger
         match &triggers[0] {
             SkillTrigger::Command { prefix, .. } => {
@@ -338,7 +328,7 @@ mod tests {
             }
             _ => panic!("Expected Command trigger"),
         }
-        
+
         // Check keyword trigger
         match &triggers[1] {
             SkillTrigger::Keyword { keywords, .. } => {
@@ -347,10 +337,13 @@ mod tests {
             }
             _ => panic!("Expected Keyword trigger"),
         }
-        
+
         // Check semantic trigger
         match &triggers[2] {
-            SkillTrigger::Semantic { description, threshold } => {
+            SkillTrigger::Semantic {
+                description,
+                threshold,
+            } => {
                 assert_eq!(description, "Get weather information for any location");
                 assert_eq!(*threshold, 0.75);
             }
@@ -368,15 +361,15 @@ mod tests {
             trigger_count: 20,
             errors: vec![],
         };
-        
+
         assert_eq!(result.total(), 11);
         assert!(result.is_success());
-        
+
         let result_with_errors = DiscoveryResult {
             errors: vec!["Some error".to_string()],
             ..result
         };
-        
+
         assert!(!result_with_errors.is_success());
     }
 }

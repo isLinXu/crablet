@@ -6,11 +6,11 @@
 //! - 性能分析
 //! - 交互式调试
 
-use std::collections::HashMap;
-use anyhow::{Result, anyhow};
-use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use anyhow::{anyhow, Result};
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
+use std::collections::HashMap;
 
 use super::chain::{SkillChain, StepType};
 use super::composite::{CompositeSkill, CompositionType};
@@ -61,7 +61,7 @@ impl GraphExporter {
     /// 导出技能链为图
     pub fn export_chain(chain: &SkillChain, format: GraphFormat) -> Result<String> {
         let graph = Self::chain_to_graph(chain)?;
-        
+
         match format {
             GraphFormat::Mermaid => Self::to_mermaid(&graph),
             GraphFormat::GraphvizDot => Self::to_graphviz(&graph),
@@ -73,7 +73,7 @@ impl GraphExporter {
     /// 导出组合技能为图
     pub fn export_composite(composite: &CompositeSkill, format: GraphFormat) -> Result<String> {
         let graph = Self::composite_to_graph(composite)?;
-        
+
         match format {
             GraphFormat::Mermaid => Self::to_mermaid(&graph),
             GraphFormat::GraphvizDot => Self::to_graphviz(&graph),
@@ -90,7 +90,7 @@ impl GraphExporter {
         // 添加节点
         for step in &chain.steps {
             let (shape, color) = Self::get_step_style(&step.step_type);
-            
+
             nodes.push(GraphNode {
                 id: step.id.clone(),
                 label: step.name.clone(),
@@ -115,7 +115,12 @@ impl GraphExporter {
                 source: conn.from.clone(),
                 target: conn.to.clone(),
                 label: conn.label.clone(),
-                style: if conn.condition.is_some() { "dashed" } else { "solid" }.to_string(),
+                style: if conn.condition.is_some() {
+                    "dashed"
+                } else {
+                    "solid"
+                }
+                .to_string(),
                 metadata: {
                     let mut meta = HashMap::new();
                     if let Some(ref cond) = conn.condition {
@@ -182,7 +187,10 @@ impl GraphExporter {
 
         let mut metadata = HashMap::new();
         metadata.insert("name".to_string(), json!(composite.name.clone()));
-        metadata.insert("composition_type".to_string(), json!(format!("{:?}", composite.composition_type)));
+        metadata.insert(
+            "composition_type".to_string(),
+            json!(format!("{:?}", composite.composition_type)),
+        );
 
         Ok(SkillChainGraph {
             nodes,
@@ -208,14 +216,14 @@ impl GraphExporter {
     /// 导出为 Mermaid
     fn to_mermaid(graph: &SkillChainGraph) -> Result<String> {
         let mut output = String::from("flowchart TD\n");
-        
+
         // 添加节点样式定义
         output.push_str("    %% Styles\n");
         output.push_str("    classDef skill fill:#4CAF50,stroke:#333,stroke-width:2px;\n");
         output.push_str("    classDef condition fill:#FF9800,stroke:#333,stroke-width:2px;\n");
         output.push_str("    classDef parallel fill:#2196F3,stroke:#333,stroke-width:2px;\n");
         output.push_str("    classDef error fill:#F44336,stroke:#333,stroke-width:2px;\n");
-        output.push_str("\n");
+        output.push('\n');
 
         // 添加节点
         for node in &graph.nodes {
@@ -233,36 +241,38 @@ impl GraphExporter {
                 "hexagon" => "}}",
                 _ => "]",
             };
-            
+
             output.push_str(&format!(
                 "    {}{}{}\n",
                 node.id,
                 shape_start,
-                shape_end.replace("]", &format!("{}]", node.label))
+                shape_end
+                    .replace("]", &format!("{}]", node.label))
                     .replace("}", &format!("{}}}", node.label))
                     .replace(")", &format!("{}))", node.label))
                     .replace("}}", &format!("{}}}", node.label))
             ));
-            
+
             // 添加类
             output.push_str(&format!("    class {} {};\n", node.id, node.node_type));
         }
 
-        output.push_str("\n");
+        output.push('\n');
 
         // 添加边
         for edge in &graph.edges {
-            let style = if edge.style == "dashed" { "-.->" } else { "-->" };
+            let style = if edge.style == "dashed" {
+                "-.->"
+            } else {
+                "-->"
+            };
             if let Some(ref label) = edge.label {
                 output.push_str(&format!(
                     "    {} {}|{}| {}\n",
                     edge.source, style, label, edge.target
                 ));
             } else {
-                output.push_str(&format!(
-                    "    {} {} {}\n",
-                    edge.source, style, edge.target
-                ));
+                output.push_str(&format!("    {} {} {}\n", edge.source, style, edge.target));
             }
         }
 
@@ -285,18 +295,25 @@ impl GraphExporter {
                 "hexagon" => "hexagon",
                 _ => "box",
             };
-            
+
             output.push_str(&format!(
                 "    \"{}\" [label=\"{}\", shape={}, fillcolor=\"{}\"];\n",
-                node.id, node.label.replace("\n", "\\n"), shape, node.color
+                node.id,
+                node.label.replace("\n", "\\n"),
+                shape,
+                node.color
             ));
         }
 
-        output.push_str("\n");
+        output.push('\n');
 
         // 添加边
         for edge in &graph.edges {
-            let style = if edge.style == "dashed" { ", style=dashed" } else { "" };
+            let style = if edge.style == "dashed" {
+                ", style=dashed"
+            } else {
+                ""
+            };
             if let Some(ref label) = edge.label {
                 output.push_str(&format!(
                     "    \"{}\" -> \"{}\" [label=\"{}\"{}];\n",
@@ -305,7 +322,9 @@ impl GraphExporter {
             } else {
                 output.push_str(&format!(
                     "    \"{}\" -> \"{}\" [{}];\n",
-                    edge.source, edge.target, style.trim_start_matches(", ")
+                    edge.source,
+                    edge.target,
+                    style.trim_start_matches(", ")
                 ));
             }
         }
@@ -322,7 +341,10 @@ impl GraphExporter {
 
         // 添加标题
         if let Some(name) = graph.metadata.get("name") {
-            output.push_str(&format!("title {}\n\n", name.as_str().unwrap_or("Skill Chain")));
+            output.push_str(&format!(
+                "title {}\n\n",
+                name.as_str().unwrap_or("Skill Chain")
+            ));
         }
 
         // 添加节点
@@ -332,14 +354,17 @@ impl GraphExporter {
                 "circle" => "circle",
                 _ => "rectangle",
             };
-            
+
             output.push_str(&format!(
                 "{} \"{}\" as {} #{}\n",
-                uml_type, node.label.replace("\n", "\\n"), node.id, node.color.trim_start_matches('#')
+                uml_type,
+                node.label.replace("\n", "\\n"),
+                node.id,
+                node.color.trim_start_matches('#')
             ));
         }
 
-        output.push_str("\n");
+        output.push('\n');
 
         // 添加连接
         for edge in &graph.edges {
@@ -349,10 +374,7 @@ impl GraphExporter {
                     edge.source, edge.target, label
                 ));
             } else {
-                output.push_str(&format!(
-                    "{} --> {}\n",
-                    edge.source, edge.target
-                ));
+                output.push_str(&format!("{} --> {}\n", edge.source, edge.target));
             }
         }
 
@@ -392,8 +414,7 @@ impl GraphExporter {
             "metadata": graph.metadata
         });
 
-        serde_json::to_string_pretty(&cyto_graph)
-            .map_err(|e| anyhow!("Failed to serialize: {}", e))
+        serde_json::to_string_pretty(&cyto_graph).map_err(|e| anyhow!("Failed to serialize: {}", e))
     }
 }
 
@@ -438,15 +459,13 @@ pub enum TraceEventType {
 
 impl ExecutionTracer {
     pub fn new() -> Self {
-        Self {
-            traces: Vec::new(),
-        }
+        Self { traces: Vec::new() }
     }
 
     /// 开始追踪
     pub fn start_trace(&mut self, chain_id: &str) -> String {
         let trace_id = format!("trace_{}", uuid::Uuid::new_v4());
-        
+
         self.traces.push(ExecutionTrace {
             trace_id: trace_id.clone(),
             chain_id: chain_id.to_string(),
@@ -491,29 +510,34 @@ impl ExecutionTracer {
 
     /// 导出追踪为 JSON
     pub fn export_trace(&self, trace_id: &str) -> Result<String> {
-        let trace = self.traces.iter()
+        let trace = self
+            .traces
+            .iter()
             .find(|t| t.trace_id == trace_id)
             .ok_or_else(|| anyhow!("Trace not found: {}", trace_id))?;
 
-        serde_json::to_string_pretty(trace)
-            .map_err(|e| anyhow!("Failed to serialize: {}", e))
+        serde_json::to_string_pretty(trace).map_err(|e| anyhow!("Failed to serialize: {}", e))
     }
 
     /// 生成执行回放
     pub fn generate_playback(&self, trace_id: &str) -> Result<ExecutionPlayback> {
-        let trace = self.traces.iter()
+        let trace = self
+            .traces
+            .iter()
             .find(|t| t.trace_id == trace_id)
             .ok_or_else(|| anyhow!("Trace not found: {}", trace_id))?;
 
-        let frames: Vec<PlaybackFrame> = trace.events.iter().map(|event| {
-            PlaybackFrame {
+        let frames: Vec<PlaybackFrame> = trace
+            .events
+            .iter()
+            .map(|event| PlaybackFrame {
                 timestamp: event.timestamp,
                 step_id: event.step_id.clone(),
                 event_type: format!("{:?}", event.event_type),
                 variables: trace.variables.clone(),
                 details: event.details.clone(),
-            }
-        }).collect();
+            })
+            .collect();
 
         Ok(ExecutionPlayback {
             trace_id: trace_id.to_string(),
@@ -601,15 +625,22 @@ impl PerformanceAnalyzer {
         for trace in traces {
             for event in &trace.events {
                 if let Some(ref step_id) = event.step_id {
-                    if let Some(duration) = event.details.get("duration_ms").and_then(|v| v.as_u64()) {
-                        step_stats.entry(step_id.clone()).or_default().push(duration);
+                    if let Some(duration) =
+                        event.details.get("duration_ms").and_then(|v| v.as_u64())
+                    {
+                        step_stats
+                            .entry(step_id.clone())
+                            .or_default()
+                            .push(duration);
                     }
-                    
+
                     if matches!(event.event_type, TraceEventType::StepError) {
                         *step_errors.entry(step_id.clone()).or_default() += 1;
                     }
 
-                    if let Some(skill_name) = event.details.get("skill_name").and_then(|v| v.as_str()) {
+                    if let Some(skill_name) =
+                        event.details.get("skill_name").and_then(|v| v.as_str())
+                    {
                         step_names.insert(step_id.clone(), skill_name.to_string());
                     }
                 }
@@ -651,7 +682,11 @@ impl PerformanceAnalyzer {
             if avg > 5000 {
                 bottlenecks.push(Bottleneck {
                     step_id: step_id.clone(),
-                    severity: if avg > 30000 { BottleneckSeverity::Critical } else { BottleneckSeverity::High },
+                    severity: if avg > 30000 {
+                        BottleneckSeverity::Critical
+                    } else {
+                        BottleneckSeverity::High
+                    },
                     description: format!("Step takes {}ms on average", avg),
                     impact_ms: total,
                 });
@@ -660,8 +695,11 @@ impl PerformanceAnalyzer {
 
         // 生成建议
         let mut recommendations = Vec::new();
-        
-        if bottlenecks.iter().any(|b| matches!(b.severity, BottleneckSeverity::Critical)) {
+
+        if bottlenecks
+            .iter()
+            .any(|b| matches!(b.severity, BottleneckSeverity::Critical))
+        {
             recommendations.push("Consider optimizing critical bottleneck steps".to_string());
         }
 
@@ -670,7 +708,10 @@ impl PerformanceAnalyzer {
         }
 
         PerformanceReport {
-            chain_id: traces.first().map(|t| t.chain_id.clone()).unwrap_or_default(),
+            chain_id: traces
+                .first()
+                .map(|t| t.chain_id.clone())
+                .unwrap_or_default(),
             total_duration_ms: total_duration,
             step_performance,
             bottlenecks,
@@ -713,9 +754,14 @@ impl ChainDebugger {
     }
 
     /// 添加断点
-    pub fn add_breakpoint(&mut self, chain_id: &str, step_id: &str, condition: Option<String>) -> String {
+    pub fn add_breakpoint(
+        &mut self,
+        chain_id: &str,
+        step_id: &str,
+        condition: Option<String>,
+    ) -> String {
         let id = format!("bp_{}", uuid::Uuid::new_v4());
-        
+
         self.breakpoints.push(Breakpoint {
             id: id.clone(),
             chain_id: chain_id.to_string(),
@@ -735,12 +781,17 @@ impl ChainDebugger {
     }
 
     /// 检查是否应该中断
-    pub fn should_break(&self, chain_id: &str, step_id: &str, variables: &HashMap<String, Value>) -> bool {
+    pub fn should_break(
+        &self,
+        chain_id: &str,
+        step_id: &str,
+        variables: &HashMap<String, Value>,
+    ) -> bool {
         self.breakpoints.iter().any(|bp| {
-            bp.enabled && 
-            bp.chain_id == chain_id && 
-            bp.step_id == step_id &&
-            Self::evaluate_condition(&bp.condition, variables)
+            bp.enabled
+                && bp.chain_id == chain_id
+                && bp.step_id == step_id
+                && Self::evaluate_condition(&bp.condition, variables)
         })
     }
 
@@ -759,10 +810,9 @@ impl ChainDebugger {
 
     /// 获取观察变量值
     pub fn get_watched_values(&self, variables: &HashMap<String, Value>) -> HashMap<String, Value> {
-        self.watch_variables.iter()
-            .filter_map(|name| {
-                variables.get(name).map(|v| (name.clone(), v.clone()))
-            })
+        self.watch_variables
+            .iter()
+            .filter_map(|name| variables.get(name).map(|v| (name.clone(), v.clone())))
             .collect()
     }
 }
@@ -798,16 +848,14 @@ mod tests {
                     metadata: HashMap::new(),
                 },
             ],
-            edges: vec![
-                GraphEdge {
-                    id: "e1".to_string(),
-                    source: "a".to_string(),
-                    target: "b".to_string(),
-                    label: Some("next".to_string()),
-                    style: "solid".to_string(),
-                    metadata: HashMap::new(),
-                },
-            ],
+            edges: vec![GraphEdge {
+                id: "e1".to_string(),
+                source: "a".to_string(),
+                target: "b".to_string(),
+                label: Some("next".to_string()),
+                style: "solid".to_string(),
+                metadata: HashMap::new(),
+            }],
             metadata: HashMap::new(),
         };
 
@@ -821,16 +869,21 @@ mod tests {
     fn test_tracer() {
         let mut tracer = ExecutionTracer::new();
         let trace_id = tracer.start_trace("test_chain");
-        
-        tracer.log_event(&trace_id, TraceEvent {
-            timestamp: Utc::now(),
-            event_type: TraceEventType::StepStart,
-            step_id: Some("step1".to_string()),
-            details: HashMap::new(),
-        }).unwrap();
+
+        tracer
+            .log_event(
+                &trace_id,
+                TraceEvent {
+                    timestamp: Utc::now(),
+                    event_type: TraceEventType::StepStart,
+                    step_id: Some("step1".to_string()),
+                    details: HashMap::new(),
+                },
+            )
+            .unwrap();
 
         tracer.end_trace(&trace_id).unwrap();
-        
+
         let json = tracer.export_trace(&trace_id).unwrap();
         assert!(json.contains("test_chain"));
     }

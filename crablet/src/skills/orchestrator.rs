@@ -2,19 +2,19 @@
 //!
 //! 提供统一的API来管理和执行技能组合与技能链
 
+use anyhow::{anyhow, Result};
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::sync::Arc;
-use anyhow::{Result, anyhow};
-use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
 use tokio::sync::RwLock;
 use tracing::{info, warn};
 
-use super::{SkillRegistry};
+use super::chain::{ChainResult, SkillChainEngine};
 use super::composite::{CompositeExecutor, CompositeRegistry};
-use super::chain::{SkillChainEngine, ChainResult};
-use super::dsl::{WorkflowDefinition, WorkflowCompiler};
+use super::dsl::{WorkflowCompiler, WorkflowDefinition};
 use super::visualization::{ExecutionTracer, GraphExporter, GraphFormat};
+use super::SkillRegistry;
 
 /// 编排器配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -133,7 +133,7 @@ impl SkillOrchestrator {
     pub fn new(registry: Arc<RwLock<SkillRegistry>>, config: Option<OrchestratorConfig>) -> Self {
         let config = config.unwrap_or_default();
         let chain_engine = SkillChainEngine::new(registry.clone());
-        
+
         Self {
             config: config.clone(),
             registry: registry.clone(),
@@ -150,7 +150,7 @@ impl SkillOrchestrator {
 
         // 编译为技能链
         let chain = WorkflowCompiler::compile_to_chain(&workflow)?;
-        
+
         // 注册到链引擎
         self.chain_engine.register_chain(chain).await?;
 
@@ -168,7 +168,7 @@ impl SkillOrchestrator {
         info!("Loading workflow from: {:?}", path);
 
         let content = tokio::fs::read_to_string(path).await?;
-        
+
         let workflow = if path.extension().and_then(|s| s.to_str()) == Some("json") {
             WorkflowCompiler::from_json(&content)?
         } else {
@@ -181,14 +181,14 @@ impl SkillOrchestrator {
     /// 从目录加载所有工作流
     pub async fn load_workflows_from_dir(&self, dir: &std::path::Path) -> Result<usize> {
         let mut count = 0;
-        
+
         if !dir.exists() {
             warn!("Workflows directory not found: {:?}", dir);
             return Ok(0);
         }
 
         let mut entries = tokio::fs::read_dir(dir).await?;
-        
+
         while let Some(entry) = entries.next_entry().await? {
             let path = entry.path();
             if path.is_file() {
@@ -209,18 +209,24 @@ impl SkillOrchestrator {
     /// 执行工作流
     pub async fn execute(&self, request: ExecutionRequest) -> Result<ExecutionResponse> {
         let execution_id = format!("exec_{}", uuid::Uuid::new_v4());
-        
-        info!("Starting execution {} for workflow {}", execution_id, request.workflow_id);
+
+        info!(
+            "Starting execution {} for workflow {}",
+            execution_id, request.workflow_id
+        );
 
         // 创建执行句柄
         {
             let mut executions = self.active_executions.write().await;
-            executions.insert(execution_id.clone(), ExecutionHandle {
-                workflow_id: request.workflow_id.clone(),
-                status: ExecutionStatus::Pending,
-                start_time: std::time::Instant::now(),
-                result: None,
-            });
+            executions.insert(
+                execution_id.clone(),
+                ExecutionHandle {
+                    workflow_id: request.workflow_id.clone(),
+                    status: ExecutionStatus::Pending,
+                    start_time: std::time::Instant::now(),
+                    result: None,
+                },
+            );
         }
 
         // 开始追踪
@@ -232,14 +238,18 @@ impl SkillOrchestrator {
         };
 
         // 执行工作流
-        let result = self.run_execution(&execution_id, &request, trace_id.as_deref()).await;
+        let result = self
+            .run_execution(&execution_id, &request, trace_id.as_deref())
+            .await;
 
         // 更新执行状态
         let duration = {
             let mut executions = self.active_executions.write().await;
             if let Some(handle) = executions.get_mut(&execution_id) {
                 handle.status = match &result {
-                    Ok(resp) if resp.status == ExecutionStatus::Completed => ExecutionStatus::Completed,
+                    Ok(resp) if resp.status == ExecutionStatus::Completed => {
+                        ExecutionStatus::Completed
+                    }
                     Ok(resp) => resp.status.clone(),
                     Err(_) => ExecutionStatus::Failed,
                 };
@@ -261,17 +271,15 @@ impl SkillOrchestrator {
                 resp.duration_ms = Some(duration);
                 Ok(resp)
             }
-            Err(e) => {
-                Ok(ExecutionResponse {
-                    execution_id,
-                    workflow_id: request.workflow_id,
-                    status: ExecutionStatus::Failed,
-                    output: None,
-                    stats: None,
-                    error: Some(e.to_string()),
-                    duration_ms: Some(duration),
-                })
-            }
+            Err(e) => Ok(ExecutionResponse {
+                execution_id,
+                workflow_id: request.workflow_id,
+                status: ExecutionStatus::Failed,
+                output: None,
+                stats: None,
+                error: Some(e.to_string()),
+                duration_ms: Some(duration),
+            }),
         }
     }
 
@@ -291,31 +299,34 @@ impl SkillOrchestrator {
         }
 
         // 尝试作为技能链执行
-        let chain_result = self.chain_engine.start_execution(
-            &request.workflow_id,
-            request.inputs.clone()
-        ).await;
+        let chain_result = self
+            .chain_engine
+            .start_execution(&request.workflow_id, request.inputs.clone())
+            .await;
 
         match chain_result {
             Ok(chain_exec_id) => {
                 // 等待链执行完成
-                let timeout = request.options.timeout_secs
+                let timeout = request
+                    .options
+                    .timeout_secs
                     .unwrap_or(self.config.default_timeout_secs);
-                
+
                 let result = tokio::time::timeout(
                     tokio::time::Duration::from_secs(timeout),
-                    self.wait_for_chain_completion(&chain_exec_id)
-                ).await;
+                    self.wait_for_chain_completion(&chain_exec_id),
+                )
+                .await;
 
                 match result {
                     Ok(Ok(chain_result)) => {
                         Ok(ExecutionResponse {
                             execution_id: execution_id.to_string(),
                             workflow_id: request.workflow_id.clone(),
-                            status: if chain_result.success { 
-                                ExecutionStatus::Completed 
-                            } else { 
-                                ExecutionStatus::Failed 
+                            status: if chain_result.success {
+                                ExecutionStatus::Completed
+                            } else {
+                                ExecutionStatus::Failed
                             },
                             output: Some(chain_result.output),
                             stats: Some(ExecutionStats {
@@ -347,7 +358,8 @@ impl SkillOrchestrator {
             }
             Err(_) => {
                 // 尝试作为组合技能执行
-                self.execute_as_composite(execution_id, request, trace_id).await
+                self.execute_as_composite(execution_id, request, trace_id)
+                    .await
             }
         }
     }
@@ -361,7 +373,8 @@ impl SkillOrchestrator {
     ) -> Result<ExecutionResponse> {
         let composite = {
             let registry = self.composite_registry.read().await;
-            registry.get(&request.workflow_id)
+            registry
+                .get(&request.workflow_id)
                 .ok_or_else(|| anyhow!("Workflow not found: {}", request.workflow_id))?
                 .clone()
         };
@@ -372,7 +385,11 @@ impl SkillOrchestrator {
         Ok(ExecutionResponse {
             execution_id: execution_id.to_string(),
             workflow_id: request.workflow_id.clone(),
-            status: if result.success { ExecutionStatus::Completed } else { ExecutionStatus::Failed },
+            status: if result.success {
+                ExecutionStatus::Completed
+            } else {
+                ExecutionStatus::Failed
+            },
             output: Some(result.output),
             stats: Some(ExecutionStats {
                 total_steps: result.stats.total_nodes,
@@ -405,7 +422,7 @@ impl SkillOrchestrator {
     /// 取消执行
     pub async fn cancel_execution(&self, execution_id: &str) -> Result<()> {
         info!("Cancelling execution: {}", execution_id);
-        
+
         let mut executions = self.active_executions.write().await;
         if let Some(handle) = executions.get_mut(execution_id) {
             handle.status = ExecutionStatus::Cancelled;
@@ -450,22 +467,32 @@ impl SkillOrchestrator {
         // 收集该工作流的所有追踪
         let _tracer = self.tracer.read().await;
         // 简化实现 - 实际应该过滤特定工作流的追踪
-        
+
         Ok(json!({
             "workflow_id": workflow_id,
             "profiling_enabled": true,
             "message": "Performance report would be generated here"
-        }).to_string())
+        })
+        .to_string())
     }
 
     /// 获取编排器统计
     pub async fn get_stats(&self) -> OrchestratorStats {
         let executions = self.active_executions.read().await;
-        
+
         let total = executions.len();
-        let completed = executions.values().filter(|h| h.status == ExecutionStatus::Completed).count();
-        let failed = executions.values().filter(|h| h.status == ExecutionStatus::Failed).count();
-        let running = executions.values().filter(|h| h.status == ExecutionStatus::Running).count();
+        let completed = executions
+            .values()
+            .filter(|h| h.status == ExecutionStatus::Completed)
+            .count();
+        let failed = executions
+            .values()
+            .filter(|h| h.status == ExecutionStatus::Failed)
+            .count();
+        let running = executions
+            .values()
+            .filter(|h| h.status == ExecutionStatus::Running)
+            .count();
 
         OrchestratorStats {
             total_executions: total,
@@ -495,7 +522,7 @@ mod tests {
     async fn test_orchestrator_creation() {
         let registry = Arc::new(RwLock::new(SkillRegistry::new()));
         let orchestrator = SkillOrchestrator::new(registry, None);
-        
+
         let stats = orchestrator.get_stats().await;
         assert_eq!(stats.total_executions, 0);
         assert_eq!(stats.registered_workflows, 0);

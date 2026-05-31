@@ -112,7 +112,10 @@ impl SkillRegistry {
             name: plugin.name().to_string(),
             description: plugin.description().to_string(),
             version: "1.0.0 (Native)".to_string(),
-            parameters: serde_json::json!({ "type": "object", "additionalProperties": true }), // TODO: Add schema to Plugin trait
+            parameters: serde_json::json!({ "type": "object", "additionalProperties": true }),
+            // Note: Plugin trait does not yet expose a JSON Schema for its parameters.
+            // When the Plugin trait gains an `input_schema()` method, it should be
+            // used here instead of the generic object schema.
             entrypoint: "native".to_string(),
             env: HashMap::new(),
             requires: vec![],
@@ -286,6 +289,22 @@ impl SkillRegistry {
             }
         }
         manifests
+    }
+
+    pub fn build_trigger_engine(&self) -> crate::skills::SkillTriggerEngine {
+        let mut engine = crate::skills::SkillTriggerEngine::new();
+
+        for manifest in self.list_skills() {
+            let triggers = if manifest.triggers.is_empty() {
+                Self::default_triggers_for_manifest(&manifest)
+            } else {
+                manifest.triggers.clone()
+            };
+
+            engine.register_triggers(manifest.name.clone(), triggers);
+        }
+
+        engine
     }
 
     pub fn to_tool_definitions(&self) -> Vec<serde_json::Value> {
@@ -491,6 +510,37 @@ impl SkillRegistry {
         self.load_from_dir(&target_dir).await?;
 
         Ok(())
+    }
+
+    fn default_triggers_for_manifest(manifest: &SkillManifest) -> Vec<crate::skills::SkillTrigger> {
+        use crate::skills::SkillTrigger;
+
+        let mut triggers = vec![SkillTrigger::Command {
+            prefix: format!("/{}", manifest.name.to_lowercase()),
+            args_schema: Some(manifest.parameters.clone()),
+        }];
+
+        let keywords: Vec<String> = manifest
+            .description
+            .split_whitespace()
+            .filter(|word| word.len() > 3)
+            .take(5)
+            .map(|word| {
+                word.to_ascii_lowercase()
+                    .trim_matches(|c: char| !c.is_alphanumeric())
+                    .to_string()
+            })
+            .filter(|word| !word.is_empty())
+            .collect();
+
+        if !keywords.is_empty() {
+            triggers.push(SkillTrigger::Keyword {
+                keywords,
+                case_sensitive: false,
+            });
+        }
+
+        triggers
     }
 }
 

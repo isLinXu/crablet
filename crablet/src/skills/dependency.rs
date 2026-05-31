@@ -1,11 +1,11 @@
-use anyhow::{Result, anyhow};
-use std::process::Stdio;
-use tokio::process::Command;
-use tracing::{info, warn, debug};
+use super::{SkillManifest, SkillRegistry};
+use anyhow::{anyhow, Result};
+use semver::{Version, VersionReq};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
-use semver::{Version, VersionReq};
-use super::{SkillRegistry, SkillManifest};
+use std::process::Stdio;
+use tokio::process::Command;
+use tracing::{debug, info, warn};
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct SkillDependencies {
@@ -40,7 +40,8 @@ impl VirtualEnvironment {
         if !env_path.exists() {
             info!("Creating Python virtual environment at {:?}", env_path);
             let status = Command::new("python3")
-                .args(&["-m", "venv", env_path.to_str().unwrap()])
+                .args(["-m", "venv"])
+                .arg(&env_path)
                 .status()
                 .await?;
             if !status.success() {
@@ -66,7 +67,7 @@ impl VirtualEnvironment {
                 for dep in dependencies {
                     info!("Installing Python dependency: {}", dep);
                     let status = Command::new(python_path)
-                        .args(&["-m", "pip", "install", dep])
+                        .args(["-m", "pip", "install", dep])
                         .status()
                         .await?;
                     if !status.success() {
@@ -75,7 +76,12 @@ impl VirtualEnvironment {
                 }
             }
             EnvironmentType::Node { .. } => {
-                // TODO: Implement npm install
+                // npm install implementation:
+                // 1. Check for package.json in the skill directory
+                // 2. Run `npm install --production` via Command
+                // 3. Verify node_modules exists after install
+                // Currently logs a warning; npm support will be added
+                // when the Node.js skill runtime is fully integrated.
                 warn!("npm installation not yet fully implemented");
             }
         }
@@ -88,17 +94,21 @@ pub async fn check_dependencies(registry: &SkillRegistry, manifest: &SkillManife
     if let Some(min_ver_str) = &manifest.min_crablet_version {
         let current_ver_str = env!("CARGO_PKG_VERSION");
         let current_ver = Version::parse(current_ver_str)?;
-        
+
         // Treat min_ver as a VersionReq (e.g., ">=0.1.0")
-        let req_str = if min_ver_str.starts_with(|c: char| c == '>' || c == '<' || c == '=') {
+        let req_str = if min_ver_str.starts_with(['>', '<', '=']) {
             min_ver_str.clone()
         } else {
             format!(">={}", min_ver_str)
         };
-        
+
         let req = VersionReq::parse(&req_str)?;
         if !req.matches(&current_ver) {
-            return Err(anyhow!("Skill requires Crablet version {}, but current is {}", min_ver_str, current_ver_str));
+            return Err(anyhow!(
+                "Skill requires Crablet version {}, but current is {}",
+                min_ver_str,
+                current_ver_str
+            ));
         }
     }
 
@@ -119,26 +129,27 @@ pub async fn check_dependencies(registry: &SkillRegistry, manifest: &SkillManife
     // 4. Check package dependencies (pip)
     if let Some(deps) = &manifest.dependencies {
         for pkg in &deps.pip {
-            let pkg_name = pkg.split(|c: char| !c.is_alphanumeric() && c != '-' && c != '_').next().unwrap_or(pkg);
-            
+            let pkg_name = pkg
+                .split(|c: char| !c.is_alphanumeric() && c != '-' && c != '_')
+                .next()
+                .unwrap_or(pkg);
+
             let status = Command::new("pip")
-                .args(&["show", pkg_name])
+                .args(["show", pkg_name])
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
                 .status()
                 .await;
-                
+
             if let Ok(s) = status {
                 if !s.success() {
                     warn!("Missing pip dependency: {}. Attempting to install...", pkg);
                     // For now, we auto-install, but in a real app we might want to ask or use venv
-                    let install_status = Command::new("pip")
-                        .args(&["install", pkg])
-                        .status()
-                        .await?;
-                        
+                    let install_status =
+                        Command::new("pip").args(["install", pkg]).status().await?;
+
                     if !install_status.success() {
-                         return Err(anyhow!("Failed to install pip dependency: {}", pkg));
+                        return Err(anyhow!("Failed to install pip dependency: {}", pkg));
                     }
                 }
             }
@@ -151,7 +162,10 @@ pub async fn check_dependencies(registry: &SkillRegistry, manifest: &SkillManife
             if which::which("npm").is_err() {
                 return Err(anyhow!("npm is required but not found in PATH"));
             }
-            // TODO: Implement actual npm package check
+            // npm package check: verify the package is resolvable
+            // Real implementation would run `npm ls <pkg>` and parse
+            // the output to confirm the package is installed and at
+            // a compatible version. For now, we only verify npm is available.
         }
     }
 

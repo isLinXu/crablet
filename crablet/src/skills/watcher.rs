@@ -1,11 +1,11 @@
+use crate::skills::SkillRegistry;
 use anyhow::Result;
-use notify::{RecommendedWatcher, RecursiveMode, Watcher, Event};
+use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
 use std::path::Path;
 use std::sync::Arc;
-use tokio::sync::{RwLock, mpsc, Mutex};
 use std::time::{Duration, Instant};
+use tokio::sync::{mpsc, Mutex, RwLock};
 use tracing::{error, info, warn};
-use crate::skills::SkillRegistry;
 
 pub struct ReloadStats {
     pub total_reloads: usize,
@@ -24,7 +24,7 @@ impl SkillWatcher {
     }
 
     pub fn new_with_limits(
-        registry: Arc<RwLock<SkillRegistry>>, 
+        registry: Arc<RwLock<SkillRegistry>>,
         skills_dir: &Path,
         max_reloads_per_minute: usize,
     ) -> Result<Self> {
@@ -35,20 +35,22 @@ impl SkillWatcher {
         let history_clone = reload_history.clone();
 
         // Create a watcher that sends events to our channel
-        let mut watcher = notify::recommended_watcher(move |res: notify::Result<Event>| {
-            match res {
+        let mut watcher =
+            notify::recommended_watcher(move |res: notify::Result<Event>| match res {
                 Ok(event) => {
                     if event.kind.is_modify() || event.kind.is_create() || event.kind.is_remove() {
                         let _ = tx.blocking_send(());
                     }
                 }
                 Err(e) => error!("Watch error: {:?}", e),
-            }
-        })?;
+            })?;
 
         // Start watching
         watcher.watch(skills_dir, RecursiveMode::Recursive)?;
-        info!("Hot Reloading enabled for skills in {:?} (Max {} reloads/min)", skills_dir, max_reloads_per_minute);
+        info!(
+            "Hot Reloading enabled for skills in {:?} (Max {} reloads/min)",
+            skills_dir, max_reloads_per_minute
+        );
 
         // Spawn a task to handle reload events (debounced)
         tokio::spawn(async move {
@@ -61,9 +63,12 @@ impl SkillWatcher {
                 let mut history = history_clone.lock().await;
                 let now = Instant::now();
                 history.retain(|&t| now.duration_since(t) < Duration::from_secs(60));
-                
+
                 if history.len() >= max_reloads_per_minute {
-                    warn!("Skill reload rate limit exceeded ({} reloads in last minute), skipping...", history.len());
+                    warn!(
+                        "Skill reload rate limit exceeded ({} reloads in last minute), skipping...",
+                        history.len()
+                    );
                     continue;
                 }
 
@@ -72,13 +77,13 @@ impl SkillWatcher {
                 drop(history); // Release lock before registry write lock
 
                 let mut reg = registry_clone.write().await;
-                
+
                 // Backup current state for rollback
                 let backup = reg.backup();
-                
+
                 // Clear and reload
                 reg.clear();
-                
+
                 if let Err(e) = reg.load_from_dir(&skills_dir_buf).await {
                     warn!("Failed to hot-reload skills: {}. Rolling back...", e);
                     reg.restore(backup);
@@ -97,8 +102,11 @@ impl SkillWatcher {
     pub async fn get_reload_stats(&self) -> ReloadStats {
         let history = self.reload_history.lock().await;
         let now = Instant::now();
-        let recent = history.iter().filter(|&&t| now.duration_since(t) < Duration::from_secs(60)).count();
-        
+        let recent = history
+            .iter()
+            .filter(|&&t| now.duration_since(t) < Duration::from_secs(60))
+            .count();
+
         ReloadStats {
             total_reloads: history.len(),
             recent_reloads: recent,

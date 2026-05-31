@@ -1,12 +1,12 @@
 //! 原子性技能安装器
-//! 
+//!
 //! 提供原子性安装、回滚和验证机制，确保安装过程的一致性。
 
-use anyhow::{Result, Context, anyhow};
-use tracing::{info, warn, error};
+use anyhow::{anyhow, Context, Result};
 use std::path::{Path, PathBuf};
 use tokio::fs;
 use tokio::process::Command;
+use tracing::{error, info, warn};
 use uuid::Uuid;
 
 /// 安装事务
@@ -40,7 +40,10 @@ impl AtomicInstaller {
         name_override: Option<&str>,
     ) -> Result<InstallResult> {
         let transaction_id = Uuid::new_v4().to_string();
-        info!("[{}] Starting atomic installation from {}", transaction_id, url);
+        info!(
+            "[{}] Starting atomic installation from {}",
+            transaction_id, url
+        );
 
         // 1. 解析技能名称
         let skill_name = name_override.map(|s| s.to_string()).unwrap_or_else(|| {
@@ -52,7 +55,7 @@ impl AtomicInstaller {
         });
 
         let target_dir = skills_dir.join(&skill_name);
-        
+
         // 2. 检查目标目录是否已存在
         if target_dir.exists() {
             return Err(anyhow!(
@@ -96,16 +99,13 @@ impl AtomicInstaller {
         // Phase 1: 下载
         transaction.state = TransactionState::Downloading;
         info!("[{}] Phase 1: Downloading...", tx_id);
-        
-        Self::download_skill(
-            &transaction.source_url,
-            &transaction.temp_dir,
-        ).await?;
+
+        Self::download_skill(&transaction.source_url, &transaction.temp_dir).await?;
 
         // Phase 2: 验证
         transaction.state = TransactionState::Validating;
         info!("[{}] Phase 2: Validating...", tx_id);
-        
+
         let validation = Self::validate_skill(&transaction.temp_dir).await?;
         if !validation.is_valid {
             return Err(anyhow!(
@@ -117,21 +117,29 @@ impl AtomicInstaller {
         // Phase 3: 原子性安装（移动）
         transaction.state = TransactionState::Installing;
         info!("[{}] Phase 3: Installing...", tx_id);
-        
+
         // 找到实际的技能目录（可能在 temp_dir/skill_name/ 下）
         let actual_skill_dir = Self::find_skill_dir(&transaction.temp_dir).await?;
-        
+
         // 原子性移动
         match Self::atomic_move(&actual_skill_dir, &transaction.target_dir).await {
             Ok(_) => {
                 transaction.state = TransactionState::Completed;
-                
+
                 // 清理临时目录
                 let _ = fs::remove_dir_all(&transaction.temp_dir).await;
-                
+
                 Ok(InstallResult {
-                    skill_name: validation.manifest.as_ref().map(|m| m.name.clone()).unwrap_or_default(),
-                    version: validation.manifest.as_ref().map(|m| m.version.clone()).unwrap_or_default(),
+                    skill_name: validation
+                        .manifest
+                        .as_ref()
+                        .map(|m| m.name.clone())
+                        .unwrap_or_default(),
+                    version: validation
+                        .manifest
+                        .as_ref()
+                        .map(|m| m.version.clone())
+                        .unwrap_or_default(),
                     install_path: transaction.target_dir,
                     manifest: validation.manifest,
                     transaction_id: tx_id.clone(),
@@ -142,10 +150,10 @@ impl AtomicInstaller {
             }
             Err(e) => {
                 transaction.state = TransactionState::Failed(e.to_string());
-                
+
                 // 尝试回滚
                 let _ = Self::rollback(&transaction).await;
-                
+
                 Err(anyhow!("Atomic move failed: {}", e))
             }
         }
@@ -154,24 +162,28 @@ impl AtomicInstaller {
     /// 创建临时目录
     async fn create_temp_dir(transaction_id: &str) -> Result<PathBuf> {
         let temp_base = std::env::temp_dir().join("crablet_skill_install");
-        let temp_dir = temp_base.join(format!("{}_{}", transaction_id, chrono::Utc::now().timestamp()));
-        
+        let temp_dir = temp_base.join(format!(
+            "{}_{}",
+            transaction_id,
+            chrono::Utc::now().timestamp()
+        ));
+
         fs::create_dir_all(&temp_dir)
             .await
             .context("Failed to create temporary directory")?;
-        
+
         Ok(temp_dir)
     }
 
     /// 下载技能
     async fn download_skill(url: &str, temp_dir: &Path) -> Result<()> {
         // 检查 git 是否可用
-        let git_check = Command::new("which")
-            .arg("git")
-            .output()
-            .await;
-        
-        if git_check.is_err() || !git_check.unwrap().status.success() {
+        let git_check = Command::new("which").arg("git").output().await;
+
+        if !git_check
+            .map(|output| output.status.success())
+            .unwrap_or(false)
+        {
             return Err(anyhow!("Git is not installed or not in PATH"));
         }
 
@@ -202,12 +214,7 @@ impl AtomicInstaller {
         let mut manifest = None;
 
         // 检查可能的 manifest 文件
-        let possible_manifests = [
-            "skill.yaml",
-            "skill.yml",
-            "skill.json",
-            "SKILL.md",
-        ];
+        let possible_manifests = ["skill.yaml", "skill.yml", "skill.json", "SKILL.md"];
 
         let skill_dir = Self::find_skill_dir(temp_dir).await?;
         let mut found_manifest = false;
@@ -216,7 +223,7 @@ impl AtomicInstaller {
             let manifest_path = skill_dir.join(manifest_name);
             if manifest_path.exists() {
                 found_manifest = true;
-                
+
                 // 尝试解析 manifest
                 match Self::parse_manifest(&manifest_path).await {
                     Ok(m) => {
@@ -249,7 +256,8 @@ impl AtomicInstaller {
             // 验证入口点（对于非 OpenClaw 技能）
             if m.entrypoint != "openclaw" && !skill_dir.join(&m.entrypoint).exists() {
                 // 检查是否是相对路径
-                let entrypoint_path = skill_dir.join(&m.entrypoint.split_whitespace().next().unwrap_or(""));
+                let entrypoint_path =
+                    skill_dir.join(m.entrypoint.split_whitespace().next().unwrap_or(""));
                 if !entrypoint_path.exists() {
                     warn!("Entrypoint '{}' not found in skill directory", m.entrypoint);
                 }
@@ -266,16 +274,18 @@ impl AtomicInstaller {
     /// 解析 manifest
     async fn parse_manifest(path: &Path) -> Result<super::SkillManifest> {
         let content = fs::read_to_string(path).await?;
-        
+
         let manifest = if path.extension().and_then(|s| s.to_str()) == Some("json") {
             serde_json::from_str(&content)?
         } else if path.file_name().and_then(|s| s.to_str()) == Some("SKILL.md") {
             // OpenClaw 格式，使用专门的解析器
-            super::openclaw::OpenClawSkillLoader::load(path).await?.manifest
+            super::openclaw::OpenClawSkillLoader::load(path)
+                .await?
+                .manifest
         } else {
             serde_yaml::from_str(&content)?
         };
-        
+
         Ok(manifest)
     }
 
@@ -323,7 +333,10 @@ impl AtomicInstaller {
 
     /// 回滚事务
     async fn rollback(transaction: &InstallTransaction) -> Result<()> {
-        warn!("[{}] Rolling back transaction...", transaction.transaction_id);
+        warn!(
+            "[{}] Rolling back transaction...",
+            transaction.transaction_id
+        );
 
         // 清理临时目录
         if transaction.temp_dir.exists() {
@@ -356,8 +369,10 @@ impl AtomicInstaller {
         }
         // 简单的语义化版本检查：支持 x.y.z-prerelease 格式
         // 允许数字、点、连字符、加号以及字母（用于 prerelease 标识）
-        version.split('.').count() >= 2 &&
-        version.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '+')
+        version.split('.').count() >= 2
+            && version
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '+')
     }
 }
 
