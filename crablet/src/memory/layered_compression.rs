@@ -225,7 +225,7 @@ impl HierarchicalMemoryCompression {
             return false;
         }
         
-        let stats = self.stats.lock().unwrap();
+        let stats = self.stats.lock().unwrap_or_else(|e| e.into_inner());
         self.config.trigger.should_trigger(&stats)
     }
     
@@ -249,7 +249,7 @@ impl HierarchicalMemoryCompression {
         
         // Update stats
         {
-            let mut stats = self.stats.lock().unwrap();
+            let mut stats = self.stats.lock().unwrap_or_else(|e| e.into_inner());
             stats.compression_count += 1;
             stats.last_compression = Utc::now();
             stats.working_count = entries.len();
@@ -273,7 +273,7 @@ impl HierarchicalMemoryCompression {
     }
     
     pub fn get_stats(&self) -> MemoryStats {
-        self.stats.lock().unwrap().clone()
+        self.stats.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
     
     pub fn force_compress(&self, entries: Vec<CompressionEntry>) -> CompressionResult {

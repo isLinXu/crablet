@@ -36,9 +36,9 @@ impl CoreMemoryBlock {
     pub fn as_str(&self) -> &'static str {
         match self {
             CoreMemoryBlock::Persona => "persona",
-                CoreMemoryBlock::Human => "human",
-                CoreMemoryBlock::Memory => "memory",
-            }
+            CoreMemoryBlock::Human => "human",
+            CoreMemoryBlock::Memory => "memory",
+        }
     }
 
     /// Parse from string
@@ -197,7 +197,7 @@ impl CoreMemory {
         };
 
         let block_ref = self.get_mut(block);
-        
+
         // Add separator if block is not empty
         if !block_ref.is_empty() && !content_to_add.is_empty() {
             block_ref.push('\n');
@@ -249,20 +249,20 @@ impl CoreMemory {
             let old_len = block_ref.len();
             block_ref.clear();
             block_ref.push_str(new_content);
-            
+
             info!(
                 "Core memory '{}' replaced entirely ({} -> {} chars)",
                 block.as_str(),
                 old_len,
                 new_content.len()
             );
-            
+
             return Ok(true);
         }
 
         // Replace specific content
         let block_ref = self.get_mut(block);
-        
+
         if !block_ref.contains(old_content) {
             warn!(
                 "Core memory '{}' does not contain the content to replace",
@@ -282,7 +282,7 @@ impl CoreMemory {
         }
 
         *block_ref = block_ref.replace(old_content, new_content);
-        
+
         info!(
             "Core memory '{}' replaced content (total: {}/{})",
             block.as_str(),
@@ -298,7 +298,7 @@ impl CoreMemory {
         let block_ref = self.get_mut(block);
         let old_len = block_ref.len();
         block_ref.clear();
-        
+
         info!(
             "Core memory '{}' cleared ({} chars removed)",
             block.as_str(),
@@ -404,13 +404,16 @@ mod tests {
     #[test]
     fn test_core_memory_append() {
         let mut core = CoreMemory::default();
-        
+
         let text = "I am a helpful assistant.";
-        let added = core.append(CoreMemoryBlock::Persona, text).expect("append persona should succeed");
+        let added = core
+            .append(CoreMemoryBlock::Persona, text)
+            .expect("append persona should succeed");
         assert_eq!(added, text.chars().count());
         assert_eq!(core.persona, "I am a helpful assistant.");
-        
-        core.append(CoreMemoryBlock::Persona, "I like to be concise.").expect("append persona second time should succeed");
+
+        core.append(CoreMemoryBlock::Persona, "I like to be concise.")
+            .expect("append persona second time should succeed");
         assert!(core.persona.contains('\n'));
         assert!(core.persona.ends_with("I like to be concise."));
     }
@@ -418,11 +421,13 @@ mod tests {
     #[test]
     fn test_core_memory_append_truncation() {
         let mut core = CoreMemory::default();
-        
+
         // Try to add content exceeding limit
         let long_content = "x".repeat(1000);
-        let added = core.append(CoreMemoryBlock::Persona, &long_content).expect("append with truncation should succeed");
-        
+        let added = core
+            .append(CoreMemoryBlock::Persona, &long_content)
+            .expect("append with truncation should succeed");
+
         // Should be truncated to limit (500)
         assert_eq!(added, 500);
         assert_eq!(core.persona.len(), 500);
@@ -431,18 +436,23 @@ mod tests {
     #[test]
     fn test_core_memory_replace_entire() {
         let mut core = CoreMemory::default();
-        core.append(CoreMemoryBlock::Memory, "Old memory").expect("append memory should succeed");
-        
-        core.replace(CoreMemoryBlock::Memory, "", "New memory").expect("replace entire block should succeed");
+        core.append(CoreMemoryBlock::Memory, "Old memory")
+            .expect("append memory should succeed");
+
+        core.replace(CoreMemoryBlock::Memory, "", "New memory")
+            .expect("replace entire block should succeed");
         assert_eq!(core.memory, "New memory");
     }
 
     #[test]
     fn test_core_memory_replace_partial() {
         let mut core = CoreMemory::default();
-        core.append(CoreMemoryBlock::Memory, "User likes Python").expect("append memory for partial replace should succeed");
-        
-        let replaced = core.replace(CoreMemoryBlock::Memory, "Python", "Rust").expect("replace partial should succeed");
+        core.append(CoreMemoryBlock::Memory, "User likes Python")
+            .expect("append memory for partial replace should succeed");
+
+        let replaced = core
+            .replace(CoreMemoryBlock::Memory, "Python", "Rust")
+            .expect("replace partial should succeed");
         assert!(replaced);
         assert_eq!(core.memory, "User likes Rust");
     }
@@ -450,9 +460,12 @@ mod tests {
     #[test]
     fn test_core_memory_replace_not_found() {
         let mut core = CoreMemory::default();
-        core.append(CoreMemoryBlock::Memory, "Some content").expect("append memory for not-found test should succeed");
-        
-        let replaced = core.replace(CoreMemoryBlock::Memory, "nonexistent", "new").expect("replace not-found content should succeed");
+        core.append(CoreMemoryBlock::Memory, "Some content")
+            .expect("append memory for not-found test should succeed");
+
+        let replaced = core
+            .replace(CoreMemoryBlock::Memory, "nonexistent", "new")
+            .expect("replace not-found content should succeed");
         assert!(!replaced);
         assert_eq!(core.memory, "Some content");
     }
@@ -460,12 +473,15 @@ mod tests {
     #[test]
     fn test_core_memory_to_system_prompt() {
         let mut core = CoreMemory::default();
-        core.append(CoreMemoryBlock::Persona, "I am helpful.").expect("append persona for prompt test should succeed");
-        core.append(CoreMemoryBlock::Human, "User is friendly.").expect("append human for prompt test should succeed");
-        core.append(CoreMemoryBlock::Memory, "Important fact.").expect("append memory for prompt test should succeed");
-        
+        core.append(CoreMemoryBlock::Persona, "I am helpful.")
+            .expect("append persona for prompt test should succeed");
+        core.append(CoreMemoryBlock::Human, "User is friendly.")
+            .expect("append human for prompt test should succeed");
+        core.append(CoreMemoryBlock::Memory, "Important fact.")
+            .expect("append memory for prompt test should succeed");
+
         let prompt = core.to_system_prompt();
-        
+
         assert!(prompt.contains("Core Memory"));
         assert!(prompt.contains("I am helpful."));
         assert!(prompt.contains("User is friendly."));
@@ -477,13 +493,15 @@ mod tests {
     fn test_core_memory_persistence() {
         let dir = tempdir().expect("tempdir creation should succeed");
         let path = dir.path().join("core_memory.json");
-        
+
         let mut core = CoreMemory::default();
-        core.append(CoreMemoryBlock::Persona, "Test persona").expect("append persona for persistence test should succeed");
-        core.append(CoreMemoryBlock::Human, "Test human").expect("append human for persistence test should succeed");
-        
+        core.append(CoreMemoryBlock::Persona, "Test persona")
+            .expect("append persona for persistence test should succeed");
+        core.append(CoreMemoryBlock::Human, "Test human")
+            .expect("append human for persistence test should succeed");
+
         core.save(&path).expect("save core memory should succeed");
-        
+
         let loaded = CoreMemory::load(&path).expect("load core memory should succeed");
         assert_eq!(loaded.persona, "Test persona");
         assert_eq!(loaded.human, "Test human");
@@ -493,11 +511,12 @@ mod tests {
     fn test_core_memory_usage() {
         let mut core = CoreMemory::default();
         assert_eq!(core.usage_ratio(), 0.0);
-        
+
         // Fill persona to 50%
         let content = "x".repeat(250);
-        core.append(CoreMemoryBlock::Persona, &content).expect("append persona for usage test should succeed");
-        
+        core.append(CoreMemoryBlock::Persona, &content)
+            .expect("append persona for usage test should succeed");
+
         // Total capacity is 500 + 1000 + 2000 = 3500
         // 250 / 3500 ≈ 0.071
         assert!((core.usage_ratio() - 0.071).abs() < 0.01);
@@ -512,9 +531,18 @@ mod tests {
 
     #[test]
     fn test_core_memory_block_from_str() {
-        assert_eq!(CoreMemoryBlock::from_str("persona"), Some(CoreMemoryBlock::Persona));
-        assert_eq!(CoreMemoryBlock::from_str("HUMAN"), Some(CoreMemoryBlock::Human));
-        assert_eq!(CoreMemoryBlock::from_str("Memory"), Some(CoreMemoryBlock::Memory));
+        assert_eq!(
+            CoreMemoryBlock::from_str("persona"),
+            Some(CoreMemoryBlock::Persona)
+        );
+        assert_eq!(
+            CoreMemoryBlock::from_str("HUMAN"),
+            Some(CoreMemoryBlock::Human)
+        );
+        assert_eq!(
+            CoreMemoryBlock::from_str("Memory"),
+            Some(CoreMemoryBlock::Memory)
+        );
         assert_eq!(CoreMemoryBlock::from_str("invalid"), None);
     }
 }

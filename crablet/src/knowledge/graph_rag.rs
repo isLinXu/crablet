@@ -1,11 +1,11 @@
-use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
-use std::hash::{Hash, Hasher};
-use std::collections::hash_map::DefaultHasher;
-use anyhow::Result;
-use serde::{Deserialize, Serialize};
 use crate::knowledge::vector_store::VectorStore;
 use crate::memory::semantic::SharedKnowledgeGraph;
+use anyhow::Result;
+use serde::{Deserialize, Serialize};
+use std::collections::hash_map::DefaultHasher;
+use std::collections::{HashMap, HashSet};
+use std::hash::{Hash, Hasher};
+use std::sync::Arc;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RetrievedContext {
@@ -73,7 +73,10 @@ impl EntityExtractor {
                 set.extend(self.extract_phrase_entities(texts));
             }
         }
-        let mut entities: Vec<ExtractedEntity> = set.into_iter().map(|name| ExtractedEntity { name }).collect();
+        let mut entities: Vec<ExtractedEntity> = set
+            .into_iter()
+            .map(|name| ExtractedEntity { name })
+            .collect();
         entities.sort_by(|a, b| a.name.cmp(&b.name));
         Ok(entities)
     }
@@ -181,19 +184,26 @@ impl GraphRAG {
         // 2. Parallel Vector Search and Entity Extraction
         let query_batch = vec![query.to_string()];
         let query_refs: Vec<&str> = query_batch.iter().map(|s| s.as_str()).collect();
-        let (search_res, query_entities_res): (Result<(Vec<(String, f32, serde_json::Value)>, Vec<f32>)>, Result<Vec<ExtractedEntity>>) = tokio::join!(
-            self.vector_store.search_with_embedding(query, top_k.saturating_mul(2).max(top_k)),
+        let (search_res, query_entities_res): (
+            Result<(Vec<(String, f32, serde_json::Value)>, Vec<f32>)>,
+            Result<Vec<ExtractedEntity>>,
+        ) = tokio::join!(
+            self.vector_store
+                .search_with_embedding(query, top_k.saturating_mul(2).max(top_k)),
             self.entity_extractor.extract_batch(&query_refs)
         );
-        
+
         let (raw_results, query_embedding) = search_res?;
         let mut query_entities = query_entities_res?;
-        
+
         // 3. Extract entities from results
-        let contents: Vec<&str> = raw_results.iter().map(|(content, _, _)| content.as_str()).collect();
+        let contents: Vec<&str> = raw_results
+            .iter()
+            .map(|(content, _, _)| content.as_str())
+            .collect();
         let mut entities = self.entity_extractor.extract_batch(&contents).await?;
         entities.append(&mut query_entities);
-        
+
         let mut uniq: HashMap<String, ExtractedEntity> = HashMap::new();
         for e in entities {
             uniq.entry(e.name.clone()).or_insert(e);
@@ -215,14 +225,20 @@ impl GraphRAG {
 
         // Batch fetch relations for uncached entities (optimized: single DB query instead of N queries)
         let batch_relations = if !uncached_entities.is_empty() {
-            self.knowledge_graph.find_related_batch(&uncached_entities).await.unwrap_or_default()
+            self.knowledge_graph
+                .find_related_batch(&uncached_entities)
+                .await
+                .unwrap_or_default()
         } else {
             HashMap::new()
         };
 
         // Update cache with batch results
         for (name, relations) in &batch_relations {
-            self.cache.subgraph_cache.insert(name.clone(), relations.clone()).await;
+            self.cache
+                .subgraph_cache
+                .insert(name.clone(), relations.clone())
+                .await;
         }
 
         // Collect all relations (from cache + batch fetch)
@@ -231,7 +247,12 @@ impl GraphRAG {
         let mut centrality: HashMap<String, f32> = HashMap::new();
 
         for name in &entity_names {
-            let relations = self.cache.subgraph_cache.get(name).await.unwrap_or_default();
+            let relations = self
+                .cache
+                .subgraph_cache
+                .get(name)
+                .await
+                .unwrap_or_default();
             relation_hits.insert(name.clone(), relations.len());
 
             for (direction, relation, target) in relations {
@@ -250,7 +271,7 @@ impl GraphRAG {
                 }
             }
         }
-        
+
         normalize_centrality(&mut centrality);
 
         // 5. Calculate Graph Signal with optimized caching (hash-based + similarity cache)
@@ -260,7 +281,9 @@ impl GraphRAG {
         } else {
             // Try hash-based cache first (more efficient memory usage)
             let graph_hash = compute_text_hash(&graph_context_text);
-            let graph_embedding = if let Some(cached) = self.cache.embedding_hash_cache.get(&graph_hash).await {
+            let graph_embedding = if let Some(cached) =
+                self.cache.embedding_hash_cache.get(&graph_hash).await
+            {
                 cached
             } else if let Some(cached) = self.cache.embedding_cache.get(&graph_context_text).await {
                 // Fallback to string-based cache for backward compatibility
@@ -268,8 +291,14 @@ impl GraphRAG {
             } else {
                 let emb = self.vector_store.embed_query(&graph_context_text).await?;
                 // Store in both caches
-                self.cache.embedding_cache.insert(graph_context_text.clone(), emb.clone()).await;
-                self.cache.embedding_hash_cache.insert(graph_hash, emb.clone()).await;
+                self.cache
+                    .embedding_cache
+                    .insert(graph_context_text.clone(), emb.clone())
+                    .await;
+                self.cache
+                    .embedding_hash_cache
+                    .insert(graph_hash, emb.clone())
+                    .await;
                 emb
             };
             cosine_similarity(&query_embedding, &graph_embedding).clamp(0.0, 1.0)
@@ -279,7 +308,13 @@ impl GraphRAG {
         let mut final_results: Vec<(f32, RetrievedContext)> = raw_results
             .into_iter()
             .map(|(content, score, metadata)| {
-                let graph_boost = self.calculate_graph_boost(&content, &entities, &relation_hits, &centrality, graph_signal);
+                let graph_boost = self.calculate_graph_boost(
+                    &content,
+                    &entities,
+                    &relation_hits,
+                    &centrality,
+                    graph_signal,
+                );
                 let final_score = score * 0.7 + graph_boost * 0.3;
                 let source = metadata
                     .get("source")
@@ -307,14 +342,20 @@ impl GraphRAG {
 
         if !graph_context_lines.is_empty() {
             results.push(RetrievedContext {
-                content: format!("Relevant knowledge graph relations:\n{}", graph_context_lines.join("\n")),
+                content: format!(
+                    "Relevant knowledge graph relations:\n{}",
+                    graph_context_lines.join("\n")
+                ),
                 source: "knowledge_graph".to_string(),
                 score: 0.0,
             });
         }
 
         // 7. Update Query Cache
-        self.cache.query_cache.insert(query.to_string(), results.clone()).await;
+        self.cache
+            .query_cache
+            .insert(query.to_string(), results.clone())
+            .await;
 
         Ok(results)
     }
@@ -338,17 +379,22 @@ impl GraphRAG {
         for entity in entities {
             if lc.contains(&entity.name) {
                 entity_coverage += 1.0;
-                relation_weight += relation_hits
-                    .get(&entity.name)
-                    .copied()
-                    .unwrap_or(0) as f32;
+                relation_weight += relation_hits.get(&entity.name).copied().unwrap_or(0) as f32;
                 centrality_weight += centrality.get(&entity.name).copied().unwrap_or(0.0);
             }
         }
-        let coverage_score = if entities.is_empty() { 0.0 } else { entity_coverage / entities.len() as f32 };
+        let coverage_score = if entities.is_empty() {
+            0.0
+        } else {
+            entity_coverage / entities.len() as f32
+        };
         let relation_score = (relation_weight.ln_1p() * 0.18).clamp(0.0, 1.0);
         let centrality_score = centrality_weight.clamp(0.0, 1.0);
-        (coverage_score * 0.4 + relation_score * 0.25 + centrality_score * 0.15 + graph_signal * 0.2).clamp(0.0, 1.0)
+        (coverage_score * 0.4
+            + relation_score * 0.25
+            + centrality_score * 0.15
+            + graph_signal * 0.2)
+            .clamp(0.0, 1.0)
     }
 }
 
@@ -414,8 +460,8 @@ fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use async_trait::async_trait;
     use crate::memory::semantic::KnowledgeGraph;
+    use async_trait::async_trait;
 
     struct MockKg;
 
@@ -429,16 +475,26 @@ mod tests {
         }
         async fn find_related(&self, entity_name: &str) -> Result<Vec<(String, String, String)>> {
             if entity_name.contains("rust") {
-                Ok(vec![("->".to_string(), "uses".to_string(), "tokio".to_string())])
+                Ok(vec![(
+                    "->".to_string(),
+                    "uses".to_string(),
+                    "tokio".to_string(),
+                )])
             } else {
                 Ok(vec![])
             }
         }
-        async fn find_related_batch(&self, entity_names: &[String]) -> Result<HashMap<String, Vec<(String, String, String)>>> {
+        async fn find_related_batch(
+            &self,
+            entity_names: &[String],
+        ) -> Result<HashMap<String, Vec<(String, String, String)>>> {
             let mut results = HashMap::new();
             for name in entity_names {
                 if name.contains("rust") {
-                    results.insert(name.clone(), vec![("->".to_string(), "uses".to_string(), "tokio".to_string())]);
+                    results.insert(
+                        name.clone(),
+                        vec![("->".to_string(), "uses".to_string(), "tokio".to_string())],
+                    );
                 } else {
                     results.insert(name.clone(), vec![]);
                 }
@@ -446,7 +502,10 @@ mod tests {
             Ok(results)
         }
         async fn find_entities_batch(&self, names: &[String]) -> Result<Vec<(String, String)>> {
-            Ok(names.iter().map(|n| (n.clone(), "concept".to_string())).collect())
+            Ok(names
+                .iter()
+                .map(|n| (n.clone(), "concept".to_string()))
+                .collect())
         }
         async fn export_d3_json(&self) -> Result<String> {
             Ok("{\"nodes\":[],\"links\":[]}".to_string())
@@ -459,7 +518,9 @@ mod tests {
         vs.add_documents(
             vec!["Rust async runtime with tokio".to_string()],
             vec![serde_json::json!({"source": "docA"})],
-        ).await.expect("add docs");
+        )
+        .await
+        .expect("add docs");
         let kg: SharedKnowledgeGraph = Arc::new(MockKg);
         let rag = GraphRAG::new(vs, kg);
         let out = rag.retrieve("rust async", 2).await.expect("retrieve");

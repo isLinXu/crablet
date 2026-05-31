@@ -24,10 +24,10 @@ impl MemoryPriority {
         let hours_elapsed = self.last_access.elapsed().as_secs_f32() / 3600.0;
         // Exponential decay: score = importance * (1 - decay_rate)^hours
         let decayed_importance = self.importance * (1.0 - self.decay_rate).powf(hours_elapsed);
-        
+
         // Boost score based on access count (logarithmic)
         let access_boost = (self.access_count as f32).log2().max(0.0);
-        
+
         decayed_importance + access_boost * 0.1
     }
 

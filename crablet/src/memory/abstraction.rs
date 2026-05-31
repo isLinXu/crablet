@@ -313,7 +313,7 @@ pub mod backends {
                 .collect();
 
             // 按重要性排序
-            results.sort_by(|a, b| b.importance.partial_cmp(&a.importance).unwrap());
+            results.sort_by(|a, b| b.importance.partial_cmp(&a.importance).unwrap_or(std::cmp::Ordering::Equal));
             results.truncate(limit);
 
             Ok(results)
@@ -349,7 +349,7 @@ pub mod backends {
                 })
                 .collect();
 
-            results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+            results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
             results.truncate(top_k);
             Ok(results)
         }

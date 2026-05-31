@@ -32,14 +32,14 @@
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
-use tracing::{info, warn, error};
+use tracing::{error, info, warn};
 
-use crate::events::{AgentEvent, EventBus};
-use crate::memory::manager::MemoryManager;
-use crate::memory::core::CoreMemoryBlock;
 use crate::cognitive::llm::LlmClient;
-use crate::types::Message;
 use crate::error::Result;
+use crate::events::{AgentEvent, EventBus};
+use crate::memory::core::CoreMemoryBlock;
+use crate::memory::manager::MemoryManager;
+use crate::types::Message;
 
 /// Configuration for Heartbeat Worker
 #[derive(Debug, Clone)]
@@ -127,8 +127,7 @@ impl HeartbeatWorker {
         tokio::spawn(async move {
             info!(
                 "Heartbeat Worker started (interval: {:?}, idle_threshold: {:?})",
-                self.config.interval,
-                self.config.idle_threshold
+                self.config.interval, self.config.idle_threshold
             );
 
             let mut interval = tokio::time::interval(self.config.interval);
@@ -165,8 +164,11 @@ impl HeartbeatWorker {
         }
 
         // Check if user is idle
-        let is_idle = self.memory_manager.is_idle(self.config.idle_threshold).await;
-        
+        let is_idle = self
+            .memory_manager
+            .is_idle(self.config.idle_threshold)
+            .await;
+
         // Publish heartbeat event
         self.event_bus.publish(AgentEvent::Heartbeat {
             timestamp: chrono::Utc::now(),
@@ -197,14 +199,15 @@ impl HeartbeatWorker {
         info!("Starting background thinking...");
 
         // Publish event
-        self.event_bus.publish(AgentEvent::BackgroundThinkingTriggered {
-            reason: "User idle threshold reached".to_string(),
-            context_summary: "Reviewing recent conversations".to_string(),
-        });
+        self.event_bus
+            .publish(AgentEvent::BackgroundThinkingTriggered {
+                reason: "User idle threshold reached".to_string(),
+                context_summary: "Reviewing recent conversations".to_string(),
+            });
 
         // Get recent conversations (simplified - in real implementation, would aggregate across sessions)
         // For MVP, we just update stats and potentially the core memory
-        
+
         // Generate insights using LLM
         let thinking_prompt = r#"You are in background thinking mode. The user has been idle.
 Your task is to reflect on any recent interactions and consider if there are important insights to remember.
@@ -227,17 +230,21 @@ If there are no significant insights, respond with: {"insights": [], "suggested_
 "#;
 
         let messages = vec![Message::new("system", thinking_prompt)];
-        
+
         match self.llm.chat_complete(&messages).await {
             Ok(response) => {
                 // Parse the response
                 let insights = self.parse_thinking_response(&response).await;
-                
+
                 // Apply suggested updates to Core Memory
                 let mut updates_made = Vec::new();
                 for update in insights.suggested_core_memory_updates {
                     if let Some(block) = CoreMemoryBlock::from_str(&update.block) {
-                        match self.memory_manager.core_memory_append(block, &update.content).await {
+                        match self
+                            .memory_manager
+                            .core_memory_append(block, &update.content)
+                            .await
+                        {
                             Ok(_) => {
                                 updates_made.push(format!("{}: {}", update.block, update.content));
                             }
@@ -257,11 +264,12 @@ If there are no significant insights, respond with: {"insights": [], "suggested_
                 }
 
                 // Publish result event
-                self.event_bus.publish(AgentEvent::BackgroundThinkingResult {
-                    insights: insights.insights.join("; "),
-                    suggested_actions: vec![],
-                    memories_updated: updates_made,
-                });
+                self.event_bus
+                    .publish(AgentEvent::BackgroundThinkingResult {
+                        insights: insights.insights.join("; "),
+                        suggested_actions: vec![],
+                        memories_updated: updates_made,
+                    });
 
                 info!("Background thinking completed");
             }

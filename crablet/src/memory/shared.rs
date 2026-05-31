@@ -1,6 +1,6 @@
-use std::sync::Arc;
 use dashmap::DashMap;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct SharedBlackboard {
@@ -27,9 +27,12 @@ impl SharedBlackboard {
     pub fn set(&self, key: String, value: String) {
         self.data.insert(key, value);
     }
-    
+
     pub fn list(&self) -> HashMap<String, String> {
-        self.data.iter().map(|r| (r.key().clone(), r.value().clone())).collect()
+        self.data
+            .iter()
+            .map(|r| (r.key().clone(), r.value().clone()))
+            .collect()
     }
 }
 

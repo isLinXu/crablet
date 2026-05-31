@@ -1,9 +1,9 @@
-use anyhow::{Result, Context};
 use crate::cognitive::llm::{LlmClient, OpenAiClient};
 use crate::types::Message;
-use std::sync::Arc;
-use std::env;
+use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
+use std::env;
+use std::sync::Arc;
 
 pub struct KnowledgeExtractor {
     llm: Arc<Box<dyn LlmClient>>,
@@ -54,9 +54,10 @@ impl KnowledgeExtractor {
 
         let message = Message::new("user", &prompt);
         let response = self.llm.chat_complete(&[message]).await?;
-        
+
         // Clean up response (remove markdown code blocks if present)
-        let cleaned_response = response.trim()
+        let cleaned_response = response
+            .trim()
             .trim_start_matches("```json")
             .trim_start_matches("```")
             .trim_end_matches("```")
@@ -64,7 +65,7 @@ impl KnowledgeExtractor {
 
         let result: ExtractionResult = serde_json::from_str(cleaned_response)
             .context("Failed to parse LLM extraction result")?;
-            
+
         Ok(result)
     }
 }
