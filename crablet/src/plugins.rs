@@ -6,16 +6,16 @@ use serde_json::Value;
 pub trait Plugin: Send + Sync {
     /// Unique name of the plugin
     fn name(&self) -> &str;
-    
+
     /// Description of what the plugin does
     fn description(&self) -> &str;
-    
+
     /// Initialize the plugin
     async fn initialize(&mut self) -> Result<()>;
-    
+
     /// Execute a command provided by the plugin
     async fn execute(&self, command: &str, args: Value) -> Result<String>;
-    
+
     /// Clean up resources
     async fn shutdown(&mut self) -> Result<()>;
 }

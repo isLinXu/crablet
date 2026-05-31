@@ -7,21 +7,14 @@ pub use sqlx_core::query_scalar::query_scalar;
 pub use sqlx_core::row::Row;
 
 pub mod migrate {
-  pub use sqlx_core::migrate::*;
+    pub use sqlx_core::migrate::*;
 }
 
 pub mod sqlite {
-  pub use sqlx_sqlite::{
-    Sqlite,
-    SqliteConnection,
-    SqliteExecutor,
-    SqlitePool,
-    SqlitePoolOptions,
-    SqliteQueryResult,
-    SqliteRow,
-    SqliteStatement,
-    SqliteTransaction,
-  };
+    pub use sqlx_sqlite::{
+        Sqlite, SqliteConnection, SqliteExecutor, SqlitePool, SqlitePoolOptions, SqliteQueryResult,
+        SqliteRow, SqliteStatement, SqliteTransaction,
+    };
 }
 
 pub use sqlx_sqlite::{Sqlite, SqlitePool};

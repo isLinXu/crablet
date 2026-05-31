@@ -79,6 +79,23 @@ pub enum AgentEvent {
         operation: String,
         timestamp: DateTime<Utc>,
     },
+    /// High-confidence insight from BackgroundThinker published as a learning signal.
+    /// OnlineLearner and other adaptive subsystems can subscribe to this event to
+    /// incorporate the insight as a training experience (closing the reflection→learning loop).
+    InsightLearningSignal {
+        /// Unique insight identifier
+        insight_id: String,
+        /// Human-readable insight type (e.g. "UserPreference", "BehaviorPattern")
+        insight_type: String,
+        /// Textual content of the insight
+        content: String,
+        /// Confidence score [0.0, 1.0]
+        confidence: f32,
+        /// Source session IDs that contributed to this insight
+        source_sessions: Vec<String>,
+        /// When the insight was generated
+        generated_at: DateTime<Utc>,
+    },
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -211,6 +228,7 @@ impl EventBus {
                     AgentEvent::BackgroundThinkingTriggered { .. } => "BackgroundThinkingTriggered",
                     AgentEvent::BackgroundThinkingResult { .. } => "BackgroundThinkingResult",
                     AgentEvent::CoreMemoryUpdated { .. } => "CoreMemoryUpdated",
+                    AgentEvent::InsightLearningSignal { .. } => "InsightLearningSignal",
                 };
 
                 let payload_json = serde_json::to_string(&payload).unwrap_or_default();

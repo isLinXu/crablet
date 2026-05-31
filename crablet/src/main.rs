@@ -1,6 +1,6 @@
+use crablet as sqlx;
 use crablet::channels::cli;
 use crablet::config::Config;
-use crablet as sqlx;
 use tracing::info;
 
 #[tokio::main]
@@ -15,47 +15,16 @@ async fn main() -> anyhow::Result<()> {
         cfg
     } else {
         tracing::warn!("Failed to load config, using defaults.");
-        Config {
-            database_url: "sqlite:crablet.db?mode=rwc".to_string(),
-            skills_dir: std::path::PathBuf::from("skills"),
-            model_name: "gpt-4o-mini".to_string(),
-            llm_vendor: None,
-            log_level: "info".to_string(),
-            mcp_servers: std::collections::HashMap::new(),
-            channels: vec![],
-            semantic_cache_threshold: 0.92,
-            system2_threshold: 0.3,
-            system3_threshold: 0.7,
-            enable_adaptive_routing: false,
-            bandit_exploration: 0.55,
-            enable_hierarchical_reasoning: true,
-            deliberate_threshold: 0.58,
-            meta_reasoning_threshold: 0.82,
-            mcts_simulations: 24,
-            mcts_exploration_weight: 1.2,
-            graph_rag_entity_mode: "hybrid".to_string(),
-            openai_api_key: std::env::var("OPENAI_API_KEY").ok(),
-            port: 3000,
-            providers: std::collections::HashMap::new(),
-            ollama_model: "qwen2.5:14b".to_string(),
-            serper_api_key: None,
-            feishu_app_id: None,
-            feishu_app_secret: None,
-            wecom_corp_id: None,
-            wecom_corp_secret: None,
-            wecom_agent_id: None,
-            oidc_issuer: None,
-            oidc_client_id: None,
-            oidc_client_secret: None,
-            jwt_secret: None,
-        }
+        let mut cfg = Config::default();
+        cfg.openai_api_key = std::env::var("OPENAI_API_KEY").ok();
+        cfg
     };
 
     // Initialize Telemetry (Logging + Tracing)
     crablet::telemetry::init_telemetry(&config.log_level)?;
-    
+
     info!("🦀 Crablet v0.1.0 starting up...");
-    
+
     // Migration Check (Proper)
     if let Ok(pool) = sqlx::sqlite::SqlitePool::connect(&config.database_url).await {
         info!("Running database migrations...");
@@ -74,7 +43,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Initialize LLM Client for Health Check
     let llm_client = crablet::cognitive::create_llm_client(&config).await?;
-    
+
     // Health Check
     info!("Running startup health checks...");
     if let Ok(report) = crablet::health::startup_health_check(&config, llm_client.clone()).await {
@@ -92,9 +61,9 @@ async fn main() -> anyhow::Result<()> {
     if let Err(e) = cli::run(config).await {
         tracing::error!("Application error: {}", e);
     }
-    
+
     // Cleanup Telemetry
     crablet::telemetry::shutdown_telemetry();
-    
+
     Ok(())
 }
