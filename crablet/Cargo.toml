@@ -25,7 +25,7 @@ fusion-tests-disabled = []
 [dependencies]
 tokio = { version = "1.40", features = ["full"] }
 axum = { version = "0.7", features = ["ws", "multipart", "macros"], optional = true }
-axum-extra = { version = "0.9", features = ["cookie", "form", "query"], optional = true }
+axum-extra = { version = "0.12", features = ["cookie", "form", "query"], optional = true }
 # 使用 rustls 避免 OpenSSL / pkg-config 系统依赖，提升 CI/容器/本地一致性
 reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "multipart", "cookies", "rustls-tls-webpki-roots"] }
 serde = { version = "1.0", features = ["derive"] }
