@@ -108,7 +108,7 @@ sqlite-vec = "0.1.6"
 parking_lot = "0.12.5"
 jsonwebtoken = "10.3.0"
 governor = { version = "0.6.3", features = ["std", "dashmap", "jitter", "quanta"] }
-tower = { version = "0.4.13", features = ["util", "limit"] }
+tower = { version = "0.5.3", features = ["util", "limit"] }
 tower_governor = "0.8.0"
 redis = { version = "0.27", features = ["tokio-comp", "connection-manager"] }
 # 显式禁用默认的 native-tls/OpenSSL 路线，使用 rustls 提升可移植性；
