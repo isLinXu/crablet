@@ -69,7 +69,7 @@ jobs:
         uses: taiki-e/install-action@cargo-audit
 
       - name: Cache RustSec advisory DB
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.cargo/advisory-db
           key: advisory-db-${{ runner.os }}-${{ hashFiles('crablet/Cargo.lock') }}
