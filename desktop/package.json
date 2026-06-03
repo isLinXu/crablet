@@ -1,0 +1,17 @@
+{
+  "name": "crablet-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Crablet 桌面应用 - Tauri 壳",
+  "scripts": {
+    "tauri": "tauri",
+    "dev": "tauri dev",
+    "build": "tauri build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
+  },
+  "dependencies": {
+    "@tauri-apps/cli-darwin-arm64": "^2.11.2"
+  }
+}

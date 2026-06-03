@@ -1,0 +1,21 @@
+[package]
+name = "crablet-desktop"
+version = "0.1.0"
+description = "Crablet Desktop - 开箱即用的 AI 智能体桌面应用"
+authors = ["Crablet"]
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { workspace = true }
+tauri-plugin-shell = "2"
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+keyring = "3.6"
+tokio = { version = "1", features = ["time", "sync"] }
+
+[features]
+custom-protocol = ["tauri/custom-protocol"]

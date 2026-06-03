@@ -1,0 +1,23 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Crablet 桌面应用默认权限：允许启动 crablet sidecar 并访问 shell。",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "core:window:default",
+    "core:event:default",
+    "opener:default",
+    "shell:allow-execute",
+    {
+      "identifier": "shell:allow-spawn",
+      "allow": [
+        {
+          "name": "binaries/crablet",
+          "sidecar": true,
+          "args": true
+        }
+      ]
+    }
+  ]
+}
