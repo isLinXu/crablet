@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Crablet — Chat</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify/dist/purify.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-javascript.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-rust.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-bash.min.js"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            accent: '#6366f1',
+            'accent-light': '#818cf8',
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    /* ── Glass morphism ── */
+    .glass {
+      background: rgba(255, 255, 255, 0.03);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .glass-strong {
+      background: rgba(255, 255, 255, 0.06);
+      backdrop-filter: blur(30px);
+      -webkit-backdrop-filter: blur(30px);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+    }
+
+    /* ── Scrollbar ── */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.25); }
+
+    /* ── Chat bubbles ── */
+    .msg-user {
+      background: linear-gradient(135deg, #6366f1, #7c3aed);
+      border-radius: 18px 18px 4px 18px;
+    }
+
+    .msg-assistant {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 18px 18px 18px 4px;
+    }
+
+    /* ── Code block copy button ── */
+    .code-block-wrapper {
+      position: relative;
+    }
+
+    .code-copy-btn {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      background: rgba(255,255,255,0.1);
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 6px;
+      color: #94a3b8;
+      padding: 4px 10px;
+      font-size: 12px;
+      cursor: pointer;
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+
+    .code-block-wrapper:hover .code-copy-btn {
+      opacity: 1;
+    }
+
+    /* ── Toast ── */
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      padding: 12px 20px;
+      border-radius: 12px;
+      font-size: 14px;
+      z-index: 1000;
+      animation: toast-in 0.3s ease-out;
+    }
+
+    @keyframes toast-in {
+      from { transform: translateY(20px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+
+    /* ── Sidebar ── */
+    .sidebar-item {
+      transition: background 0.15s;
+    }
+    .sidebar-item:hover {
+      background: rgba(255,255,255,0.06);
+    }
+    .sidebar-item.active {
+      background: rgba(99, 102, 241, 0.15);
+      border-right: 2px solid #6366f1;
+    }
+
+    /* ── Mobile responsive ── */
+    @media (max-width: 768px) {
+      .sidebar { display: none; }
+      .sidebar.mobile-open { display: flex; position: fixed; z-index: 50; inset: 0; }
+    }
+
+    /* ── Markdown content ── */
+    .markdown-body h1, .markdown-body h2, .markdown-body h3 {
+      margin-top: 1em;
+      margin-bottom: 0.5em;
+      font-weight: 600;
+    }
+    .markdown-body p { margin-bottom: 0.75em; line-height: 1.7; }
+    .markdown-body ul, .markdown-body ol { padding-left: 1.5em; margin-bottom: 0.75em; }
+    .markdown-body li { margin-bottom: 0.25em; }
+    .markdown-body pre {
+      background: rgba(0,0,0,0.3);
+      border-radius: 10px;
+      padding: 16px;
+      overflow-x: auto;
+      margin-bottom: 1em;
+    }
+    .markdown-body code {
+      font-size: 13px;
+      font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    }
+    .markdown-body :not(pre) > code {
+      background: rgba(255,255,255,0.08);
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+    .markdown-body table {
+      border-collapse: collapse;
+      width: 100%;
+      margin-bottom: 1em;
+    }
+    .markdown-body th, .markdown-body td {
+      border: 1px solid rgba(255,255,255,0.1);
+      padding: 8px 12px;
+      text-align: left;
+    }
+    .markdown-body th { background: rgba(255,255,255,0.05); }
+  </style>
+</head>
+<body class="bg-[#0a0a0f] text-slate-100 h-screen flex overflow-hidden">
+
+  <!-- ── Left Sidebar ── -->
+  <aside class="sidebar w-64 flex-shrink-0 glass flex flex-col" id="sidebar">
+    <!-- Logo -->
+    <div class="p-4 flex items-center gap-3 border-b border-white/5">
+      <svg width="32" height="32" viewBox="0 0 100 100" fill="none">
+        <ellipse cx="50" cy="55" rx="38" ry="30" fill="#6366f1" opacity="0.9"/>
+        <circle cx="35" cy="48" r="6" fill="white"/>
+        <circle cx="65" cy="48" r="6" fill="white"/>
+        <circle cx="35" cy="48" r="3" fill="#0a0a0f"/>
+        <circle cx="65" cy="48" r="3" fill="#0a0a0f"/>
+        <path d="M42 62 Q50 68 58 62" stroke="white" stroke-width="2" fill="none" stroke-linecap="round"/>
+      </svg>
+      <span class="font-bold text-lg">Crablet</span>
+    </div>
+
+    <!-- New chat button -->
+    <div class="p-3">
+      <button class="w-full py-2.5 px-4 rounded-xl bg-accent/20 hover:bg-accent/30 text-accent-light font-medium text-sm transition-colors flex items-center gap-2" id="newChatBtn">
+        <i class="fas fa-plus"></i> New Chat
+      </button>
+    </div>
+
+    <!-- Chat history -->
+    <div class="flex-1 overflow-y-auto px-2" id="chatHistory">
+      <div class="sidebar-item active rounded-lg px-3 py-2.5 cursor-pointer text-sm">
+        <i class="fas fa-message text-accent mr-2"></i> Current Chat
+      </div>
+    </div>
+
+    <!-- Settings -->
+    <div class="p-3 border-t border-white/5">
+      <button class="w-full py-2 px-3 rounded-lg hover:bg-white/5 text-slate-400 text-sm flex items-center gap-2 transition-colors" id="settingsBtn">
+        <i class="fas fa-gear"></i> Settings
+      </button>
+    </div>
+  </aside>
+
+  <!-- ── Main Content ── -->
+  <main class="flex-1 flex flex-col min-w-0">
+    <!-- Header -->
+    <header class="glass-strong px-6 py-3 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <button class="md:hidden text-slate-400 hover:text-white" id="menuBtn">
+          <i class="fas fa-bars text-lg"></i>
+        </button>
+        <div class="flex items-center gap-2">
+          <span class="text-sm font-medium" id="chatTitle">New Chat</span>
+          <span class="text-xs text-slate-500">·</span>
+          <select class="bg-transparent text-xs text-accent-light outline-none cursor-pointer" id="modelRouteSelect">
+            <option value="auto">Auto</option>
+            <option value="cloud">Cloud</option>
+            <option value="local">Local</option>
+          </select>
+        </div>
+      </div>
+      <div class="flex items-center gap-2">
+        <button class="p-2 rounded-lg hover:bg-white/5 text-slate-400 hover:text-white transition-colors" id="canvasToggle" title="Canvas Panel (Ctrl+K)">
+          <i class="fas fa-palette"></i>
+        </button>
+        <button class="p-2 rounded-lg hover:bg-white/5 text-slate-400 hover:text-white transition-colors" id="darkToggle" title="Toggle Dark Mode">
+          <i class="fas fa-moon"></i>
+        </button>
+      </div>
+    </header>
+
+    <!-- Chat area -->
+    <div class="flex-1 flex overflow-hidden">
+      <!-- Messages -->
+      <div class="flex-1 overflow-y-auto p-6 space-y-4" id="chatMessages">
+        <!-- Welcome message -->
+        <div class="flex justify-center my-8">
+          <div class="text-center max-w-md">
+            <div class="text-4xl mb-4">🦀</div>
+            <h2 class="text-xl font-semibold mb-2">Welcome to Crablet</h2>
+            <p class="text-slate-400 text-sm">Your AI agent platform. Ask anything, attach files, or use tools.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Canvas panel (hidden by default) -->
+      <div class="hidden w-96 border-l border-white/5 glass flex-col" id="canvasPanel">
+        <div class="p-4 border-b border-white/5 flex items-center justify-between">
+          <span class="font-medium text-sm">Canvas</span>
+          <button class="text-slate-400 hover:text-white" id="canvasClose">
+            <i class="fas fa-times"></i>
+          </button>
+        </div>
+        <div class="flex-1 p-4 overflow-y-auto" id="canvasContent">
+          <p class="text-slate-500 text-sm">Canvas content will appear here...</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Input area -->
+    <div class="p-4 border-t border-white/5">
+      <!-- Attachment preview -->
+      <div class="hidden mb-3 flex gap-2 flex-wrap" id="attachmentPreview"></div>
+
+      <div class="flex items-end gap-3">
+        <!-- Attach button -->
+        <button class="p-2.5 rounded-xl hover:bg-white/5 text-slate-400 hover:text-white transition-colors" id="attachBtn" title="Attach file">
+          <i class="fas fa-paperclip"></i>
+        </button>
+        <input type="file" class="hidden" id="fileInput" multiple />
+
+        <!-- Input -->
+        <div class="flex-1 relative">
+          <textarea
+            class="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 pr-12 text-sm resize-none outline-none focus:border-accent/50 transition-colors placeholder:text-slate-500"
+            rows="1"
+            placeholder="Type a message... (Enter to send, Shift+Enter for newline)"
+            id="chatInput"
+          ></textarea>
+          <button class="absolute right-3 bottom-3 p-1.5 rounded-lg bg-accent hover:bg-accent-light text-white transition-colors" id="sendBtn">
+            <i class="fas fa-arrow-up text-xs"></i>
+          </button>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    // ── DOM refs ──
+    const chatMessages = document.getElementById('chatMessages');
+    const chatInput = document.getElementById('chatInput');
+    const sendBtn = document.getElementById('sendBtn');
+    const attachBtn = document.getElementById('attachBtn');
+    const fileInput = document.getElementById('fileInput');
+    const attachmentPreview = document.getElementById('attachmentPreview');
+    const canvasToggle = document.getElementById('canvasToggle');
+    const canvasPanel = document.getElementById('canvasPanel');
+    const canvasClose = document.getElementById('canvasClose');
+    const canvasContent = document.getElementById('canvasContent');
+    const menuBtn = document.getElementById('menuBtn');
+    const sidebar = document.getElementById('sidebar');
+    const newChatBtn = document.getElementById('newChatBtn');
+    const modelRouteSelect = document.getElementById('modelRouteSelect');
+
+    // ── Config ──
+    const API_ENDPOINT = localStorage.getItem('crablet_api_endpoint') || 'http://localhost:8080';
+    const MODEL_ROUTE = localStorage.getItem('crablet_model_route') || 'auto';
+    modelRouteSelect.value = MODEL_ROUTE;
+
+    // ── Markdown rendering ──
+    marked.setOptions({
+      highlight: (code, lang) => {
+        if (Prism.languages[lang]) {
+          return Prism.highlight(code, Prism.languages[lang], lang);
+        }
+        return code;
+      },
+      breaks: true,
+    });
+
+    function renderMarkdown(text) {
+      const html = marked.parse(text);
+      return DOMPurify.sanitize(html);
+    }
+
+    // ── Toast notifications ──
+    function showToast(message, type = 'info') {
+      const colors = {
+        info: 'bg-accent/80 text-white',
+        success: 'bg-green-600/80 text-white',
+        error: 'bg-red-600/80 text-white',
+      };
+      const toast = document.createElement('div');
+      toast.className = `toast ${colors[type] || colors.info}`;
+      toast.textContent = message;
+      document.body.appendChild(toast);
+      setTimeout(() => toast.remove(), 3000);
+    }
+
+    // ── Add code copy buttons ──
+    function addCopyButtons(container) {
+      container.querySelectorAll('pre code').forEach((block) => {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'code-block-wrapper';
+        const btn = document.createElement('button');
+        btn.className = 'code-copy-btn';
+        btn.innerHTML = '<i class="fas fa-copy"></i> Copy';
+        btn.onclick = () => {
+          navigator.clipboard.writeText(block.textContent);
+          btn.innerHTML = '<i class="fas fa-check"></i> Copied!';
+          setTimeout(() => { btn.innerHTML = '<i class="fas fa-copy"></i> Copy'; }, 2000);
+        };
+        block.parentNode.parentNode.insertBefore(wrapper, block.parentNode);
+        wrapper.appendChild(block.parentNode);
+        wrapper.appendChild(btn);
+      });
+    }
+
+    // ── Send message ──
+    async function sendMessage(text) {
+      if (!text.trim()) return;
+
+      // Add user message
+      appendMessage('user', text);
+      chatInput.value = '';
+      chatInput.style.height = 'auto';
+
+      // Add assistant placeholder
+      const assistantEl = appendMessage('assistant', '');
+      const contentEl = assistantEl.querySelector('.msg-content');
+
+      try {
+        // Try SSE first
+        const sseOk = await trySSE(text, contentEl);
+        if (!sseOk) {
+          // Fallback to /chat JSON
+          await tryJSON(text, contentEl);
+        }
+      } catch (err) {
+        contentEl.innerHTML = `<span class="text-red-400">Error: ${err.message}</span>`;
+      }
+    }
+
+    // ── SSE streaming ──
+    async function trySSE(text, contentEl) {
+      try {
+        const response = await fetch(`${API_ENDPOINT}/chat/stream`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            message: text,
+            route: modelRouteSelect.value,
+          }),
+        });
+
+        if (!response.ok) return false;
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let fullText = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              try {
+                const data = JSON.parse(line.slice(6));
+                if (data.text) {
+                  fullText += data.text;
+                  contentEl.innerHTML = renderMarkdown(fullText);
+                  addCopyButtons(contentEl);
+                }
+              } catch {}
+            }
+          }
+        }
+
+        return true;
+      } catch {
+        return false;
+      }
+    }
+
+    // ── JSON fallback ──
+    async function tryJSON(text, contentEl) {
+      const response = await fetch(`${API_ENDPOINT}/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: text,
+          route: modelRouteSelect.value,
+        }),
+      });
+
+      const data = await response.json();
+      contentEl.innerHTML = renderMarkdown(data.response || data.text || 'No response');
+      addCopyButtons(contentEl);
+    }
+
+    // ── Append message ──
+    function appendMessage(role, content) {
+      const div = document.createElement('div');
+      div.className = `flex ${role === 'user' ? 'justify-end' : 'justify-start'}`;
+
+      const bubble = document.createElement('div');
+      bubble.className = `max-w-[75%] px-4 py-3 ${role === 'user' ? 'msg-user' : 'msg-assistant'}`;
+
+      const contentEl = document.createElement('div');
+      contentEl.className = 'msg-content markdown-body text-sm';
+      contentEl.innerHTML = role === 'user' ? escapeHtml(content) : renderMarkdown(content);
+
+      bubble.appendChild(contentEl);
+      div.appendChild(bubble);
+      chatMessages.appendChild(div);
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+
+      if (content) addCopyButtons(contentEl);
+      return div;
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    // ── Event listeners ──
+    sendBtn.addEventListener('click', () => sendMessage(chatInput.value));
+
+    chatInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendMessage(chatInput.value);
+      }
+    });
+
+    // Auto-resize textarea
+    chatInput.addEventListener('input', () => {
+      chatInput.style.height = 'auto';
+      chatInput.style.height = Math.min(chatInput.scrollHeight, 200) + 'px';
+    });
+
+    // Attach files
+    attachBtn.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', (e) => {
+      const files = Array.from(e.target.files);
+      attachmentPreview.classList.remove('hidden');
+      attachmentPreview.innerHTML = '';
+      files.forEach((file) => {
+        const chip = document.createElement('div');
+        chip.className = 'flex items-center gap-2 bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-xs';
+        chip.innerHTML = `<i class="fas fa-file text-accent"></i> ${file.name} <button class="text-slate-400 hover:text-red-400 ml-1" onclick="this.parentElement.remove()"><i class="fas fa-times"></i></button>`;
+        attachmentPreview.appendChild(chip);
+      });
+    });
+
+    // Canvas toggle
+    canvasToggle.addEventListener('click', () => {
+      canvasPanel.classList.toggle('hidden');
+      canvasPanel.classList.toggle('flex');
+    });
+    canvasClose.addEventListener('click', () => {
+      canvasPanel.classList.add('hidden');
+      canvasPanel.classList.remove('flex');
+    });
+
+    // Mobile sidebar
+    menuBtn.addEventListener('click', () => {
+      sidebar.classList.toggle('mobile-open');
+    });
+
+    // New chat
+    newChatBtn.addEventListener('click', () => {
+      chatMessages.innerHTML = '';
+      showToast('New chat started', 'success');
+    });
+
+    // ── Keyboard shortcuts ──
+    document.addEventListener('keydown', (e) => {
+      // Ctrl+K: Toggle canvas
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault();
+        canvasToggle.click();
+      }
+      // Ctrl+N: New chat
+      if ((e.ctrlKey || e.metaKey) && e.key === 'n') {
+        e.preventDefault();
+        newChatBtn.click();
+      }
+    });
+
+    // ── Model route change ──
+    modelRouteSelect.addEventListener('change', (e) => {
+      localStorage.setItem('crablet_model_route', e.target.value);
+      showToast(`Model route: ${e.target.value}`, 'info');
+    });
+  </script>
+</body>
+</html>

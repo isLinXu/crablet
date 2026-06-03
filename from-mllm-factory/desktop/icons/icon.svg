@@ -1,0 +1,44 @@
+<svg viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="512" height="512" rx="112" fill="#0a0a0f"/>
+
+  <!-- Crab body -->
+  <ellipse cx="256" cy="280" rx="160" ry="120" fill="#6366f1" opacity="0.9"/>
+
+  <!-- Eyes -->
+  <circle cx="200" cy="250" r="28" fill="white"/>
+  <circle cx="312" cy="250" r="28" fill="white"/>
+  <circle cx="200" cy="250" r="14" fill="#0a0a0f"/>
+  <circle cx="312" cy="250" r="14" fill="#0a0a0f"/>
+
+  <!-- Smile -->
+  <path d="M220 310 Q256 340 292 310" stroke="white" stroke-width="8" fill="none" stroke-linecap="round"/>
+
+  <!-- Left claw arm -->
+  <path d="M120 200 L60 80" stroke="#6366f1" stroke-width="16" stroke-linecap="round"/>
+  <!-- Left claw -->
+  <circle cx="56" cy="72" r="24" fill="#818cf8"/>
+  <path d="M40 56 L56 72 L72 56" stroke="#6366f1" stroke-width="6" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Right claw arm -->
+  <path d="M392 200 L452 80" stroke="#6366f1" stroke-width="16" stroke-linecap="round"/>
+  <!-- Right claw -->
+  <circle cx="456" cy="72" r="24" fill="#818cf8"/>
+  <path d="M440 56 L456 72 L472 56" stroke="#6366f1" stroke-width="6" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Legs -->
+  <path d="M180 380 L160 440" stroke="#6366f1" stroke-width="10" stroke-linecap="round"/>
+  <path d="M220 390 L210 450" stroke="#6366f1" stroke-width="10" stroke-linecap="round"/>
+  <path d="M292 390 L302 450" stroke="#6366f1" stroke-width="10" stroke-linecap="round"/>
+  <path d="M332 380 L352 440" stroke="#6366f1" stroke-width="10" stroke-linecap="round"/>
+
+  <!-- Accent glow -->
+  <ellipse cx="256" cy="280" rx="180" ry="140" fill="url(#glow)" opacity="0.3"/>
+
+  <defs>
+    <radialGradient id="glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#6366f1" stop-opacity="0.4"/>
+      <stop offset="100%" stop-color="#6366f1" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+</svg>
