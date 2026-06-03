@@ -1,0 +1,7 @@
+[workspace]
+members = ["crablet", "desktop"]
+default-members = ["crablet"]
+resolver = "2"
+
+[workspace.dependencies]
+tauri = { version = "2", features = ["tray-icon", "devtools"] }
