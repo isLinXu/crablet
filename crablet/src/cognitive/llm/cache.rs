@@ -38,7 +38,7 @@ impl LlmClient for CachedLlmClient {
         // Include model name in cache key to avoid collisions between models
         hasher.update(self.inner.model_name().as_bytes());
         let result = hasher.finalize();
-        let cache_key = format!("{:x}", result);
+        let cache_key = data_encoding::HEXLOWER.encode(&result);
 
         {
             let mut cache = self.cache.lock();

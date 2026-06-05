@@ -148,6 +148,11 @@ desktop-dev:
 desktop-clean:
     rm -rf desktop/binaries desktop/gen target/release/bundle
 
+# Quick check: verify desktop + sidecar compile without full build
+desktop-check:
+    cargo check --manifest-path ./crablet/Cargo.toml --no-default-features --features web
+    cargo check --manifest-path ./desktop/Cargo.toml
+
 # ═══════════════════════════════════════════════════════════════════════════
 # General
 # ═══════════════════════════════════════════════════════════════════════════

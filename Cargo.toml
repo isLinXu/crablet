@@ -5,3 +5,7 @@ resolver = "2"
 
 [workspace.dependencies]
 tauri = { version = "2", features = ["tray-icon", "devtools"] }
+
+# 锁定 tauri-runtime 到与 tauri-runtime-wry 2.9.x 兼容的版本
+# tauri-runtime 2.11+ 更改了 NewWindowFeatures API，导致 tauri-runtime-wry 2.9.x 编译失败
+[workspace.lints]

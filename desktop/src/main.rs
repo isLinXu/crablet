@@ -2,7 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::sync::Mutex;
-use tauri::{Manager, WebviewWindow, Emitter};
+use tauri::{Manager, Emitter};
 use tauri_plugin_shell::ShellExt;
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 
@@ -12,20 +12,52 @@ const SERVE_PORT: u16 = 18799;
 /// 保存 sidecar 子进程句柄，退出时优雅 kill。
 struct SidecarState(Mutex<Option<CommandChild>>);
 
-/// 前端调用：保存 API Key 到系统 keyring（与 crablet 后端约定 service="crablet", user="openai_api_key"），
+/// API Key 内存缓存，避免每次都访问 keyring（macOS Keychain 可能耗时 ~46s）。
+/// 使用 Mutex 保证线程安全，替代不安全的 std::env::set_var（Rust 1.80+ 多线程下不安全）。
+struct ApiKeyState(Mutex<Option<String>>);
+
+/// 前端调用：保存 API Key 到系统 keyring + 内存缓存。
 /// 保存成功后自动重启 sidecar，使新 Key 立即生效（无需用户手动重启应用）。
 #[tauri::command]
 fn save_api_key(app: tauri::AppHandle, key: String) -> Result<(), String> {
+    // 1. 写入系统 keyring（持久化）
     let entry = keyring::Entry::new("crablet", "openai_api_key").map_err(|e| e.to_string())?;
     entry.set_password(&key).map_err(|e| e.to_string())?;
 
-    // 同时写入当前进程环境变量，确保后续 collect_envs() 与 has_api_key() 立即可见。
-    std::env::set_var("OPENAI_API_KEY", &key);
-    std::env::set_var("DASHSCOPE_API_KEY", &key);
+    // 2. 更新内存缓存（线程安全，替代 std::env::set_var）
+    let state = app.state::<ApiKeyState>();
+    *state.0.lock().unwrap() = Some(key);
 
-    // 重启 sidecar：kill 旧进程 → 重新 spawn（新进程会读到刚保存的 Key）。
+    // 3. 重启 sidecar 让新 Key 生效（新进程会从 keyring 读取）
     restart_sidecar(&app);
     Ok(())
+}
+
+/// 前端调用：检查是否已配置 API Key。
+/// 优先检查内存缓存（快速路径，零延迟），仅在缓存未命中时才访问 keyring（慢速路径）。
+#[tauri::command]
+fn has_api_key(app: tauri::AppHandle) -> bool {
+    // 1. 快速路径：检查内存缓存（零延迟）
+    let state = app.state::<ApiKeyState>();
+    if state.0.lock().unwrap().is_some() {
+        return true;
+    }
+    // 2. 慢速路径：检查 keyring（macOS keychain 可能耗时 ~46s）
+    //    如果 keyring 中有值，顺便更新内存缓存，后续调用走快速路径。
+    if let Ok(entry) = keyring::Entry::new("crablet", "openai_api_key") {
+        if let Ok(pwd) = entry.get_password() {
+            *state.0.lock().unwrap() = Some(pwd);
+            return true;
+        }
+    }
+    false
+}
+
+/// 前端调用：异步检查是否已配置 API Key。
+/// 与 has_api_key 功能相同，但使用异步上下文避免阻塞 UI 线程。
+#[tauri::command]
+async fn has_api_key_async(app: tauri::AppHandle) -> bool {
+    has_api_key(app)
 }
 
 /// 重启 sidecar：优雅 kill 旧子进程，再重新 spawn 一个新的。
@@ -41,30 +73,11 @@ fn restart_sidecar(app: &tauri::AppHandle) {
         Ok(child) => {
             *state.0.lock().unwrap() = Some(child);
             eprintln!("[crablet-desktop] ✅ sidecar 已重启（API Key 更新生效）");
-            // 重新触发导航：等新后端就绪后自动跳转到 Web UI，无需用户手动重启。
-            if let Some(window) = app.get_webview_window("main") {
-                tauri::async_runtime::spawn(wait_and_navigate(window));
-            }
         }
         Err(e) => {
             eprintln!("[crablet-desktop] sidecar 重启失败: {}", e);
             let _ = app.emit("sidecar-error", e);
         }
-    }
-}
-
-/// 前端调用：检查是否已配置 API Key。
-/// 优先检查环境变量（快速），仅在环境变量未设置时才访问 keyring（避免 macOS keychain 延迟）。
-#[tauri::command]
-fn has_api_key() -> bool {
-    // 1. 快速路径：检查环境变量（零延迟）
-    if std::env::var("OPENAI_API_KEY").is_ok() || std::env::var("DASHSCOPE_API_KEY").is_ok() {
-        return true;
-    }
-    // 2. 慢速路径：检查 keyring（macOS keychain 可能耗时 ~46s）
-    match keyring::Entry::new("crablet", "openai_api_key") {
-        Ok(entry) => entry.get_password().is_ok(),
-        Err(_) => false,
     }
 }
 
@@ -95,14 +108,23 @@ fn target_triple() -> String {
 /// 收集环境变量（keyring API Key + CRABLET_RESOURCE_DIR）。
 /// keyring 访问放在这里（而非 Config::load 中），因为桌面端启动时
 /// 可以在 sidecar 启动前异步完成，不阻塞 UI。
-fn collect_envs() -> Vec<(String, String)> {
+fn collect_envs(api_key_cache: &Mutex<Option<String>>) -> Vec<(String, String)> {
     let mut envs: Vec<(String, String)> = Vec::new();
 
-    // 把已配置的 keyring API Key 注入为环境变量，确保 sidecar 能读到（即使其 keyring 访问受限）。
-    if let Ok(entry) = keyring::Entry::new("crablet", "openai_api_key") {
-        if let Ok(pwd) = entry.get_password() {
-            envs.push(("OPENAI_API_KEY".to_string(), pwd.clone()));
-            envs.push(("DASHSCOPE_API_KEY".to_string(), pwd));
+    // 优先从内存缓存读取 API Key（避免重复访问 keyring）
+    let cached = api_key_cache.lock().unwrap();
+    if let Some(key) = cached.as_ref() {
+        envs.push(("OPENAI_API_KEY".to_string(), key.clone()));
+        envs.push(("DASHSCOPE_API_KEY".to_string(), key.clone()));
+    } else {
+        drop(cached); // 释放锁后再访问 keyring
+        // 缓存未命中时，从 keyring 读取并更新缓存
+        if let Ok(entry) = keyring::Entry::new("crablet", "openai_api_key") {
+            if let Ok(pwd) = entry.get_password() {
+                envs.push(("OPENAI_API_KEY".to_string(), pwd.clone()));
+                envs.push(("DASHSCOPE_API_KEY".to_string(), pwd.clone()));
+                *api_key_cache.lock().unwrap() = Some(pwd);
+            }
         }
     }
 
@@ -150,7 +172,8 @@ fn start_log_reader(app: tauri::AppHandle, mut rx: tauri::async_runtime::Receive
 /// 启动 crablet sidecar，执行 `serve-web --port <PORT>`。
 /// 统一入口：先尝试 Tauri sidecar API，失败后自动回退到手动路径搜索。
 fn spawn_sidecar(app: &tauri::AppHandle) -> Result<CommandChild, String> {
-    let envs = collect_envs();
+    let api_key_state = app.state::<ApiKeyState>();
+    let envs = collect_envs(&api_key_state.0);
     let port_args = ["serve-web", "--port", &SERVE_PORT.to_string()];
 
     // 尝试 1: Tauri sidecar API（会自动追加 target triple 后缀查找二进制）
@@ -248,49 +271,32 @@ fn spawn_sidecar_manual(
     ))
 }
 
-/// 轮询本地服务，就绪后让窗口导航过去。
-/// 最多等待 ~120 秒（首次启动 keyring 访问 + LLM 初始化可能较慢）。
-async fn wait_and_navigate(window: WebviewWindow) {
-    let url = format!("http://127.0.0.1:{}/", SERVE_PORT);
-
-    for i in 0..600 {
-        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-        if std::net::TcpStream::connect(("127.0.0.1", SERVE_PORT)).is_ok() {
-            // 端口已监听，再给后端一点点时间完成路由挂载。
-            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-            eprintln!("[crablet-desktop] 端口 {} 已就绪，正在导航… (第 {} 次探测)", SERVE_PORT, i + 1);
-            match url.parse::<tauri::Url>() {
-                Ok(parsed) => {
-                    match window.navigate(parsed) {
-                        Ok(()) => eprintln!("[crablet-desktop] 导航成功"),
-                        Err(e) => eprintln!("[crablet-desktop] 导航失败: {}", e),
-                    }
-                }
-                Err(e) => eprintln!("[crablet-desktop] URL 解析失败: {}", e),
-            }
-            return;
-        }
-    }
-
-    eprintln!("[crablet-desktop] 后端服务启动超时");
-    let _ = window.emit(
-        "sidecar-error",
-        "后端服务启动超时，请检查日志或重启应用。".to_string(),
-    );
-}
-
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_opener::init())
         .manage(SidecarState(Mutex::new(None)))
+        .manage(ApiKeyState(Mutex::new(None)))
         .invoke_handler(tauri::generate_handler![
             save_api_key,
             has_api_key,
+            has_api_key_async,
             server_url
         ])
         .setup(|app| {
             let handle = app.handle().clone();
+
+            // 预加载 API Key 到内存缓存，避免后续 keyring 访问阻塞 UI。
+            // macOS Keychain 首次访问可耗时 ~46s，提前在 setup 中完成。
+            let api_key_state = app.state::<ApiKeyState>();
+            if api_key_state.0.lock().unwrap().is_none() {
+                if let Ok(entry) = keyring::Entry::new("crablet", "openai_api_key") {
+                    if let Ok(pwd) = entry.get_password() {
+                        *api_key_state.0.lock().unwrap() = Some(pwd);
+                        eprintln!("[crablet-desktop] ✅ API Key 已从 keyring 预加载到内存缓存");
+                    }
+                }
+            }
 
             // 启动 sidecar 服务。
             match spawn_sidecar(&handle) {
@@ -304,10 +310,8 @@ fn main() {
                 }
             }
 
-            // 主窗口在 splash.html，等服务就绪后自动导航。
-            if let Some(window) = app.get_webview_window("main") {
-                tauri::async_runtime::spawn(wait_and_navigate(window));
-            }
+            // 前端 splash 页已自行轮询 http://127.0.0.1:18799 并在返回 200 后跳转，
+            // 无需 Rust 侧 wait_and_navigate。
 
             Ok(())
         })

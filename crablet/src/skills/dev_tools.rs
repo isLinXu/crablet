@@ -867,7 +867,7 @@ See README.md for more details.
         hasher.update(&content);
         let result = hasher.finalize();
 
-        Ok(format!("{:x}", result))
+        Ok(data_encoding::HEXLOWER.encode(&result))
     }
 
     /// 生成 HTML 文档

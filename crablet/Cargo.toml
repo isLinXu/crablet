@@ -14,7 +14,7 @@ telegram = ["dep:teloxide"]
 knowledge = ["dep:fastembed", "dep:pdf-extract", "dep:neo4rs", "qdrant-support"]
 # knowledge = ["dep:fastembed", "dep:pdf-extract", "dep:neo4rs"] # Qdrant disabled for now due to dep issues
 audio = ["dep:rubato", "dep:dasp", "dep:hound"]
-web = ["dep:axum", "dep:tower-http", "dep:askama", "dep:askama_axum", "dep:axum-extra"]
+web = ["dep:axum", "dep:tower-http", "dep:axum-extra"]
 scripting = ["dep:mlua"]
 telemetry = ["dep:opentelemetry", "dep:opentelemetry_sdk", "dep:opentelemetry-otlp", "dep:tracing-opentelemetry"]
 sandbox = ["dep:bollard"]
@@ -25,9 +25,9 @@ fusion-tests-disabled = []
 [dependencies]
 tokio = { version = "1.40", features = ["full"] }
 axum = { version = "0.7", features = ["ws", "multipart", "macros"], optional = true }
-axum-extra = { version = "0.12", features = ["cookie", "form", "query"], optional = true }
+axum-extra = { version = "0.9", features = ["cookie", "form", "query"], optional = true }
 # 使用 rustls 避免 OpenSSL / pkg-config 系统依赖，提升 CI/容器/本地一致性
-reqwest = { version = "0.13", default-features = false, features = ["json", "stream", "multipart", "cookies", "rustls-tls-webpki-roots"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "multipart", "cookies", "rustls-tls"] }
 serde = { version = "1.0", features = ["derive"] }
 sqlx-core = { version = "0.8.6", default-features = false, features = ["_rt-tokio", "chrono", "migrate"] }
 sqlx-sqlite = { version = "0.8.6", default-features = false, features = ["bundled", "chrono", "migrate"] }
@@ -56,7 +56,6 @@ toml = "1.0.2"
 indicatif = "0.18.4"
 tokio-stream = { version = "0.1.18", features = ["sync"] }
 tower-http = { version = "0.6.8", features = ["fs", "trace", "cors", "set-header"], optional = true }
-askama = { version = "0.15.4", optional = true }
 notify = "8.2.0"
 lru = "0.16.3"
 keyring = "3.6.3"
@@ -65,10 +64,9 @@ futures = "0.3.32"
 dashmap = "6.1.0"
 async-stream = "0.3"
 hmac = "0.12.1"
-sha2 = "0.11.0"
+sha2 = "0.10"
 neo4rs = { version = "0.8.0", optional = true }
 bollard = { version = "0.20.1", optional = true }
-askama_axum = { version = "0.5.0", optional = true }
 hound = { version = "3.5.1", optional = true }
 rubato = { version = "1.0.1", optional = true }
 dasp = { version = "0.11.0", optional = true }
@@ -100,7 +98,6 @@ which = "8.0"
 argon2 = "0.5.3"
 rand = "0.10.0"
 fastrand = "2.3.0"
-async-stream = "0.3.6"
 moka = { version = "0.12.13", features = ["future"] }
 tempfile = "3.10"
 opentelemetry-prometheus = "0.31.0"
