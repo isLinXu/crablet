@@ -118,6 +118,40 @@ docker-build:
 up:
     docker-compose up -d
 
+# ═══════════════════════════════════════════════════════════════════════════
+# Desktop (Tauri 2)
+# ═══════════════════════════════════════════════════════════════════════════
+
+# Build sidecar binary (release, web-only)
+desktop-sidecar:
+    cargo build --release -p crablet --no-default-features --features web
+
+# Copy sidecar binary to desktop/binaries/ (macOS arm64)
+desktop-sidecar-copy: desktop-sidecar
+    mkdir -p desktop/binaries
+    cp target/release/crablet desktop/binaries/crablet-aarch64-apple-darwin
+    chmod +x desktop/binaries/crablet-aarch64-apple-darwin
+
+# Build Tauri desktop app (macOS .app)
+desktop-build: desktop-sidecar-copy
+    cd desktop && cargo tauri build --bundles app
+
+# Build Tauri desktop app + create DMG (macOS)
+desktop-dmg: desktop-sidecar-copy
+    cd desktop && cargo tauri build --bundles dmg
+
+# Dev mode: launch Tauri dev server with hot reload
+desktop-dev:
+    cd desktop && cargo tauri dev
+
+# Clean desktop build artifacts
+desktop-clean:
+    rm -rf desktop/binaries desktop/gen target/release/bundle
+
+# ═══════════════════════════════════════════════════════════════════════════
+# General
+# ═══════════════════════════════════════════════════════════════════════════
+
 # Clean
 clean:
     cargo clean --manifest-path ./crablet/Cargo.toml
