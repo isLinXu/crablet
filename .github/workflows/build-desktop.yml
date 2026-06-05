@@ -22,22 +22,31 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Cache Cargo registry
+      - name: Cache Cargo registry & build
         uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: macos-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-
+            macos-cargo-
+
+      - name: Cache tauri-cli
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-tauri
+          key: tauri-cli-${{ runner.os }}-v2
 
       - name: Install tauri-cli
-        run: cargo install tauri-cli --version "^2"
+        run: |
+          if [ ! -f ~/.cargo/bin/cargo-tauri ]; then
+            cargo install tauri-cli --version "^2"
+          fi
 
-      - name: Build crablet (release)
-        run: cargo build --release -p crablet
+      - name: Build crablet sidecar (release)
+        run: cargo build --release -p crablet --no-default-features --features web
 
       - name: Copy sidecar binary
         run: |
@@ -55,7 +64,6 @@ jobs:
           APP_PATH="target/release/bundle/macos/Crablet.app"
           SIDECAR_TARGET="crablet-aarch64-apple-darwin"
 
-          # 检查所有可能的 sidecar 位置
           for dir in \
             "${APP_PATH}/Contents/MacOS/binaries" \
             "${APP_PATH}/Contents/Resources/binaries" \
@@ -111,22 +119,32 @@ jobs:
         with:
           targets: x86_64-pc-windows-msvc
 
-      - name: Cache Cargo registry
+      - name: Cache Cargo registry & build
         uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: windows-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-
+            windows-cargo-
+
+      - name: Cache tauri-cli
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-tauri.exe
+          key: tauri-cli-${{ runner.os }}-v2
 
       - name: Install tauri-cli
-        run: cargo install tauri-cli --version "^2"
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "$env:USERPROFILE\.cargo\bin\cargo-tauri.exe")) {
+            cargo install tauri-cli --version "^2"
+          }
 
-      - name: Build crablet (release)
-        run: cargo build --release -p crablet
+      - name: Build crablet sidecar (release)
+        run: cargo build --release -p crablet --no-default-features --features web
         env:
           RUSTFLAGS: "-C target-feature=+crt-static"
 
