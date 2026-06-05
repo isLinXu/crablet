@@ -586,6 +586,33 @@ docker run -d \
   crablet:latest
 ```
 
+### Option 5: Desktop App (macOS / Windows)
+
+Double-click to launch — no terminal, no Docker, no dev environment needed.
+
+```bash
+# 1. Clone & build sidecar
+git clone https://github.com/isLinXu/crablet.git
+cd crablet
+just desktop-sidecar        # or: cargo build --release -p crablet --no-default-features --features web
+
+# 2. Copy sidecar binary
+just desktop-sidecar-copy   # copies to desktop/binaries/
+
+# 3. Build desktop app
+just desktop-dmg            # macOS: generates .dmg in target/release/bundle/dmg/
+just desktop-build          # macOS: generates .app only
+
+# Or use the shell script directly:
+./desktop/build-desktop.sh
+```
+
+**First launch**: The app opens a splash screen where you can paste your OpenAI / DashScope API key. The key is saved to your system keychain — no env vars needed.
+
+**How it works**: The Tauri shell launches `crablet serve-web --port 18799` as a sidecar process, waits for it to become ready, then navigates to the built-in Web UI. Closing the window gracefully terminates the sidecar.
+
+> 📦 **Pre-built releases**: Download DMG / EXE from [GitHub Releases](https://github.com/isLinXu/crablet/releases) (tag-triggered CI builds).
+
 ---
 
 ## 💬 CLI Reference
