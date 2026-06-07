@@ -68,7 +68,7 @@ sha2 = "0.10"
 neo4rs = { version = "0.8.0", optional = true }
 bollard = { version = "0.20.1", optional = true }
 hound = { version = "3.5.1", optional = true }
-rubato = { version = "1.0.1", optional = true }
+rubato = { version = "3.0.0", optional = true }
 dasp = { version = "0.11.0", optional = true }
 gray_matter = "0.3.2"
 opentelemetry = { version = "0.31", optional = true }
