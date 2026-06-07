@@ -57,7 +57,7 @@
     "@types/react-dom": "^19.2.3",
     "@types/tesseract.js": "^2.0.0",
     "@vitejs/plugin-react": "^6.0.1",
-    "@vitest/coverage-v8": "^4.1.2",
+    "@vitest/coverage-v8": "^4.1.8",
     "autoprefixer": "^10.4.27",
     "eslint": "^9.21.0",
     "eslint-plugin-react-hooks": "^5.1.0",
