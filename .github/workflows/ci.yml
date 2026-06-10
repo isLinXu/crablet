@@ -3,8 +3,19 @@ name: CI
 on:
   push:
     branches: [main, develop]
+    paths:
+      - "crablet/**"
+      - "frontend/**"
+      - "Justfile"
+      - ".github/workflows/ci.yml"
   pull_request:
     branches: [main, develop]
+    types: [opened, synchronize, reopened]
+    paths:
+      - "crablet/**"
+      - "frontend/**"
+      - "Justfile"
+      - ".github/workflows/ci.yml"
   workflow_dispatch:
 
 concurrency:
@@ -17,7 +28,7 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
-  OPENAI_API_KEY: sk-test
+  OPENAI_API_KEY: sk-test  # placeholder for compilation only; real key never needed in CI
   CRABLET_RUN_REAL_LLM_TESTS: 0
   CI: true
   CARGO_INCREMENTAL: 0
@@ -56,6 +67,9 @@ jobs:
         env:
           RUSTDOCFLAGS: -D warnings
 
+      - name: Check all-features compile
+        run: cargo check --locked --all-features
+
   backend-tests:
     name: Backend ${{ matrix.suite.name }}
     runs-on: ubuntu-latest
@@ -68,8 +82,6 @@ jobs:
             command: cargo test --locked --no-default-features --features web
           - name: Doc Tests
             command: cargo test --locked --doc --no-default-features --features web
-          - name: All Features Compile
-            command: cargo check --locked --all-features
     defaults:
       run:
         working-directory: ./crablet
