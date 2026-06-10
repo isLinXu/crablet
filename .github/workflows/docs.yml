@@ -20,24 +20,27 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      
+      - uses: actions/checkout@v6
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
           cache: pip
           cache-dependency-path: docs-site/requirements.txt
-      
+
       - name: Install dependencies
-        run: pip install -r docs-site/requirements.txt mkdocs-minify-plugin mkdocs-git-revision-date-localized-plugin
-      
+        run: |
+          pip install -r docs-site/requirements.txt
+          pip install mkdocs-minify-plugin mkdocs-git-revision-date-localized-plugin
+
       - name: Build site
         run: |
           cd docs-site
           mkdocs build --strict
-      
+
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
@@ -48,6 +51,7 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: build
     steps:
       - name: Deploy to GitHub Pages
