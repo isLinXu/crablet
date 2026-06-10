@@ -30,7 +30,7 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
-  OPENAI_API_KEY: sk-test
+  OPENAI_API_KEY: sk-test  # placeholder for compilation only; real key never needed in CI
   CRABLET_RUN_REAL_LLM_TESTS: 0
   COVERAGE_THRESHOLD: "80"
 
@@ -69,17 +69,15 @@ jobs:
           mkdir -p coverage
           cargo llvm-cov --locked --workspace --no-default-features --features web --lcov --output-path coverage/lcov.info
 
-      - name: Enforce coverage gate
-        continue-on-error: true
-        run: bash ../scripts/check_lcov_threshold.sh coverage/lcov.info "${COVERAGE_THRESHOLD}" backend-web
-
       - name: Upload LCOV artifact
+        if: always()
         uses: actions/upload-artifact@v7
         with:
           name: backend-web-lcov
           path: ./crablet/coverage/lcov.info
 
       - name: Upload coverage to Codecov
+        if: always()
         uses: codecov/codecov-action@v6
         with:
           files: ./crablet/coverage/lcov.info
@@ -88,12 +86,15 @@ jobs:
           fail_ci_if_error: false
 
       - name: Comment coverage on PR
-        if: github.event_name == 'pull_request'
+        if: always() && github.event_name == 'pull_request'
         uses: romeovs/lcov-reporter-action@v0.3.1
         with:
           lcov-file: ./crablet/coverage/lcov.info
           github-token: ${{ secrets.GITHUB_TOKEN }}
           delete-old-comments: true
+
+      - name: Enforce coverage gate
+        run: bash ../scripts/check_lcov_threshold.sh coverage/lcov.info "${COVERAGE_THRESHOLD}" backend-web
 
   frontend-coverage:
     name: Frontend Coverage
@@ -119,26 +120,28 @@ jobs:
       - name: Generate frontend coverage
         run: npm run test:coverage
 
-      - name: Enforce frontend coverage gate
-        continue-on-error: true
-        run: bash ../scripts/check_lcov_threshold.sh coverage/lcov.info "${COVERAGE_THRESHOLD}" frontend
-
       - name: Upload frontend LCOV artifact
+        if: always()
         uses: actions/upload-artifact@v7
         with:
           name: frontend-lcov
           path: ./frontend/coverage/lcov.info
 
       - name: Upload frontend HTML coverage artifact
+        if: always()
         uses: actions/upload-artifact@v7
         with:
           name: frontend-coverage-html
           path: ./frontend/coverage
 
       - name: Upload frontend coverage to Codecov
+        if: always()
         uses: codecov/codecov-action@v6
         with:
           files: ./frontend/coverage/lcov.info
           flags: frontend
           name: crablet-frontend-coverage
           fail_ci_if_error: false
+
+      - name: Enforce frontend coverage gate
+        run: bash ../scripts/check_lcov_threshold.sh coverage/lcov.info "${COVERAGE_THRESHOLD}" frontend
