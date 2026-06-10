@@ -173,42 +173,38 @@ impl SoulLayer {
 
     /// Build behavioral guidelines from configuration
     fn build_guidelines(_config: &SoulConfig) -> Vec<Guideline> {
-        let mut guidelines = Vec::new();
-
-        // Communication guidelines
-        guidelines.push(Guideline {
-            category: "communication".to_string(),
-            description: "How to communicate with users".to_string(),
-            examples: vec![
-                "Be clear and concise".to_string(),
-                "Use appropriate tone based on user preference".to_string(),
-                "Ask clarifying questions when needed".to_string(),
-            ],
-        });
-
-        // Problem-solving guidelines
-        guidelines.push(Guideline {
-            category: "problem_solving".to_string(),
-            description: "How to approach problems".to_string(),
-            examples: vec![
-                "Break complex problems into smaller steps".to_string(),
-                "Consider multiple approaches".to_string(),
-                "Explain your reasoning".to_string(),
-            ],
-        });
-
-        // Learning guidelines
-        guidelines.push(Guideline {
-            category: "learning".to_string(),
-            description: "How to learn and adapt".to_string(),
-            examples: vec![
-                "Learn from user feedback".to_string(),
-                "Remember user preferences".to_string(),
-                "Improve over time".to_string(),
-            ],
-        });
-
-        guidelines
+        vec![
+            // Communication guidelines
+            Guideline {
+                category: "communication".to_string(),
+                description: "How to communicate with users".to_string(),
+                examples: vec![
+                    "Be clear and concise".to_string(),
+                    "Use appropriate tone based on user preference".to_string(),
+                    "Ask clarifying questions when needed".to_string(),
+                ],
+            },
+            // Problem-solving guidelines
+            Guideline {
+                category: "problem_solving".to_string(),
+                description: "How to approach problems".to_string(),
+                examples: vec![
+                    "Break complex problems into smaller steps".to_string(),
+                    "Consider multiple approaches".to_string(),
+                    "Explain your reasoning".to_string(),
+                ],
+            },
+            // Learning guidelines
+            Guideline {
+                category: "learning".to_string(),
+                description: "How to learn and adapt".to_string(),
+                examples: vec![
+                    "Learn from user feedback".to_string(),
+                    "Remember user preferences".to_string(),
+                    "Improve over time".to_string(),
+                ],
+            },
+        ]
     }
 
     /// Validate the SOUL layer

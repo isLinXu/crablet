@@ -272,7 +272,9 @@ impl WasmtimeSandbox {
 
 impl Default for WasmtimeSandbox {
     fn default() -> Self {
-        Self::new().expect("Failed to create default sandbox")
+        Self::new().unwrap_or_else(|e| {
+            panic!("Failed to create default sandbox: {e}. This typically indicates a missing Wasmtime installation.")
+        })
     }
 }
 

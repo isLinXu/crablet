@@ -14,7 +14,7 @@ pub mod weaver;
 use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, info};
@@ -283,6 +283,7 @@ impl FusionMemorySystem {
     }
 
     /// Perform memory maintenance (called by heartbeat)
+    #[allow(clippy::field_reassign_with_default)]
     pub async fn maintenance(&self) -> Result<MaintenanceReport, MemoryError> {
         info!("Running memory maintenance...");
 
@@ -334,7 +335,7 @@ impl FusionMemorySystem {
     }
 
     /// Export current state to Markdown configs (bidirectional sync)
-    pub async fn export_to_markdown(&self, workspace_path: &PathBuf) -> Result<(), MemoryError> {
+    pub async fn export_to_markdown(&self, workspace_path: &Path) -> Result<(), MemoryError> {
         info!("Exporting memory state to Markdown...");
 
         // Export USER state

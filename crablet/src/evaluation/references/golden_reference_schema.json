@@ -1,0 +1,131 @@
+{
+  "type": "object",
+  "required": ["id", "intent", "topology", "nodes", "complexity", "family"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "黄金对照案例唯一标识"
+    },
+    "intent": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 5,
+      "description": "意图保真度评分"
+    },
+    "topology": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 5,
+      "description": "拓扑合理性评分"
+    },
+    "nodes": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 5,
+      "description": "节点必要性评分"
+    },
+    "complexity": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 5,
+      "description": "过度简化/过度复杂评分"
+    },
+    "family": {
+      "type": "string",
+      "description": "工作流家族分类"
+    },
+    "description": {
+      "type": "string",
+      "description": "案例描述"
+    },
+    "expected_score_range": {
+      "type": "object",
+      "properties": {
+        "min": {"type": "number"},
+        "max": {"type": "number"}
+      }
+    }
+  },
+  "examples": [
+    {
+      "id": "golden_001",
+      "intent": 5,
+      "topology": 5,
+      "nodes": 5,
+      "complexity": 5,
+      "family": "approval",
+      "description": "标准审批流程 - 完美匹配",
+      "expected_score_range": {"min": 4.5, "max": 5.0}
+    },
+    {
+      "id": "golden_002",
+      "intent": 4,
+      "topology": 4,
+      "nodes": 4,
+      "complexity": 4,
+      "family": "notification",
+      "description": "通知流程 - 轻微偏差",
+      "expected_score_range": {"min": 3.5, "max": 4.5}
+    },
+    {
+      "id": "golden_003",
+      "intent": 3,
+      "topology": 3,
+      "nodes": 3,
+      "complexity": 3,
+      "family": "data_sync",
+      "description": "数据同步流程 - 中等质量",
+      "expected_score_range": {"min": 2.5, "max": 3.5}
+    },
+    {
+      "id": "golden_004",
+      "intent": 2,
+      "topology": 2,
+      "nodes": 2,
+      "complexity": 2,
+      "family": "ecom_dispute",
+      "description": "电商纠纷流程 - 存在问题",
+      "expected_score_range": {"min": 1.5, "max": 2.5}
+    },
+    {
+      "id": "golden_005",
+      "intent": 1,
+      "topology": 1,
+      "nodes": 1,
+      "complexity": 1,
+      "family": "broken",
+      "description": "损坏流程 - 严重问题",
+      "expected_score_range": {"min": 1.0, "max": 1.5}
+    },
+    {
+      "id": "golden_006",
+      "intent": 5,
+      "topology": 4,
+      "nodes": 5,
+      "complexity": 4,
+      "family": "leave_request",
+      "description": "请假审批流程 - 高质量",
+      "expected_score_range": {"min": 4.0, "max": 5.0}
+    },
+    {
+      "id": "golden_007",
+      "intent": 4,
+      "topology": 5,
+      "nodes": 4,
+      "complexity": 5,
+      "family": "expense_report",
+      "description": "报销流程 - 拓扑完美",
+      "expected_score_range": {"min": 4.0, "max": 5.0}
+    },
+    {
+      "id": "golden_008",
+      "intent": 3,
+      "topology": 4,
+      "nodes": 2,
+      "complexity": 3,
+      "family": "onboarding",
+      "description": "入职流程 - 有冗余节点",
+      "expected_score_range": {"min": 2.5, "max": 3.5}
+    }
+  ]
+}

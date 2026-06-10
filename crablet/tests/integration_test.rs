@@ -106,7 +106,7 @@ async fn test_context_retention() {
 
     let has_alice = context.iter().any(|m| {
         m.role == "user"
-            && m.content.as_ref().map_or(false, |parts| {
+            && m.content.as_ref().is_some_and(|parts| {
                 parts.iter().any(|p| match p {
                     ContentPart::Text { text } => text == "My name is Alice",
                     _ => false,
@@ -116,7 +116,7 @@ async fn test_context_retention() {
 
     let has_question = context.iter().any(|m| {
         m.role == "user"
-            && m.content.as_ref().map_or(false, |parts| {
+            && m.content.as_ref().is_some_and(|parts| {
                 parts.iter().any(|p| match p {
                     ContentPart::Text { text } => text == "What is my name?",
                     _ => false,

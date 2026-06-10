@@ -321,7 +321,7 @@ impl VersionConstraint {
     }
 
     /// 转换为字符串表示
-    pub fn to_string(&self) -> String {
+    pub fn display(&self) -> String {
         match self {
             Self::Exact(v) => format!("={}", v),
             Self::GreaterThan(v) => format!(">{}", v),
@@ -339,12 +339,12 @@ impl VersionConstraint {
             Self::Any => "*".to_string(),
             Self::And(constraints) => constraints
                 .iter()
-                .map(|c| c.to_string())
+                .map(|c| c.display())
                 .collect::<Vec<_>>()
                 .join(" "),
             Self::Or(constraints) => constraints
                 .iter()
-                .map(|c| c.to_string())
+                .map(|c| c.display())
                 .collect::<Vec<_>>()
                 .join(" || "),
         }

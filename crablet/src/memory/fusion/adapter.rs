@@ -3,7 +3,7 @@
 //! This adapter provides a unified interface for the Fusion Memory System.
 //! It simplifies memory management by providing a single entry point.
 
-use std::path::PathBuf;
+use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::info;
@@ -282,7 +282,7 @@ impl FusionAdapter {
     }
 
     /// Export to Markdown
-    pub async fn export_to_markdown(&self, workspace_path: &PathBuf) -> Result<()> {
+    pub async fn export_to_markdown(&self, workspace_path: &Path) -> Result<()> {
         self.fusion.export_to_markdown(workspace_path).await
     }
 

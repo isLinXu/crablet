@@ -1,0 +1,16 @@
+# Inference Configuration for Football Detection & Tracking
+# Based on ES-MoE with LoRA fine-tuning
+
+model:
+  checkpoint: "checkpoints/es_moe_best.pth"
+  device: "cuda" if torch.cuda.is_available() else "cpu"
+
+# Inference parameters
+inference:
+  batch_size: 1
+  score_threshold: 0.5
+  nms_threshold: 0.4
+
+# Evaluation metrics
+evaluation:
+  metrics: ["mAP", "MOTA", "IDF1", "HOTA"]

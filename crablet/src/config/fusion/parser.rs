@@ -5,6 +5,7 @@
 use super::*;
 use regex::Regex;
 use std::collections::HashMap;
+use std::path::Path;
 
 /// Parsed Markdown document with frontmatter and content
 #[derive(Debug, Clone)]
@@ -318,7 +319,7 @@ impl SoulParser {
                         .get(2)
                         .map(|m| m.as_str().to_string())
                         .unwrap_or_default(),
-                    priority: (10 - idx as u8).min(10).max(1),
+                    priority: (10 - idx as u8).clamp(1, 10),
                     description: cap
                         .get(3)
                         .map(|m| m.as_str().to_string())
@@ -502,7 +503,7 @@ pub struct FusionConfigParser;
 
 impl FusionConfigParser {
     /// Parse all Markdown configuration files from workspace
-    pub async fn parse_workspace(workspace_path: &PathBuf) -> Result<FusionConfig, ParseError> {
+    pub async fn parse_workspace(workspace_path: &Path) -> Result<FusionConfig, ParseError> {
         // Read all config files
         let agents_content = tokio::fs::read_to_string(workspace_path.join("AGENTS.md"))
             .await

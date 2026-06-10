@@ -37,7 +37,7 @@ impl LlmClient for LocalMockClient {
         // Find if we have the observation in ANY message (Tool output)
         let has_observation = messages.iter().any(|m| {
             m.role == "tool"
-                && m.content.as_ref().map_or(false, |parts| {
+                && m.content.as_ref().is_some_and(|parts| {
                     parts.iter().any(|p| match p {
                         ContentPart::Text { text } => text.contains("108"),
                         _ => false,
@@ -52,7 +52,7 @@ impl LlmClient for LocalMockClient {
         // Check for calculation request in User message
         let has_calc_request = messages.iter().any(|m| {
             m.role == "user"
-                && m.content.as_ref().map_or(false, |parts| {
+                && m.content.as_ref().is_some_and(|parts| {
                     parts.iter().any(|p| match p {
                         ContentPart::Text { text } => text.contains("Calculate 15 * 7 + 3"),
                         _ => false,
@@ -107,7 +107,7 @@ async fn test_react_engine_flow() {
     assert_eq!(response, "The result is 108.");
 
     // Check traces
-    assert!(traces.len() >= 1);
+    assert!(!traces.is_empty());
 
     let action_trace = traces
         .iter()

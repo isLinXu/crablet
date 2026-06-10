@@ -256,7 +256,7 @@ impl DynamicToolGraph {
         if self.has_cycle() {
             // Remove the edge we just added
             self.graph.remove_edge(self.graph.edge_indices().last()
-                .expect("edge must exist: just added above"));
+                .ok_or(ToolGraphError::ExecutionFailed("no edge index found after adding edge".into()))?);
             return Err(ToolGraphError::CycleDetected);
         }
 
@@ -722,8 +722,13 @@ impl DynamicToolExecutor {
 
                     join_set.spawn(async move {
                         // Acquire a permit before executing; released when permit drops.
-                        let _permit = sem_clone.acquire().await
-                            .expect("concurrency semaphore should not be closed");
+                        let _permit = match sem_clone.acquire().await {
+                            Ok(p) => p,
+                            Err(_) => {
+                                tracing::error!("Concurrency semaphore closed unexpectedly");
+                                return Err(ToolGraphError::ExecutionFailed("semaphore closed".into()));
+                            }
+                        };
                         Self::execute_node(&graph_clone, &tool_executor_clone, &node_id, &args_clone).await
                     });
                 }

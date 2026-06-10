@@ -69,7 +69,7 @@ impl Plugin for CoreMemoryAppendPlugin {
             .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow!("Missing 'content' parameter"))?;
 
-        let block = CoreMemoryBlock::from_str(block_str).ok_or_else(|| {
+        let block = CoreMemoryBlock::parse_name(block_str).ok_or_else(|| {
             anyhow!(
                 "Invalid block '{}'. Must be 'persona', 'human', or 'memory'",
                 block_str
@@ -155,7 +155,7 @@ impl Plugin for CoreMemoryReplacePlugin {
             .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow!("Missing 'new_content' parameter"))?;
 
-        let block = CoreMemoryBlock::from_str(block_str).ok_or_else(|| {
+        let block = CoreMemoryBlock::parse_name(block_str).ok_or_else(|| {
             anyhow!(
                 "Invalid block '{}'. Must be 'persona', 'human', or 'memory'",
                 block_str

@@ -206,7 +206,12 @@ impl QTable {
             let qvalues = CognitiveAction::all().iter().map(|&action| QValue::new(action)).collect();
             self.entries.insert(key.clone(), qvalues);
         }
-        self.entries.get_mut(&key).expect("key was just inserted")
+        self.entries.get_mut(&key).unwrap_or_else(|| {
+            // Re-insert as fallback (should never happen due to insert above)
+            let qvalues = CognitiveAction::all().iter().map(|&action| QValue::new(action)).collect();
+            self.entries.insert(key.clone(), qvalues);
+            self.entries.get_mut(&key).expect("entry must exist after double-insert")
+        })
     }
 
     pub fn select_action(&mut self, features: &TaskFeatures) -> CognitiveAction {

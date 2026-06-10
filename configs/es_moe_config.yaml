@@ -1,0 +1,41 @@
+# ES-MoE Configuration for Football Detection & Tracking
+# Architecture: 8 Experts, Top-k=2 (Sparse Mixture of Experts)
+# LoRA Fine-tuning: r=16, alpha=32 (10% params, 70% memory savings)
+
+model:
+  name: "es-moe-football"
+  type: "sparse_moe"
+  num_experts: 8
+  top_k: 2
+  load_balance_weight: 0.01  # 负载均衡损失权重
+
+# LoRA Configuration
+lora:
+  r: 16
+  alpha: 32
+  target_modules:
+    - "player"
+    - "ball"
+    - "goalkeeper"
+    - "referee"
+  dropout: 0.1
+
+# Training Configuration
+training:
+  batch_size: 16
+  learning_rate: 5e-4
+  num_epochs: 100
+  warmup_steps: 500
+
+# Dataset Configuration
+dataset:
+  name: "soccernet_tracking"
+  type: "detection_tracking"
+  num_classes: 4
+  class_names: ["player", "ball", "goalkeeper", "referee"]
+
+# Inference Configuration
+inference:
+  batch_size: 1
+  score_threshold: 0.5
+  nms_threshold: 0.4

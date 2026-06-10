@@ -508,6 +508,7 @@ impl UnifiedHarnessFusion {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn build_hook_context(
         &self,
         point: HookPoint,

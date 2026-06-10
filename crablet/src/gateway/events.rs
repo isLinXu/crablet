@@ -46,8 +46,8 @@ impl EventBus {
     pub fn publish(
         &self,
         event: GatewayEvent,
-    ) -> Result<usize, broadcast::error::SendError<GatewayEvent>> {
-        self.sender.send(event)
+    ) -> Result<usize, Arc<broadcast::error::SendError<GatewayEvent>>> {
+        self.sender.send(event).map_err(Arc::new)
     }
 }
 

@@ -4,5 +4,5 @@
 #[tokio::test]
 async fn test_demo_a_react_chain() {
     println!("Running Demo A: Multi-tool ReAct Chain (Mocked/Skipped for stability)");
-    assert!(true);
+    // Intentionally no assertion — this is a stub placeholder
 }

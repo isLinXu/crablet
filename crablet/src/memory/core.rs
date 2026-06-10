@@ -42,7 +42,7 @@ impl CoreMemoryBlock {
     }
 
     /// Parse from string
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse_name(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
             "persona" => Some(CoreMemoryBlock::Persona),
             "human" => Some(CoreMemoryBlock::Human),
@@ -532,17 +532,17 @@ mod tests {
     #[test]
     fn test_core_memory_block_from_str() {
         assert_eq!(
-            CoreMemoryBlock::from_str("persona"),
+            CoreMemoryBlock::parse_name("persona"),
             Some(CoreMemoryBlock::Persona)
         );
         assert_eq!(
-            CoreMemoryBlock::from_str("HUMAN"),
+            CoreMemoryBlock::parse_name("HUMAN"),
             Some(CoreMemoryBlock::Human)
         );
         assert_eq!(
-            CoreMemoryBlock::from_str("Memory"),
+            CoreMemoryBlock::parse_name("Memory"),
             Some(CoreMemoryBlock::Memory)
         );
-        assert_eq!(CoreMemoryBlock::from_str("invalid"), None);
+        assert_eq!(CoreMemoryBlock::parse_name("invalid"), None);
     }
 }

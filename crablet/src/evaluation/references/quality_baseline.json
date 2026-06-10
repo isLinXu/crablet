@@ -1,0 +1,121 @@
+{
+  "version": "1.0.0",
+  "description": "Quality regression baseline - 存量交付物评分基线",
+  "updated_at": "2026-06-09T00:00:00",
+  "baselines": [
+    {
+      "name": "approval_flow",
+      "overall_score": 3.73,
+      "dimension_scores": {
+        "intent_fidelity": 4.0,
+        "topology_rationality": 4.0,
+        "node_necessity": 3.5,
+        "over_simplification": 3.5,
+        "over_complexity": 3.5
+      },
+      "timestamp": "2026-06-09T00:00:00",
+      "metadata": {
+        "family": "approval",
+        "source": "存量13个zip评分"
+      }
+    },
+    {
+      "name": "notification_flow",
+      "overall_score": 3.55,
+      "dimension_scores": {
+        "intent_fidelity": 3.5,
+        "topology_rationality": 4.0,
+        "node_necessity": 3.5,
+        "over_simplification": 3.0,
+        "over_complexity": 3.5
+      },
+      "timestamp": "2026-06-09T00:00:00",
+      "metadata": {
+        "family": "notification",
+        "source": "存量13个zip评分"
+      }
+    },
+    {
+      "name": "data_sync_flow",
+      "overall_score": 3.40,
+      "dimension_scores": {
+        "intent_fidelity": 3.5,
+        "topology_rationality": 3.5,
+        "node_necessity": 3.0,
+        "over_simplification": 3.5,
+        "over_complexity": 3.5
+      },
+      "timestamp": "2026-06-09T00:00:00",
+      "metadata": {
+        "family": "data_sync",
+        "source": "存量13个zip评分"
+      }
+    },
+    {
+      "name": "ecom_dispute_flow",
+      "overall_score": 3.12,
+      "dimension_scores": {
+        "intent_fidelity": 3.0,
+        "topology_rationality": 2.5,
+        "node_necessity": 2.0,
+        "over_simplification": 3.5,
+        "over_complexity": 3.0
+      },
+      "timestamp": "2026-06-09T00:00:00",
+      "metadata": {
+        "family": "ecom_dispute",
+        "source": "存量13个zip评分",
+        "issues": ["14个不可达节点", "family劫持"]
+      }
+    },
+    {
+      "name": "leave_request_flow",
+      "overall_score": 3.65,
+      "dimension_scores": {
+        "intent_fidelity": 4.0,
+        "topology_rationality": 3.5,
+        "node_necessity": 3.5,
+        "over_simplification": 3.5,
+        "over_complexity": 3.5
+      },
+      "timestamp": "2026-06-09T00:00:00",
+      "metadata": {
+        "family": "approval",
+        "source": "存量13个zip评分"
+      }
+    },
+    {
+      "name": "expense_report_flow",
+      "overall_score": 3.58,
+      "dimension_scores": {
+        "intent_fidelity": 3.5,
+        "topology_rationality": 4.0,
+        "node_necessity": 3.5,
+        "over_simplification": 3.5,
+        "over_complexity": 3.0
+      },
+      "timestamp": "2026-06-09T00:00:00",
+      "metadata": {
+        "family": "approval",
+        "source": "存量13个zip评分"
+      }
+    },
+    {
+      "name": "onboarding_flow",
+      "overall_score": 3.30,
+      "dimension_scores": {
+        "intent_fidelity": 3.5,
+        "topology_rationality": 3.0,
+        "node_necessity": 2.5,
+        "over_simplification": 3.5,
+        "over_complexity": 3.5
+      },
+      "timestamp": "2026-06-09T00:00:00",
+      "metadata": {
+        "family": "onboarding",
+        "source": "存量13个zip评分",
+        "issues": ["有冗余节点"]
+      }
+    }
+  ]
+}

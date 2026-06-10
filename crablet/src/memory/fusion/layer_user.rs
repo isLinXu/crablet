@@ -10,7 +10,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tokio::sync::RwLock;
 use tracing::{debug, info};
 
@@ -373,7 +373,7 @@ impl UserLayer {
     }
 
     /// Load memories from storage
-    async fn load_memories(storage_path: &PathBuf) -> Result<Vec<Memory>, MemoryError> {
+    async fn load_memories(storage_path: &Path) -> Result<Vec<Memory>, MemoryError> {
         let memories_path = storage_path.join("memories.json");
 
         if memories_path.exists() {
@@ -776,11 +776,11 @@ impl UserLayer {
         content.push_str("## Goals\n\n");
         for goal in &profile.goals {
             content.push_str(&format!(
-                "- **{}** [{:?}] (priority: {}): {}\n",
+                "- **{}** [{:?}] (priority: {}): {:.0}% complete\n",
                 goal.description,
                 goal.status,
                 goal.priority,
-                format!("{:.0}% complete", goal.progress * 100.0)
+                goal.progress * 100.0
             ));
         }
 

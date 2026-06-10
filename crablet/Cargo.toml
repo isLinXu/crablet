@@ -127,3 +127,17 @@ tokio-test = "0.4.4"
 tempfile = "3.10"
 proptest = "1.4"
 criterion = { version = "0.8", features = ["async_tokio"] }
+
+[lints.clippy]
+# Production code: warn on unwrap (encourages proper error handling)
+unwrap_used = "warn"
+# Warn on bare expect() — should use descriptive error variants instead
+expect_used = "warn"
+# Style improvements
+field_reassign_with_default = "warn"
+too_many_arguments = "warn"
+type_complexity = "warn"
+# Already handled by lib.rs allow(dead_code)
+dead_code = "allow"
+# Encourage proper error propagation
+question_mark_used = "allow"

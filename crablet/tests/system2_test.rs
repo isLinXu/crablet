@@ -60,7 +60,7 @@ async fn test_system2_with_client_async_initialization() -> Result<()> {
 
     // Verify skill registry is initialized and accessible
     let skills = sys2.skills.read().await;
-    assert!(skills.len() > 0, "Default plugins should be registered");
+    assert!(!skills.is_empty(), "Default plugins should be registered");
 
     Ok(())
 }

@@ -228,12 +228,12 @@ impl Optimizer {
 
     /// 判断策略是否适合类别
     fn is_strategy_suitable_for_category(&self, stats: &StrategyStats, category: &str) -> bool {
-        match (stats.strategy.as_str(), category) {
-            ("enhanced", "coding" | "analysis") => true,
-            ("fast", "explanation" | "general") => true,
-            ("default", _) => true,
-            _ => false,
-        }
+        matches!(
+            (stats.strategy.as_str(), category),
+            ("enhanced", "coding" | "analysis")
+                | ("fast", "explanation" | "general")
+                | ("default", _)
+        )
     }
 
     /// 记录策略成功

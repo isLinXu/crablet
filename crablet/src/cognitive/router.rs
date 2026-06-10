@@ -90,7 +90,7 @@ impl CognitiveRouter {
             .get_or_init(|| tiktoken_rs::cl100k_base().ok())
             .as_ref()
             .map(|bpe| bpe.encode_with_special_tokens(content).len())
-            .unwrap_or_else(|| (content.chars().count() + 3) / 4);
+            .unwrap_or_else(|| content.chars().count().div_ceil(4));
 
         count.min(i64::MAX as usize) as i64
     }
@@ -132,7 +132,10 @@ impl CognitiveRouter {
                     e
                 );
                 let llm_inner: Box<dyn LlmClient> = Box::new(
-                    OpenAiClient::new("gpt-4o-mini").expect("Default model must be valid"),
+                    OpenAiClient::new("gpt-4o-mini").unwrap_or_else(|e| {
+                        panic!("Default OpenAI model 'gpt-4o-mini' failed to initialize: {e}. \
+                               This is a built-in fallback and must succeed.")
+                    }),
                 );
                 let cached: Box<dyn LlmClient> = Box::new(CachedLlmClient::new(llm_inner, 100));
                 Arc::new(cached)

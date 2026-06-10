@@ -224,10 +224,7 @@ impl PatternMatcher {
                         }
                     }
                 }
-                let regex = match self.compiled_regexes.get(pattern_str) {
-                    Some(re) => re,
-                    None => return None,
-                };
+                let regex = self.compiled_regexes.get(pattern_str)?;
 
                 if let Some(captures) = regex.captures(&input_lower) {
                     let mut params = HashMap::new();

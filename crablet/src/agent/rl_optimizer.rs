@@ -156,7 +156,13 @@ impl MultiArmedBandit {
         self.history.push_back(evaluation.clone());
         
         // 更新策略记录
-        let record = self.strategies.get_mut(&evaluation.strategy).expect("strategy key should exist after get_or_create");
+        let record = match self.strategies.get_mut(&evaluation.strategy) {
+            Some(r) => r,
+            None => {
+                tracing::warn!("Strategy key {:?} not found in rl_optimizer, skipping update", evaluation.strategy);
+                return;
+            }
+        };
         record.total_trials += 1;
         
         if evaluation.success {

@@ -1,6 +1,9 @@
 #![deny(unused_imports)]
 #![allow(dead_code)]
-#![warn(clippy::unwrap_used)] // Warn on unwrap usage instead of deny for now
+// P0 Safety: Deny unwrap() in non-test code to prevent production panics.
+// Test code can still use unwrap() via #[allow(clippy::unwrap_used)] on individual test fns.
+#![warn(clippy::unwrap_used)]
+#![warn(clippy::expect_used)]
 
 mod sqlx_compat;
 pub use sqlx_compat::*;

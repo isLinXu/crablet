@@ -407,7 +407,7 @@ mod tests {
         let back: SessionContext = serde_json::from_str(&json).unwrap();
         assert_eq!(back.session_id, "s1");
         assert_eq!(back.token_count, 1000);
-        assert_eq!(back.compressed, false);
+        assert!(!back.compressed);
         assert!(!back.messages_json.is_empty());
     }
 

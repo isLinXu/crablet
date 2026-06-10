@@ -748,6 +748,7 @@ impl UnifiedRouter {
 }
 
 #[cfg(test)]
+#[allow(deprecated)]
 mod tests {
     use super::*;
 

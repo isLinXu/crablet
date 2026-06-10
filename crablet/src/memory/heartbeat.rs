@@ -239,7 +239,7 @@ If there are no significant insights, respond with: {"insights": [], "suggested_
                 // Apply suggested updates to Core Memory
                 let mut updates_made = Vec::new();
                 for update in insights.suggested_core_memory_updates {
-                    if let Some(block) = CoreMemoryBlock::from_str(&update.block) {
+                    if let Some(block) = CoreMemoryBlock::parse_name(&update.block) {
                         match self
                             .memory_manager
                             .core_memory_append(block, &update.content)

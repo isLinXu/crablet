@@ -17,11 +17,6 @@ pub mod react;
 pub mod react_observable;
 pub mod router;
 pub mod routing;
-#[deprecated(
-    since = "0.6.0",
-    note = "SpeculativeRouter is unused and will be removed in a future version. Use FusionRouter instead."
-)]
-pub mod speculative_router;
 pub mod streaming_pipeline;
 pub mod system1;
 pub mod system1_enhanced;
@@ -30,11 +25,6 @@ pub mod system3;
 pub mod system4;
 pub mod thought_graph;
 pub mod tot;
-#[deprecated(
-    since = "0.6.0",
-    note = "UnifiedRouter is unused and will be removed in a future version. Use FusionRouter instead."
-)]
-pub mod unified_router;
 
 // Fusion Memory System integration
 pub mod fusion_router;

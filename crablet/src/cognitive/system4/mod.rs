@@ -226,6 +226,7 @@ impl System4 {
     }
 
     /// 通用执行记录
+    #[allow(clippy::too_many_arguments)]
     async fn record_execution(
         &self,
         system_type: SystemType,
@@ -300,7 +301,7 @@ impl System4 {
         self.evolution_engine
             .run_evolution_cycle()
             .await
-            .map_err(|e| CrabletError::Other(e))
+            .map_err(CrabletError::Other)
     }
 
     /// 生成性能报告
@@ -320,7 +321,7 @@ impl System4 {
         self.evolution_engine
             .approve_proposal(proposal_id)
             .await
-            .map_err(|e| CrabletError::Other(e))
+            .map_err(CrabletError::Other)
     }
 
     /// 拒绝改进提案
@@ -328,7 +329,7 @@ impl System4 {
         self.evolution_engine
             .reject_proposal(proposal_id)
             .await
-            .map_err(|e| CrabletError::Other(e))
+            .map_err(CrabletError::Other)
     }
 
     /// 获取当前系统配置

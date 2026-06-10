@@ -633,8 +633,10 @@ mod tests {
     use crate::gateway::types::RpcRequest;
 
     async fn test_gateway() -> Arc<CrabletGateway> {
-        let mut config = Config::default();
-        config.llm_vendor = Some("mock".to_string());
+        let config = Config {
+            llm_vendor: Some("mock".to_string()),
+            ..Config::default()
+        };
         let event_bus = Arc::new(EventBus::new(100));
         let router = Arc::new(CognitiveRouter::new(&config, None, event_bus).await);
         let gateway = CrabletGateway::new(

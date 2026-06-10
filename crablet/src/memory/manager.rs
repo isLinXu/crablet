@@ -67,6 +67,10 @@ impl WorkingMemoryStore {
         self.data.len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.data.is_empty()
+    }
+
     pub fn contains_key(&self, key: &str) -> bool {
         self.data.contains_key(key)
     }

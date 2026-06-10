@@ -230,6 +230,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[allow(deprecated)]
     fn test_speculative_config_defaults() {
         let cfg = SpeculativeConfig::default();
         assert!(cfg.enabled);

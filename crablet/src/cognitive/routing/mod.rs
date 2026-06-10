@@ -201,14 +201,17 @@ impl ModelRouter {
     }
 
     /// 获取客户端
-    pub fn get_client(&self, decision: &RouterDecision) -> Arc<dyn LlmClient> {
+    ///
+    /// Returns `Err` if the requested client variant is not configured
+    /// (e.g. local client missing when `RouterDecision::Local` is chosen).
+    pub fn get_client(&self, decision: &RouterDecision) -> Result<Arc<dyn LlmClient>> {
         match decision {
             RouterDecision::Local { .. } => self
                 .local_client
                 .clone()
-                .expect("Local client not available"),
-            RouterDecision::FastModel { .. } => self.fast_client.clone(),
-            RouterDecision::Powerful { .. } => self.powerful_client.clone(),
+                .ok_or_else(|| anyhow::anyhow!("Local client not available")),
+            RouterDecision::FastModel { .. } => Ok(self.fast_client.clone()),
+            RouterDecision::Powerful { .. } => Ok(self.powerful_client.clone()),
         }
     }
 

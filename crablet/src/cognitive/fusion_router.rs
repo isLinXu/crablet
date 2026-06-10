@@ -521,6 +521,20 @@ impl SessionFusionRouter {
     }
 }
 
+/// Mock cognitive system for testing
+struct MockCognitiveSystem;
+
+#[async_trait]
+impl CognitiveSystem for MockCognitiveSystem {
+    async fn process(&self, input: &str, _context: &[Message]) -> Result<(String, Vec<TraceStep>)> {
+        Ok((format!("Mock response to: {}", input), vec![]))
+    }
+
+    fn name(&self) -> &str {
+        "Mock"
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::FusionRouter;
@@ -566,19 +580,5 @@ mod tests {
             Some("Enriched prompt with memory")
         );
         assert_eq!(injected[1].role, "user");
-    }
-}
-
-/// Mock cognitive system for testing
-struct MockCognitiveSystem;
-
-#[async_trait]
-impl CognitiveSystem for MockCognitiveSystem {
-    async fn process(&self, input: &str, _context: &[Message]) -> Result<(String, Vec<TraceStep>)> {
-        Ok((format!("Mock response to: {}", input), vec![]))
-    }
-
-    fn name(&self) -> &str {
-        "Mock"
     }
 }

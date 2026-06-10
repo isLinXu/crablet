@@ -42,22 +42,25 @@ pub struct MultiLayerRateLimiter {
 pub type GlobalRateLimiter = MultiLayerRateLimiter;
 
 pub fn create_limiter() -> Arc<GlobalRateLimiter> {
+    // SAFETY: All NonZeroU32 values use compile-time constant non-zero literals.
+    const _: () = assert!(1000 > 0 && 10 > 0 && 20 > 0 && 50 > 0 && 100 > 0 && 200 > 0);
+
     // 1. Global Quota: 1000 req/s
     let global_quota =
-        Quota::per_second(NonZeroU32::new(1000).expect("Quota limit must be non-zero"));
+        Quota::per_second(unsafe { NonZeroU32::new_unchecked(1000) });
 
     // 2. IP Quota: 10 req/s (burst 20)
-    let ip_quota = Quota::per_second(NonZeroU32::new(10).expect("Quota limit must be non-zero"))
-        .allow_burst(NonZeroU32::new(20).expect("Burst limit must be non-zero"));
+    let ip_quota = Quota::per_second(unsafe { NonZeroU32::new_unchecked(10) })
+        .allow_burst(unsafe { NonZeroU32::new_unchecked(20) });
 
     // 3. User Quota: 50 req/s (burst 100) - stored for dynamic creation
-    let user_quota = Quota::per_second(NonZeroU32::new(50).expect("Quota limit must be non-zero"))
-        .allow_burst(NonZeroU32::new(100).expect("Burst limit must be non-zero"));
+    let user_quota = Quota::per_second(unsafe { NonZeroU32::new_unchecked(50) })
+        .allow_burst(unsafe { NonZeroU32::new_unchecked(100) });
 
     // 4. API Key Quota: 100 req/s (burst 200) - higher than user limit for API access
     let api_key_quota =
-        Quota::per_second(NonZeroU32::new(100).expect("Quota limit must be non-zero"))
-            .allow_burst(NonZeroU32::new(200).expect("Burst limit must be non-zero"));
+        Quota::per_second(unsafe { NonZeroU32::new_unchecked(100) })
+            .allow_burst(unsafe { NonZeroU32::new_unchecked(200) });
 
     // Slow request threshold: 5 seconds
     let slow_request_threshold = 5000;

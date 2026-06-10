@@ -1,0 +1,102 @@
+{
+  "version": "1.0.0",
+  "description": "Quality Judge 评分准则 - 5维启发式评分",
+  "dimensions": {
+    "intent_fidelity": {
+      "weight": 0.25,
+      "description": "产出是否符合用户原始意图",
+      "min_score": 1,
+      "max_score": 5,
+      "score_descriptions": {
+        "1": "完全偏离意图",
+        "2": "部分符合意图，但有明显偏差",
+        "3": "基本符合意图，有小瑕疵",
+        "4": "高度符合意图，仅微量偏差",
+        "5": "完美符合意图"
+      },
+      "scoring_criteria": {
+        "keyword_match": "检查产出中是否包含意图关键词",
+        "semantic_alignment": "检查产出语义是否与意图对齐",
+        "completeness": "检查是否覆盖了意图的所有方面"
+      }
+    },
+    "topology_rationality": {
+      "weight": 0.25,
+      "description": "依赖关系是否合理",
+      "min_score": 1,
+      "max_score": 5,
+      "score_descriptions": {
+        "1": "依赖关系完全不合理",
+        "2": "依赖关系部分合理",
+        "3": "依赖关系基本合理",
+        "4": "依赖关系高度合理",
+        "5": "依赖关系完美"
+      },
+      "scoring_criteria": {
+        "dag_check": "检查依赖是否形成有向无环图",
+        "reachability": "检查所有节点是否可达",
+        "no_orphan_nodes": "检查是否存在孤立节点"
+      }
+    },
+    "node_necessity": {
+      "weight": 0.20,
+      "description": "是否包含冗余节点",
+      "min_score": 1,
+      "max_score": 5,
+      "score_descriptions": {
+        "1": "大量冗余节点",
+        "2": "有一些冗余节点",
+        "3": "仅有少量冗余节点",
+        "4": "几乎没有冗余节点",
+        "5": "零冗余节点"
+      },
+      "scoring_criteria": {
+        "duplicate_check": "检查是否存在重复节点",
+        "dead_code": "检查是否存在死代码",
+        "unused_imports": "检查是否存在未使用的导入"
+      }
+    },
+    "over_simplification": {
+      "weight": 0.15,
+      "description": "是否丢失了关键信息",
+      "min_score": 1,
+      "max_score": 5,
+      "score_descriptions": {
+        "1": "丢失了大量关键信息",
+        "2": "丢失了部分关键信息",
+        "3": "丢失了少量关键信息",
+        "4": "几乎没有丢失信息",
+        "5": "完全保留了关键信息"
+      },
+      "scoring_criteria": {
+        "key_info_check": "检查是否保留了关键信息",
+        "config_completeness": "检查配置是否完整",
+        "api_coverage": "检查 API 覆盖率"
+      }
+    },
+    "over_complexity": {
+      "weight": 0.15,
+      "description": "是否引入了不必要的复杂性",
+      "min_score": 1,
+      "max_score": 5,
+      "score_descriptions": {
+        "1": "引入了大量不必要的复杂性",
+        "2": "引入了部分不必要的复杂性",
+        "3": "引入了少量不必要的复杂性",
+        "4": "几乎没有引入不必要的复杂性",
+        "5": "完全简洁，无不必要的复杂性"
+      },
+      "scoring_criteria": {
+        "wrapper_check": "检查是否存在多层包装",
+        "factory_check": "检查是否存在多层工厂",
+        "proxy_check": "检查是否存在多层代理"
+      }
+    }
+  },
+  "overall_scoring": {
+    "formula": "加权平均分 = Σ(dimension_score × dimension_weight) / Σ(dimension_weight)",
+    "pass_threshold": 3.5,
+    "warn_threshold": 3.0,
+    "fail_threshold": 2.5
+  }
+}

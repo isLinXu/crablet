@@ -475,17 +475,17 @@ impl ResourceTracker {
 
     pub fn check(&self) -> Result<(), HarnessError> {
         let memory = self.current_memory_bytes.load(Ordering::SeqCst);
-        if memory > self.max_memory_bytes {
+        if memory >= self.max_memory_bytes {
             return Err(HarnessError::ResourceLimitExceeded(format!(
-                "memory usage {} > {}",
+                "memory usage {} >= {}",
                 memory, self.max_memory_bytes
             )));
         }
 
         let cpu = self.current_cpu_time_ms.load(Ordering::SeqCst);
-        if cpu > self.max_cpu_time_ms {
+        if cpu >= self.max_cpu_time_ms {
             return Err(HarnessError::ResourceLimitExceeded(format!(
-                "cpu time {} > {}",
+                "cpu time {} >= {}",
                 cpu, self.max_cpu_time_ms
             )));
         }

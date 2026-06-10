@@ -2117,8 +2117,10 @@ mod tests {
 
     #[cfg(feature = "web")]
     async fn test_router() -> Arc<CognitiveRouter> {
-        let mut config = Config::default();
-        config.llm_vendor = Some("mock".to_string());
+        let config = Config {
+            llm_vendor: Some("mock".to_string()),
+            ..Config::default()
+        };
         let event_bus = Arc::new(EventBus::new(100));
         Arc::new(CognitiveRouter::new(&config, None, event_bus).await)
     }
