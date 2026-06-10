@@ -69,7 +69,7 @@ jobs:
         uses: taiki-e/install-action@cargo-audit
 
       - name: Cache RustSec advisory DB
-        uses: actions/cache@v5
+        uses: actions/cache@v4
         with:
           path: ~/.cargo/advisory-db
           key: advisory-db-${{ runner.os }}-${{ hashFiles('crablet/Cargo.lock') }}
@@ -99,6 +99,13 @@ jobs:
 
       - name: Install cargo-deny
         uses: taiki-e/install-action@cargo-deny
+
+      - name: Check deny.toml exists
+        run: |
+          if [ ! -f deny.toml ]; then
+            echo "::error::deny.toml not found in repository root"
+            exit 1
+          fi
 
       - name: Run cargo deny
         run: cargo deny check --manifest-path ./crablet/Cargo.toml
@@ -141,4 +148,4 @@ jobs:
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           format: table
-          exit-code: "1"
+          exit-code: 1
