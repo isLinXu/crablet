@@ -214,10 +214,14 @@ impl WebSearchTool {
 
         // DuckDuckGo HTML structure selectors
         // Safe to unwrap here as these are hardcoded valid selectors
+        #[allow(clippy::expect_used)]
         let result_selector = Selector::parse(".result").expect("Invalid result selector");
+        #[allow(clippy::expect_used)]
         let title_selector = Selector::parse(".result__a").expect("Invalid title selector");
+        #[allow(clippy::expect_used)]
         let snippet_selector =
             Selector::parse(".result__snippet").expect("Invalid snippet selector");
+        #[allow(clippy::expect_used)]
         let _link_selector = Selector::parse(".result__url").expect("Invalid link selector");
 
         let mut results = Vec::new();

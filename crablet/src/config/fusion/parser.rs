@@ -61,6 +61,7 @@ impl MarkdownDocument {
     /// Extract structured data from Markdown content
     pub fn extract_sections(&self) -> HashMap<String, String> {
         let mut sections = HashMap::new();
+        #[allow(clippy::expect_used)]
         let section_re = Regex::new(r"##+\s+(.+)\n").unwrap_or_else(|_| {
             tracing::warn!("Failed to compile section regex");
             Regex::new(r"##+\s+(.+)").expect("fallback section regex should compile")
@@ -305,6 +306,7 @@ impl SoulParser {
 
         let values = if let Some(section) = values_section {
             // Extract numbered values
+            #[allow(clippy::expect_used)]
             let value_re =
                 Regex::new(r"(\d+)\.\s*\*\*(.+?)\*\*[:：]?\s*(.*)").unwrap_or_else(|_| {
                     tracing::warn!("Failed to compile value regex");

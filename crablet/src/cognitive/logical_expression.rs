@@ -8,6 +8,7 @@
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
+use std::fmt;
 
 /// A logical expression
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -148,23 +149,8 @@ impl LogicalExpression {
     }
 
     /// Convert to string representation
-    pub fn to_string(&self) -> String {
-        match self {
-            LogicalExpression::Variable(v) => v.clone(),
-            LogicalExpression::Constant(true) => "TRUE".to_string(),
-            LogicalExpression::Constant(false) => "FALSE".to_string(),
-            LogicalExpression::Not(e) => format!("NOT ({})", e.to_string()),
-            LogicalExpression::And(l, r) => format!("({} AND {})", l.to_string(), r.to_string()),
-            LogicalExpression::Or(l, r) => format!("({} OR {})", l.to_string(), r.to_string()),
-            LogicalExpression::Implies(l, r) => {
-                format!("({} IMPLIES {})", l.to_string(), r.to_string())
-            }
-            LogicalExpression::Equivalent(l, r) => {
-                format!("({} EQUIV {})", l.to_string(), r.to_string())
-            }
-            LogicalExpression::ForAll(var, e) => format!("FORALL {} ({})", var, e.to_string()),
-            LogicalExpression::Exists(var, e) => format!("EXISTS {} ({})", var, e.to_string()),
-        }
+    pub fn display(&self) -> String {
+        self.to_string()
     }
 
     /// Get all variables in this expression
@@ -199,6 +185,23 @@ impl LogicalExpression {
             LogicalExpression::ForAll(_, e) => e.collect_variables(vars),
             LogicalExpression::Exists(_, e) => e.collect_variables(vars),
             LogicalExpression::Constant(_) => {}
+        }
+    }
+}
+
+impl fmt::Display for LogicalExpression {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            LogicalExpression::Variable(v) => write!(f, "{}", v),
+            LogicalExpression::Constant(true) => write!(f, "TRUE"),
+            LogicalExpression::Constant(false) => write!(f, "FALSE"),
+            LogicalExpression::Not(e) => write!(f, "NOT ({})", e),
+            LogicalExpression::And(l, r) => write!(f, "({} AND {})", l, r),
+            LogicalExpression::Or(l, r) => write!(f, "({} OR {})", l, r),
+            LogicalExpression::Implies(l, r) => write!(f, "({} IMPLIES {})", l, r),
+            LogicalExpression::Equivalent(l, r) => write!(f, "({} EQUIV {})", l, r),
+            LogicalExpression::ForAll(var, e) => write!(f, "FORALL {} ({})", var, e),
+            LogicalExpression::Exists(var, e) => write!(f, "EXISTS {} ({})", var, e),
         }
     }
 }

@@ -171,8 +171,8 @@ fn levenshtein_distance(a: &str, b: &str) -> usize {
         row[0] = i;
     }
 
-    for j in 0..=b_len {
-        matrix[0][j] = j;
+    for (j, cell) in matrix[0].iter_mut().enumerate() {
+        *cell = j;
     }
 
     for i in 1..=a_len {

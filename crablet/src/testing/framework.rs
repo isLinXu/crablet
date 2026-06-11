@@ -29,19 +29,24 @@ pub struct AssertionResult {
     pub actual: String,
 }
 
+/// Type alias for async setup/teardown functions
+type AsyncSetupFn = Box<dyn Fn() -> Pin<Box<dyn Future<Output = Result<()>> + Send>> + Send + Sync>;
+
+/// Type alias for async test case functions
+type AsyncTestFn = Box<dyn Fn() -> Pin<Box<dyn Future<Output = TestResult> + Send>> + Send + Sync>;
+
 /// 测试套件
 pub struct TestSuite {
     name: String,
     tests: Vec<TestCase>,
-    setup: Option<Box<dyn Fn() -> Pin<Box<dyn Future<Output = Result<()>> + Send>> + Send + Sync>>,
-    teardown:
-        Option<Box<dyn Fn() -> Pin<Box<dyn Future<Output = Result<()>> + Send>> + Send + Sync>>,
+    setup: Option<AsyncSetupFn>,
+    teardown: Option<AsyncSetupFn>,
 }
 
 /// 测试用例
 pub struct TestCase {
     name: String,
-    test_fn: Box<dyn Fn() -> Pin<Box<dyn Future<Output = TestResult> + Send>> + Send + Sync>,
+    test_fn: AsyncTestFn,
     timeout: Duration,
     skip: bool,
 }

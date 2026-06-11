@@ -4,6 +4,9 @@ use std::pin::Pin;
 use std::time::Duration;
 use tracing::{error, info};
 
+/// Type alias for async background task actions
+pub type AsyncTaskFn = Box<dyn Fn() -> Pin<Box<dyn Future<Output = Result<()>> + Send>> + Send + Sync>;
+
 /// BackgroundMonitor manages periodic maintenance and system check tasks.
 pub struct BackgroundMonitor {
     tasks: Vec<BackgroundTask>,
@@ -12,7 +15,7 @@ pub struct BackgroundMonitor {
 pub struct BackgroundTask {
     pub name: String,
     pub interval: Duration,
-    pub action: Box<dyn Fn() -> Pin<Box<dyn Future<Output = Result<()>> + Send>> + Send + Sync>,
+    pub action: AsyncTaskFn,
 }
 
 impl Default for BackgroundMonitor {

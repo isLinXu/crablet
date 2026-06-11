@@ -797,14 +797,14 @@ pub(crate) async fn swarm_tasks_handler(
                 if has_search {
                     sqlx::query(list_sql)
                         .bind(&search_pattern)
-                        .bind(limit as i64)
-                        .bind(offset as i64)
+                        .bind(limit)
+                        .bind(offset)
                         .fetch_all(pool)
                         .await
                 } else {
                     sqlx::query(list_sql)
-                        .bind(limit as i64)
-                        .bind(offset as i64)
+                        .bind(limit)
+                        .bind(offset)
                         .fetch_all(pool)
                         .await
                 }
@@ -812,15 +812,15 @@ pub(crate) async fn swarm_tasks_handler(
                 sqlx::query(list_sql)
                     .bind(status_filter)
                     .bind(&search_pattern)
-                    .bind(limit as i64)
-                    .bind(offset as i64)
+                    .bind(limit)
+                    .bind(offset)
                     .fetch_all(pool)
                     .await
             } else {
                 sqlx::query(list_sql)
                     .bind(status_filter)
-                    .bind(limit as i64)
-                    .bind(offset as i64)
+                    .bind(limit)
+                    .bind(offset)
                     .fetch_all(pool)
                     .await
             };

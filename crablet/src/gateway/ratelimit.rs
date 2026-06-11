@@ -43,7 +43,8 @@ pub type GlobalRateLimiter = MultiLayerRateLimiter;
 
 pub fn create_limiter() -> Arc<GlobalRateLimiter> {
     // SAFETY: All NonZeroU32 values use compile-time constant non-zero literals.
-    const _: () = assert!(1000 > 0 && 10 > 0 && 20 > 0 && 50 > 0 && 100 > 0 && 200 > 0);
+    #[allow(clippy::assertions_on_constants)]
+    const _: () = { assert!(1000 > 0); assert!(10 > 0); assert!(20 > 0); assert!(50 > 0); assert!(100 > 0); assert!(200 > 0); };
 
     // 1. Global Quota: 1000 req/s
     let global_quota =

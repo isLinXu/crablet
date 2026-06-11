@@ -13,6 +13,11 @@
 use anyhow::Result;
 use lru::LruCache;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
+
+/// Type alias for L3 getter function
+type L3GetterFn<K, V> = Arc<dyn Fn(&K) -> Result<Option<V>> + Send + Sync>;
+/// Type alias for L3 setter function
+type L3SetterFn<K, V> = Arc<dyn Fn(&K, &V) -> Result<()> + Send + Sync>;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -64,8 +69,8 @@ where
     l1_config: L1Config,
     redis: Option<Arc<RedisClient>>,
     redis_key_prefix: String,
-    l3_getter: Option<Arc<dyn Fn(&K) -> Result<Option<V>> + Send + Sync>>,
-    l3_setter: Option<Arc<dyn Fn(&K, &V) -> Result<()> + Send + Sync>>,
+    l3_getter: Option<L3GetterFn<K, V>>,
+    l3_setter: Option<L3SetterFn<K, V>>,
 }
 
 impl<K, V> LayerCache<K, V>
@@ -81,7 +86,7 @@ where
         redis_key_prefix: &str,
     ) -> Self {
         let capacity = NonZeroUsize::new(l1_config.capacity.max(1))
-            .expect("layer cache capacity must be non-zero");
+            .unwrap_or(NonZeroUsize::MIN);
         let cache = LruCache::new(capacity);
 
         Self {

@@ -91,7 +91,7 @@ pub async fn callback_handler(
 
                 let expiration = Utc::now()
                     .checked_add_signed(chrono::Duration::hours(24))
-                    .expect("valid timestamp")
+                    .unwrap_or_else(|| Utc::now() + chrono::Duration::hours(24))
                     .timestamp() as usize;
                 let claims = JwtClaims::from_user_context(&user, expiration);
                 let session_token = match encode(

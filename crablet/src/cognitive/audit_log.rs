@@ -72,7 +72,7 @@ impl ProofChain {
             output.push_str(&format!(
                 "[Step {}] {}\n  Rule: {}\n  From: {:?}\n  Justification: {}\n\n",
                 step.step_number,
-                step.expression.to_string(),
+                step.expression,
                 step.rule_name,
                 step.antecedents,
                 step.justification
@@ -80,7 +80,7 @@ impl ProofChain {
         }
 
         if let Some(conclusion) = &self.conclusion {
-            output.push_str(&format!("Conclusion: {}\n", conclusion.to_string()));
+            output.push_str(&format!("Conclusion: {}\n", conclusion));
         }
 
         output
