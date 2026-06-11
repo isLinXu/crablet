@@ -12,7 +12,7 @@ use crate::events::{AgentEvent, EventBus};
 use crate::memory::shared::SharedBlackboard;
 
 // Declare submodules
-#[path = "swarm/coordinator.rs"]
+#[path = "swarm/coordinator/mod.rs"]
 pub mod coordinator;
 #[path = "swarm/executor.rs"]
 pub mod executor;
