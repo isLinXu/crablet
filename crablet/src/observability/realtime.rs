@@ -215,7 +215,7 @@ pub struct HistogramSnapshot {
 pub struct MetricsCollector {
     counters: RwLock<HashMap<String, Arc<std::sync::atomic::AtomicU64>>>,
     gauges: RwLock<HashMap<String, Arc<std::sync::atomic::AtomicU64>>>,
-    histograms: RwLock<HashMap<String, RwLock<VecDeque<f64>>>>,
+    histograms: RwLock<HashMap<String, std::sync::Mutex<VecDeque<f64>>>>,
     max_histogram_size: usize,
 }
 
@@ -258,24 +258,20 @@ impl MetricsCollector {
     }
     
     /// 记录直方图值
-    pub fn record_histogram(&self, name: &str, value: f64) {
+    pub async fn record_histogram(&self, name: &str, value: f64) {
         let histograms = self.histograms.read().await;
         
         if let Some(hist) = histograms.get(name) {
-            drop(hist);
-            let mut hist = histograms.write().await;
-            if let Some(hist) = hist.get(name) {
-                let mut data = hist.write().await;
-                if data.len() >= self.max_histogram_size {
-                    data.pop_front();
-                }
-                data.push_back(value);
+            let mut data = hist.lock().unwrap();
+            if data.len() >= self.max_histogram_size {
+                data.pop_front();
             }
+            data.push_back(value);
         } else {
             drop(histograms);
             let mut histograms = self.histograms.write().await;
-            let data = RwLock::new(VecDeque::with_capacity(self.max_histogram_size));
-            data.write().await.push_back(value);
+            let data = std::sync::Mutex::new(VecDeque::with_capacity(self.max_histogram_size));
+            data.lock().unwrap().push_back(value);
             histograms.insert(name.to_string(), data);
         }
     }
@@ -297,7 +293,7 @@ impl MetricsCollector {
         let mut histograms_map = HashMap::new();
         let histograms = self.histograms.read().await;
         for (name, data) in histograms.iter() {
-            let data = data.read().await;
+            let data = data.lock().unwrap();
             let values: Vec<f64> = data.iter().cloned().collect();
             
             if !values.is_empty() {
