@@ -11,8 +11,13 @@ pub struct ImageProcessor {
 }
 
 impl ImageProcessor {
+    /// Create with a provided LLM client (dependency injection)
+    pub fn new_with_client(llm: Arc<Box<dyn LlmClient>>) -> Self {
+        Self { llm }
+    }
+
+    /// Create with default OpenAI vision client (convenience)
     pub fn new() -> Result<Self> {
-        // Use a vision-capable model
         let model = env::var("OPENAI_VISION_MODEL").unwrap_or_else(|_| "gpt-4o-mini".to_string());
         let client = OpenAiClient::new(&model)?;
         Ok(Self {
