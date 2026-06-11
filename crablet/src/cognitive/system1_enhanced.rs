@@ -10,48 +10,20 @@
 //! 4. Command Registry - Extensible command library with 20+ categories
 
 use crate::cognitive::CognitiveSystem;
+use crate::cognitive::context_handler::ContextHandler;
+use crate::cognitive::pattern_matcher::{
+    MatchConfidence, MatchResult, MatchType, Pattern, PatternMatcher,
+};
 use crate::error::{CrabletError, Result};
 use crate::types::{Message, TraceStep};
 use async_trait::async_trait;
 use chrono::{Local, Timelike};
-use regex::Regex;
 use std::collections::HashMap;
 use std::sync::Arc;
 
 // ============================================================================
 // Types and Enums
 // ============================================================================
-
-/// Match confidence level
-#[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
-pub enum MatchConfidence {
-    Exact = 100, // Exact match
-    High = 80,   // Very close match
-    Medium = 60, // Good match
-    Low = 40,    // Possible match
-    None = 0,    // No match
-}
-
-/// Match result from pattern matching
-#[derive(Clone, Debug)]
-pub struct MatchResult {
-    pub command_id: String,
-    pub confidence: MatchConfidence,
-    pub matched_pattern: String,
-    pub extracted_params: HashMap<String, String>,
-    pub match_type: MatchType,
-}
-
-/// Type of pattern match
-#[derive(Clone, Debug, PartialEq)]
-pub enum MatchType {
-    Exact,      // Character-for-character match
-    Prefix,     // Prefix match
-    Regex,      // Regular expression match
-    Fuzzy,      // Fuzzy string match
-    Semantic,   // Semantic similarity match
-    Contextual, // Context-based match
-}
 
 /// Response template with variables
 #[derive(Clone)]
@@ -117,16 +89,6 @@ pub struct Command {
     pub handler: Option<CommandHandler>,
 }
 
-/// Pattern for matching
-#[derive(Clone, Debug)]
-pub enum Pattern {
-    Exact(String),        // Exact string match
-    Prefix(String),       // Prefix match
-    Contains(String),     // Substring match
-    Regex(String),        // Regex pattern
-    Fuzzy(String, usize), // Fuzzy match with max distance
-}
-
 /// Command categories
 #[derive(Clone, Debug, PartialEq)]
 pub enum CommandCategory {
@@ -151,205 +113,9 @@ pub enum CommandCategory {
     Fallback,      // Catch-all
 }
 
-// ============================================================================
-// Pattern Matcher
-// ============================================================================
-
-pub struct PatternMatcher {
-    compiled_regexes: HashMap<String, Regex>,
-}
-
-impl Default for PatternMatcher {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl PatternMatcher {
-    pub fn new() -> Self {
-        Self {
-            compiled_regexes: HashMap::new(),
-        }
-    }
-
-    /// Match input against a pattern
-    pub fn match_pattern(
-        &mut self,
-        input: &str,
-        pattern: &Pattern,
-    ) -> Option<(MatchConfidence, HashMap<String, String>)> {
-        let input_lower = input.trim().to_lowercase();
-
-        match pattern {
-            Pattern::Exact(s) => {
-                if input_lower == s.to_lowercase() {
-                    Some((MatchConfidence::Exact, HashMap::new()))
-                } else {
-                    None
-                }
-            }
-
-            Pattern::Prefix(s) => {
-                if input_lower.starts_with(&s.to_lowercase()) {
-                    Some((MatchConfidence::High, HashMap::new()))
-                } else {
-                    None
-                }
-            }
-
-            Pattern::Contains(s) => {
-                if input_lower.contains(&s.to_lowercase()) {
-                    Some((MatchConfidence::Medium, HashMap::new()))
-                } else {
-                    None
-                }
-            }
-
-            Pattern::Regex(pattern_str) => {
-                // Compile lazily, but never panic on an invalid user-supplied
-                // pattern: skip the rule and warn instead of crashing the
-                // request-handling hot path.
-                if !self.compiled_regexes.contains_key(pattern_str) {
-                    match Regex::new(pattern_str) {
-                        Ok(re) => {
-                            self.compiled_regexes.insert(pattern_str.clone(), re);
-                        }
-                        Err(e) => {
-                            tracing::warn!(
-                                "Skipping invalid regex pattern '{}': {}",
-                                pattern_str,
-                                e
-                            );
-                            return None;
-                        }
-                    }
-                }
-                let regex = self.compiled_regexes.get(pattern_str)?;
-
-                if let Some(captures) = regex.captures(&input_lower) {
-                    let mut params = HashMap::new();
-                    for name in regex.capture_names().flatten() {
-                        if let Some(value) = captures.name(name) {
-                            params.insert(name.to_string(), value.as_str().to_string());
-                        }
-                    }
-                    Some((MatchConfidence::High, params))
-                } else {
-                    None
-                }
-            }
-
-            Pattern::Fuzzy(target, max_dist) => {
-                let dist = strsim::levenshtein(&input_lower, &target.to_lowercase());
-                if dist <= *max_dist {
-                    let confidence = if dist == 0 {
-                        MatchConfidence::Exact
-                    } else if dist <= max_dist / 3 {
-                        MatchConfidence::High
-                    } else if dist <= max_dist * 2 / 3 {
-                        MatchConfidence::Medium
-                    } else {
-                        MatchConfidence::Low
-                    };
-                    Some((confidence, HashMap::new()))
-                } else {
-                    None
-                }
-            }
-        }
-    }
-}
-
-// ============================================================================
-// Context Handler
-// ============================================================================
-
-/// Helper function to extract text content from Message
-fn get_message_text(msg: &Message) -> String {
-    match &msg.content {
-        Some(parts) => parts
-            .iter()
-            .filter_map(|part| match part {
-                crate::types::ContentPart::Text { text } => Some(text.clone()),
-                _ => None,
-            })
-            .collect::<Vec<_>>()
-            .join(""),
-        None => String::new(),
-    }
-}
-
-pub struct ContextHandler;
-
-impl ContextHandler {
-    /// Analyze conversation context to enhance matching
-    pub fn analyze_context(context: &[Message]) -> ContextInfo {
-        let mut info = ContextInfo::default();
-
-        if context.is_empty() {
-            return info;
-        }
-
-        // Check last message role
-        if let Some(last) = context.last() {
-            info.last_role = last.role.clone();
-
-            // Check if waiting for confirmation
-            let last_content = get_message_text(last).to_lowercase();
-            if last_content.contains("?")
-                || last_content.contains("confirm")
-                || last_content.contains("sure")
-                || last_content.contains("ok")
-            {
-                info.expecting_confirmation = true;
-            }
-
-            // Detect conversation topic
-            if last_content.contains("code") || last_content.contains("function") {
-                info.topic = Some("coding".to_string());
-            } else if last_content.contains("search") || last_content.contains("find") {
-                info.topic = Some("search".to_string());
-            }
-        }
-
-        // Count turns
-        info.turn_count = context.len();
-
-        // Check for repeated patterns
-        let user_messages: Vec<_> = context.iter().filter(|m| m.role == "user").collect();
-
-        if user_messages.len() >= 2 {
-            let last_two: Vec<_> = user_messages.iter().rev().take(2).collect();
-            if get_message_text(last_two[0]).to_lowercase()
-                == get_message_text(last_two[1]).to_lowercase()
-            {
-                info.is_repeating = true;
-            }
-        }
-
-        info
-    }
-
-    /// Get contextual response modifier
-    pub fn get_context_modifier(info: &ContextInfo) -> Option<String> {
-        if info.is_repeating {
-            Some("I notice you've asked this before. ".to_string())
-        } else if info.turn_count > 10 {
-            Some("We've been chatting for a while! ".to_string())
-        } else {
-            None
-        }
-    }
-}
-
-#[derive(Default, Debug)]
-pub struct ContextInfo {
-    pub last_role: String,
-    pub turn_count: usize,
-    pub expecting_confirmation: bool,
-    pub topic: Option<String>,
-    pub is_repeating: bool,
-}
+// Re-export from sub-modules for backward compatibility
+pub use super::context_handler::{ContextHandler as System1ContextHandler, ContextInfo as System1ContextInfo};
+pub use super::pattern_matcher::{Pattern as System1Pattern, PatternMatcher as System1PatternMatcher};
 
 // ============================================================================
 // Enhanced System 1
