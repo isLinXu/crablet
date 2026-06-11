@@ -155,10 +155,13 @@ impl SwarmOrchestrator {
     }
 }
 
+/// Type alias for agent channel map
+type AgentChannelMap = HashMap<AgentId, mpsc::Sender<(SwarmMessage, AgentId)>>;
+
 #[derive(Clone)]
 pub struct Swarm {
     // Only hold channels. Agents run in their own tasks.
-    channels: Arc<RwLock<HashMap<AgentId, mpsc::Sender<(SwarmMessage, AgentId)>>>>,
+    channels: Arc<RwLock<AgentChannelMap>>,
     topics: Arc<RwLock<HashMap<String, Vec<AgentId>>>>,
     pub blackboard: SharedBlackboard,
     pub event_bus: Option<Arc<EventBus>>,

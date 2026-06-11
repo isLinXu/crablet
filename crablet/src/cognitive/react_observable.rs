@@ -612,6 +612,7 @@ impl ActionParser {
     fn parse_fallback(text: &str) -> Option<(String, String)> {
         lazy_static! {
             static ref RE: Regex =
+                #[allow(clippy::expect_used)]
                 Regex::new(r"(?is)Action:\s*(?:use\s+)?(?P<name>[\w\-]+)\s*(?P<args>\{[\s\S]*?\})")
                     .expect("Invalid regex pattern");
         }

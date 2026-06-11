@@ -127,7 +127,8 @@ impl ActionParser {
     fn parse_fallback(text: &str) -> Option<(String, String)> {
         lazy_static! {
             // Updated regex to support multiline JSON args with dot matches newline (?s)
-            static ref RE: Regex = Regex::new(r"(?is)Action:\s*(?:use\s+)?(?P<name>[\w\-]+)\s*(?P<args>\{[\s\S]*?\})").expect("Invalid regex pattern");
+            static ref RE: Regex = Regex::new(r"(?is)Action:\s*(?:use\s+)?(?P<name>[\w\-]+)\s*(?P<args>\{[\s\S]*?\})")
+                .unwrap_or_else(|e| panic!("Invalid regex pattern: {}", e));
         }
         RE.captures(text)
             .map(|cap| (cap["name"].to_string(), cap["args"].trim().to_string()))

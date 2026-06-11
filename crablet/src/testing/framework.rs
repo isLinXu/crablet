@@ -495,10 +495,13 @@ macro_rules! mock {
     }};
 }
 
+/// Type alias for test fixture cleanup function
+type CleanupFn<T> = Box<dyn FnOnce(&T)>;
+
 /// 测试夹具
 pub struct TestFixture<T> {
     data: T,
-    cleanup: Option<Box<dyn FnOnce(&T)>>,
+    cleanup: Option<CleanupFn<T>>,
 }
 
 impl<T> TestFixture<T> {

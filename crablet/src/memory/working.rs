@@ -52,7 +52,9 @@ impl WorkingMemory {
     }
 
     pub fn count_tokens(&self, text: &str) -> usize {
-        BPE.get_or_init(|| cl100k_base().expect("Failed to init tokenizer"))
+        #[allow(clippy::expect_used)]
+        let tokenizer = BPE.get_or_init(|| cl100k_base().expect("Failed to init tokenizer"));
+        tokenizer
             .encode_with_special_tokens(text)
             .len()
     }
