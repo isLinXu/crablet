@@ -121,7 +121,8 @@ impl TreeOfThoughts {
                     .partial_cmp(&b.score)
                     .unwrap_or(std::cmp::Ordering::Equal)
             });
-            for candidate in scored {
+            // Push in reverse order so highest-scored is popped first (DFS)
+            for candidate in scored.into_iter().rev() {
                 stack.push(candidate);
             }
         }
@@ -237,13 +238,10 @@ impl TreeOfThoughts {
 
         let response = self.llm.chat_complete(&[Message::user(&prompt)]).await?;
 
-        // Extract float robustly
-        // Try to find a floating point number in the string
+        // Extract float robustly: find the first substring that looks like a float
         let score = response
-            .chars()
-            .filter(|c| c.is_numeric() || *c == '.')
-            .collect::<String>()
-            .parse::<f32>()
+            .split_whitespace()
+            .find_map(|token| token.trim_end_matches(|c: char| !c.is_ascii_digit() && c != '.').parse::<f32>().ok())
             .unwrap_or(0.5);
 
         Ok(score.clamp(0.0, 1.0))

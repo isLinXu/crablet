@@ -649,7 +649,7 @@ mod tests {
             0.8,
             "test".to_string(),
             vec!["test".to_string()],
-        ).await.unwrap();
+        ).await.map_err(|e| anyhow::anyhow!("pin_memory error: {}", e))?;
         
         let stats = manager.get_stats().await;
         assert_eq!(stats.total_memories, 1);
@@ -665,11 +665,11 @@ mod tests {
             0.8,
             "test".to_string(),
             vec![],
-        ).await.unwrap();
+        ).await.map_err(|e| anyhow::anyhow!("pin_memory error: {}", e))?;
         
-        manager.pin_memory("mem1").await.unwrap();
+        manager.pin_memory("mem1").await?;
         
-        let memory = manager.get_memory("mem1").await.unwrap();
+        let memory = manager.get_memory("mem1").await?;
         assert!(memory.is_pinned);
         assert_eq!(memory.retention, 1.0);
     }
@@ -684,7 +684,7 @@ mod tests {
             0.5,
             "test".to_string(),
             vec![],
-        ).await.unwrap();
+        ).await.map_err(|e| anyhow::anyhow!("pin_memory error: {}", e))?;
         
         let result = manager.run_decay_cycle().await;
         assert!(result.memories_needing_review <= 1);

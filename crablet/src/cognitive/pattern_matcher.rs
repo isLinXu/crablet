@@ -200,7 +200,7 @@ mod tests {
         let mut matcher = PatternMatcher::new();
         let result = matcher.match_pattern("hello", &Pattern::Exact("hello".to_string()));
         assert!(result.is_some());
-        assert_eq!(result.unwrap().0, MatchConfidence::Exact);
+        assert_eq!(result.map(|r| r.0), Some(MatchConfidence::Exact));
     }
 
     #[test]
@@ -208,7 +208,7 @@ mod tests {
         let mut matcher = PatternMatcher::new();
         let result = matcher.match_pattern("hello there", &Pattern::Prefix("hello".to_string()));
         assert!(result.is_some());
-        assert_eq!(result.unwrap().0, MatchConfidence::High);
+        assert_eq!(result.map(|r| r.0), Some(MatchConfidence::High));
     }
 
     #[test]
@@ -216,7 +216,7 @@ mod tests {
         let mut matcher = PatternMatcher::new();
         let result = matcher.match_pattern("say hello world", &Pattern::Contains("hello".to_string()));
         assert!(result.is_some());
-        assert_eq!(result.unwrap().0, MatchConfidence::Medium);
+        assert_eq!(result.map(|r| r.0), Some(MatchConfidence::Medium));
     }
 
     #[test]
@@ -224,7 +224,7 @@ mod tests {
         let mut matcher = PatternMatcher::new();
         let result = matcher.match_pattern("hello!", &Pattern::Regex(r"^(?i)hello[!?.]*$".to_string()));
         assert!(result.is_some());
-        assert_eq!(result.unwrap().0, MatchConfidence::High);
+        assert_eq!(result.map(|r| r.0), Some(MatchConfidence::High));
     }
 
     #[test]
@@ -232,7 +232,7 @@ mod tests {
         let mut matcher = PatternMatcher::new();
         let result = matcher.match_pattern("helo", &Pattern::Fuzzy("hello".to_string(), 1));
         assert!(result.is_some());
-        assert_eq!(result.unwrap().0, MatchConfidence::Fuzzy);
+        assert_eq!(result.map(|r| r.0), Some(MatchConfidence::Fuzzy));
     }
 
     #[test]

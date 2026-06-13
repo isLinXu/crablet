@@ -324,11 +324,9 @@ impl Optimizer {
         self.applied_improvements.read().await.clone()
     }
 
-    /// 总改进数量
-    pub fn total_improvements(&self) -> usize {
-        // 这个方法需要异步访问，但为了简化我们返回一个近似值
-        // 实际使用时应该改为 async
-        0
+    /// Total improvements count
+    pub async fn total_improvements_async(&self) -> usize {
+        self.applied_improvements.read().await.len()
     }
 
     /// 最后优化时间
@@ -358,7 +356,7 @@ mod tests {
     #[tokio::test]
     async fn test_optimizer_creation() {
         let optimizer = Optimizer::new();
-        assert!(!optimizer.total_improvements() > 0);
+        assert_eq!(optimizer.total_improvements_async().await, 0);
     }
 
     #[tokio::test]

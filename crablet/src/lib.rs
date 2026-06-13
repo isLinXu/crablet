@@ -1,6 +1,8 @@
 #![deny(unused_imports)]
 #![allow(dead_code)]
 #![allow(unknown_lints)]
+// dead_code is a rustc lint, not a clippy lint; suppress the unknown-lint warning
+#![allow(renamed_and_removed_lints)]
 // P0 Safety: Deny unwrap() in non-test code to prevent production panics.
 // Test code can still use unwrap() via #[allow(clippy::unwrap_used)] on individual test fns.
 #![warn(clippy::unwrap_used)]

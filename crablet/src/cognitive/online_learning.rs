@@ -838,18 +838,13 @@ pub struct LearnerState {
 fn current_timestamp() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .expect("system clock before UNIX epoch")
-        .as_secs()
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
 }
 
-/// Get random index
+/// Get random index using fastrand (fast, no SystemTime hack)
 fn rand_idx(max: usize) -> usize {
-    use std::time::SystemTime;
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock before UNIX epoch")
-        .as_nanos() as usize;
-    now % max.max(1)
+    fastrand::usize(..max.max(1))
 }
 
 #[cfg(test)]

@@ -406,7 +406,8 @@ impl IntentClassifier {
         let mut max_score: f32 = 0.0;
 
         for pattern in patterns {
-            let pattern_lower = pattern.to_lowercase();
+            // Pattern is already stored in lowercase from new()
+            let pattern_lower = pattern;
 
             // Exact match
             if input == pattern_lower {
@@ -414,7 +415,7 @@ impl IntentClassifier {
             }
 
             // Starts with pattern
-            if input.starts_with(&pattern_lower) {
+            if input.starts_with(pattern_lower) {
                 max_score = max_score.max(0.9);
             }
 
@@ -427,12 +428,12 @@ impl IntentClassifier {
             }
 
             // Contains pattern
-            if input.contains(&pattern_lower) {
+            if input.contains(pattern_lower) {
                 max_score = max_score.max(0.6);
             }
 
             // Fuzzy match using Jaro-Winkler
-            let similarity = strsim::jaro_winkler(input, &pattern_lower) as f32;
+            let similarity = strsim::jaro_winkler(input, pattern_lower) as f32;
             if similarity > 0.8 {
                 max_score = max_score.max(similarity * 0.7);
             }

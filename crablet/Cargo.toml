@@ -137,7 +137,10 @@ expect_used = "warn"
 field_reassign_with_default = "warn"
 too_many_arguments = "warn"
 type_complexity = "warn"
-# Already handled by lib.rs allow(dead_code)
-dead_code = "allow"
+# dead_code is a rustc lint, not a clippy lint; use [lints.rust] instead
+# dead_code = "allow"
 # Encourage proper error propagation
 question_mark_used = "allow"
+
+[lints.rust]
+dead_code = "allow"

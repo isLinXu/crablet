@@ -297,13 +297,13 @@ impl EnhancedReActEngine {
     fn parse_fallback_action(&self, thought: &str) -> Option<(String, String)> {
         use regex::Regex;
         
-        lazy_static::lazy_static! {
-            static ref RE: Regex = Regex::new(
-                r"(?is)Action:\s*(?:use\s+)?(?P<name>[\w\-]+)\s*(?P<args>\{[\s\S]*?\})"
-            ).expect("Invalid regex pattern");
-        }
+        // SAFETY: This regex pattern is a compile-time constant verified by hand.
+        #[allow(clippy::expect_used)]
+        let re = Regex::new(
+            r"(?is)Action:\s*(?:use\s+)?(?P<name>[\w\-]+)\s*(?P<args>\{[\s\S]*?\})"
+        ).expect("Invalid regex pattern");
         
-        RE.captures(thought).map(|cap| {
+        re.captures(thought).map(|cap| {
             (cap["name"].to_string(), cap["args"].trim().to_string())
         })
     }

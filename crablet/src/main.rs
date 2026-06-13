@@ -15,9 +15,10 @@ async fn main() -> anyhow::Result<()> {
         cfg
     } else {
         tracing::warn!("Failed to load config, using defaults.");
-        let mut cfg = Config::default();
-        cfg.openai_api_key = std::env::var("OPENAI_API_KEY").ok();
-        cfg
+        Config {
+            openai_api_key: std::env::var("OPENAI_API_KEY").ok(),
+            ..Default::default()
+        }
     };
 
     // Initialize Telemetry (Logging + Tracing)
