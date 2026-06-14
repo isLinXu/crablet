@@ -2,20 +2,29 @@
 smart_spider - Intelligent Browser-Use Spider Framework
 =======================================================
 
-Version: 2.2.0
+Version: 2.3.0
+
+Core Components:
+- SmartHttpClient: HTTP client with curl_cffi TLS fingerprint spoofing
+- DynamicRenderer: Playwright-based rendering with stealth injection
+- UrlDeduplicator: Bloom filter-based URL deduplication
+- CrawlStats: Crawl statistics tracking
+- BrowserUseAgent: Unified browser-use agent entry point
+- PagePerception: Multi-modal page perception (CLIP + OCR)
+- ReActEngine: Thought→Action→Observation loop engine
+- PersistentBrowserSession: Multi-step browser session
+
+Image Crawling (bridged from spider_tools):
+- ImageSpiderPipeline: Full image crawl pipeline with site adapters
+- ImageDedupIndex: SQLite + pHash perceptual deduplication
+- ImageStorage: JSONL manifest + local file storage
+- Site adapters: wallhaven, unsplash, flickr, safebooru, danbooru, yituyu
 
 Exports:
-    SmartHttpClient
-    DynamicRenderer
-    UrlDeduplicator
-    CrawlStats
-    BrowserUseAgent
-    PagePerception
-    PersistentBrowserSession
-    ReActEngine
-    compute_clip_scores
-    extract_links
-    extract_images
+    SmartHttpClient, DynamicRenderer, UrlDeduplicator, CrawlStats,
+    BrowserUseAgent, PagePerception, PersistentBrowserSession, ReActEngine,
+    compute_clip_scores, extract_links, extract_images,
+    ImageSpiderPipeline, ImageDedupIndex, ImageStorage, ImageRecord
 """
 
 from .smart_http_client import SmartHttpClient
@@ -29,7 +38,26 @@ from .re_act_engine import ReActEngine
 from .clip_integration import compute_clip_scores
 from .link_extraction import extract_links, extract_images
 
+# Image crawling bridge (lazy imports to avoid hard dependency on spider_tools)
+def __getattr__(name):
+    """Lazy import for image crawling modules."""
+    if name == "ImageSpiderPipeline":
+        from .image_spider import ImageSpiderPipeline
+        return ImageSpiderPipeline
+    elif name == "ImageDedupIndex":
+        from .dedup_index import ImageDedupIndex
+        return ImageDedupIndex
+    elif name == "ImageStorage":
+        from .image_storage import ImageStorage
+        return ImageStorage
+    elif name == "ImageRecord":
+        from .image_storage import ImageRecord
+        return ImageRecord
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
 __all__ = [
+    # Core
     'SmartHttpClient',
     'DynamicRenderer',
     'UrlDeduplicator',
@@ -40,4 +68,9 @@ __all__ = [
     'compute_clip_scores',
     'extract_links',
     'extract_images',
+    # Image crawling (lazy)
+    'ImageSpiderPipeline',
+    'ImageDedupIndex',
+    'ImageStorage',
+    'ImageRecord',
 ]
