@@ -41,7 +41,7 @@ jobs:
             ./crablet -> target
 
       - name: Cache tauri-cli
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.cargo/bin/cargo-tauri
           key: tauri-cli-${{ runner.os }}-v2
@@ -137,7 +137,7 @@ jobs:
             ./crablet -> target
 
       - name: Cache tauri-cli
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.cargo/bin/cargo-tauri.exe
           key: tauri-cli-${{ runner.os }}-v2
