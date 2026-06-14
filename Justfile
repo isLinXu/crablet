@@ -116,7 +116,7 @@ docker-build:
 
 # Up
 up:
-    docker-compose up -d
+    docker compose up -d
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Desktop (Tauri 2)
@@ -126,11 +126,46 @@ up:
 desktop-sidecar:
     cargo build --release -p crablet --no-default-features --features web
 
-# Copy sidecar binary to desktop/binaries/ (macOS arm64)
+# Copy sidecar binary to desktop/binaries/ (auto-detect platform)
 desktop-sidecar-copy: desktop-sidecar
     mkdir -p desktop/binaries
-    cp target/release/crablet desktop/binaries/crablet-aarch64-apple-darwin
-    chmod +x desktop/binaries/crablet-aarch64-apple-darwin
+    #!/usr/bin/env bash
+    set -euo pipefail
+    os=$(uname -s)
+    arch=$(uname -m)
+    case "$os" in
+        Darwin)
+            target="aarch64-apple-darwin"
+            if [ "$arch" = "x86_64" ]; then target="x86_64-apple-darwin"; fi
+            ;;
+        Linux)
+            target="x86_64-unknown-linux-gnu"
+            if [ "$arch" = "aarch64" ]; then target="aarch64-unknown-linux-gnu"; fi
+            ;;
+        MINGW*|CYGWIN*|MSYS*)
+            target="x86_64-pc-windows-msvc"
+            ;;
+        *)
+            target="unknown"
+            ;;
+    esac
+    cp target/release/crablet "desktop/binaries/crablet-$target"
+    chmod +x "desktop/binaries/crablet-$target"
+    echo "Copied sidecar for $target"
+
+# Copy sidecar binary for Linux
+desktop-sidecar-copy-linux: desktop-sidecar
+    mkdir -p desktop/binaries
+    cp target/release/crablet desktop/binaries/crablet-x86_64-unknown-linux-gnu
+    chmod +x desktop/binaries/crablet-x86_64-unknown-linux-gnu
+
+# Copy sidecar binary for Windows
+desktop-sidecar-copy-windows: desktop-sidecar
+    mkdir -p desktop/binaries
+    cp target/release/crablet.exe desktop/binaries/crablet-x86_64-pc-windows-msvc.exe
+
+# Copy sidecar binaries for all platforms
+desktop-sidecar-copy-all: desktop-sidecar-copy desktop-sidecar-copy-linux desktop-sidecar-copy-windows
 
 # Build Tauri desktop app (macOS .app)
 desktop-build: desktop-sidecar-copy
@@ -160,4 +195,4 @@ desktop-check:
 # Clean
 clean:
     cargo clean --manifest-path ./crablet/Cargo.toml
-    docker-compose down -v
+    docker compose down -v

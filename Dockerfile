@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # Stage: Frontend Builder
-FROM node:26-alpine AS frontend-builder
+FROM node:22-alpine AS frontend-builder
 WORKDIR /app/frontend
 # COPY frontend/package.json frontend/package-lock.json ./
 COPY frontend/package*.json ./
@@ -11,31 +11,34 @@ COPY frontend/ .
 RUN npm run build
 
 # Stage 1: Chef (Pre-computation)
-FROM lukemathwalker/cargo-chef:latest-rust-1.96 AS chef
+FROM lukemathwalker/cargo-chef:latest-rust-1.85 AS chef
 WORKDIR /app
 
 # Stage 2: Planner
 FROM chef AS planner
+WORKDIR /app
+# Copy root workspace files for dependency resolution
+COPY Cargo.toml Cargo.lock ./
+COPY crablet/Cargo.toml ./crablet/
+COPY crablet/src/ ./crablet/src/
 WORKDIR /app/crablet
-# COPY Cargo.toml Cargo.lock ./
-# COPY crablet/Cargo.toml crablet/
-COPY crablet/Cargo.toml Cargo.toml
-COPY crablet/src/ src/
 # Only copy necessary files for recipe generation
 RUN cargo chef prepare --recipe-path recipe.json
 
 # Stage 3: Builder
 FROM chef AS builder
+WORKDIR /app
+COPY --from=planner /app/crablet/recipe.json ./crablet/recipe.json
+COPY Cargo.toml Cargo.lock ./
+COPY crablet/Cargo.toml ./crablet/
 WORKDIR /app/crablet
-COPY --from=planner /app/crablet/recipe.json recipe.json
-# COPY --from=planner /app/recipe.json recipe.json
 # Build dependencies - this is the caching layer!
 RUN cargo chef cook --release --recipe-path recipe.json
 
 # Build application
-COPY crablet/Cargo.toml Cargo.toml
 COPY crablet/ ./
-RUN cargo build --release
+WORKDIR /app
+RUN cargo build --release -p crablet
 
 # Stage 4: Runtime
 FROM debian:bookworm-slim AS runtime
@@ -58,7 +61,7 @@ WORKDIR /app
 
 # Copy binary from builder
 # COPY --from=builder /app/target/release/crablet /usr/local/bin/
-COPY --from=builder /app/crablet/target/release/crablet /usr/local/bin/
+COPY --from=builder /app/target/release/crablet /usr/local/bin/
 
 # Copy frontend build to static directory
 COPY --from=frontend-builder /app/frontend/dist /app/frontend/dist

@@ -47,7 +47,7 @@ jobs:
         working-directory: ./crablet
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
 
       - name: Install Rust
         uses: dtolnay/rust-action@stable
@@ -71,7 +71,7 @@ jobs:
 
       - name: Upload LCOV artifact
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: backend-web-lcov
           path: ./crablet/coverage/lcov.info
@@ -105,7 +105,7 @@ jobs:
         working-directory: ./frontend
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -122,14 +122,14 @@ jobs:
 
       - name: Upload frontend LCOV artifact
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: frontend-lcov
           path: ./frontend/coverage/lcov.info
 
       - name: Upload frontend HTML coverage artifact
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: frontend-coverage-html
           path: ./frontend/coverage
