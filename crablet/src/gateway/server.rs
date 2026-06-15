@@ -176,6 +176,21 @@ pub struct CrabletGateway {
 
 impl CrabletGateway {
     fn resolve_static_dir() -> PathBuf {
+        // 1. Check CRABLET_RESOURCE_DIR environment variable first
+        if let Ok(resource_dir) = std::env::var("CRABLET_RESOURCE_DIR") {
+            let resource_path = PathBuf::from(&resource_dir);
+            // 1a) Direct index.html inside resource dir (e.g. custom static bundle)
+            if resource_path.join("index.html").exists() {
+                return resource_path;
+            }
+            // 1b) frontend/dist nested inside resource dir (Tauri desktop bundle layout)
+            let resource_frontend = resource_path.join("frontend/dist");
+            if resource_frontend.join("index.html").exists() {
+                return resource_frontend;
+            }
+        }
+
+        // 2. Fall back to existing candidate paths
         let candidates = [
             PathBuf::from("frontend/dist"),
             PathBuf::from("../frontend/dist"),
