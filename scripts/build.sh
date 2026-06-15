@@ -14,7 +14,7 @@ echo -e "${BLUE}🔨 Crablet Builder${NC}"
 
 # Parse arguments
 BUILD_MODE="release"
-FEATURES="knowledge,web"
+FEATURES="knowledge,auto-working,web"
 BACKEND_ONLY=false
 FRONTEND_ONLY=false
 while [[ "$#" -gt 0 ]]; do
