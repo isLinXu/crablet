@@ -34,6 +34,21 @@ export default defineConfig({
             return
           }
           if (
+            id.includes('d3')
+          ) {
+            return 'd3-vendor'
+          }
+          if (
+            id.includes('tesseract.js')
+          ) {
+            return 'ocr-vendor'
+          }
+          if (
+            id.includes('pdfjs-dist')
+          ) {
+            return 'pdf-vendor'
+          }
+          if (
             id.includes('@xyflow/react') ||
             id.includes('dagre')
           ) {
