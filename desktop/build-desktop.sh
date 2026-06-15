@@ -41,6 +41,26 @@ echo "   架构: ${ARCH}"
 echo "   Sidecar target: ${SIDECAR_TARGET}"
 echo ""
 
+# ─── Step 0: 构建前端 SPA ───
+echo "📦 Step 0: 构建前端 SPA..."
+FRONTEND_DIR="${PROJECT_ROOT}/frontend"
+FRONTEND_DIST="${PROJECT_ROOT}/frontend/dist"
+if [ ! -d "${FRONTEND_DIST}" ] || [ ! -f "${FRONTEND_DIST}/index.html" ]; then
+    if [ -f "${FRONTEND_DIR}/package.json" ] && command -v npm &>/dev/null; then
+        echo "   🔨 前端产物缺失，正在构建..."
+        cd "${FRONTEND_DIR}"
+        npm install
+        npm run build
+        cd "${PROJECT_ROOT}"
+    else
+        echo "   ⚠️ 警告: 前端产物 ${FRONTEND_DIST} 不存在，且无法自动构建（缺少 npm 或 package.json）"
+        echo "   ⚠️ 桌面端启动后可能无法显示前端界面。请手动构建：cd frontend && npm install && npm run build"
+    fi
+else
+    echo "   ✅ 前端产物已就绪 (${FRONTEND_DIST})"
+fi
+echo ""
+
 # ─── Step 1: 检查 crablet 主二进制 ───
 if [ ! -f "${TARGET_DIR}/crablet" ]; then
     echo "📦 编译 crablet 主二进制 (release)..."
