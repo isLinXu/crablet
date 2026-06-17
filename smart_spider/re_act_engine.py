@@ -27,6 +27,7 @@ class ReActEngine:
 
     def __init__(self):
         self._current_html: Optional[str] = None
+        self.page = None  # Will be set by BrowserUseAgent
 
     def run(self, task: str) -> Tuple[bool, str]:
         """Run a single ReAct iteration."""
@@ -34,7 +35,34 @@ class ReActEngine:
         success, html = self._execute_action(action, args)
         # Refresh after interaction
         self._current_html = html
-        return (success, self._current_html)
+        return (success, self._current_html or "")
+
+    def _parse_task(self, task: str) -> Tuple[str, dict]:
+        """Parse task string into action + args.
+
+        Simple parser: supports 'click(selector)', 'type(selector, text)', 'scroll(amount)'.
+        """
+        task = task.strip()
+
+        if task.startswith("click("):
+            selector = task[7:-1].strip().strip("'\"")
+            return ("click", {"selector": selector})
+        elif task.startswith("type("):
+            inner = task[5:-1].strip()
+            parts = inner.split(",", 1)
+            selector = parts[0].strip().strip("'\"")
+            text = parts[1].strip().strip("'\"") if len(parts) > 1 else ""
+            return ("type", {"selector": selector, "text": text})
+        elif task.startswith("scroll("):
+            amount_str = task[7:-1].strip()
+            try:
+                amount = int(amount_str)
+            except ValueError:
+                amount = 300
+            return ("scroll", {"amount": amount})
+        else:
+            # Default: treat as a search query
+            return ("click", {"selector": task})
 
     def _execute_action(
         self, action: str, args: dict
@@ -49,23 +77,38 @@ class ReActEngine:
             raise ValueError(f"Unknown action: {action}")
 
     def _click(self, args: dict) -> Tuple[bool, str]:
-        selector = args.get('selector', '')
-        success = self.page.click(selector)
-        html = self.page.content()
-        self._current_html = html
-        return (success, self._current_html)
+        if self.page is None:
+            return (False, "")
+        try:
+            selector = args.get('selector', '')
+            self.page.click(selector)
+            html = self.page.content()
+            self._current_html = html
+            return (True, self._current_html)
+        except Exception:
+            return (False, self._current_html or "")
 
     def _type(self, args: dict) -> Tuple[bool, str]:
-        selector = args.get('selector', '')
-        text = args.get('text', '')
-        success = self.page.fill(selector, text)
-        html = self.page.content()
-        self._current_html = html
-        return (success, self._current_html)
+        if self.page is None:
+            return (False, "")
+        try:
+            selector = args.get('selector', '')
+            text = args.get('text', '')
+            self.page.fill(selector, text)
+            html = self.page.content()
+            self._current_html = html
+            return (True, self._current_html)
+        except Exception:
+            return (False, self._current_html or "")
 
     def _scroll(self, args: dict) -> Tuple[bool, str]:
-        amount = args.get('amount', 0)
-        success = self.page.mouse.wheel(0, amount)
-        html = self.page.content()
-        self._current_html = html
-        return (success, self._current_html)
+        if self.page is None:
+            return (False, "")
+        try:
+            amount = args.get('amount', 300)
+            self.page.mouse.wheel(0, amount)
+            html = self.page.content()
+            self._current_html = html
+            return (True, self._current_html)
+        except Exception:
+            return (False, self._current_html or "")

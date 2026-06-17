@@ -2,7 +2,7 @@
 smart_spider - Intelligent Browser-Use Spider Framework
 =======================================================
 
-Version: 2.3.0
+Version: 2.4.0
 
 Core Components:
 - SmartHttpClient: HTTP client with curl_cffi TLS fingerprint spoofing
@@ -20,11 +20,20 @@ Image Crawling (bridged from spider_tools):
 - ImageStorage: JSONL manifest + local file storage
 - Site adapters: wallhaven, unsplash, flickr, safebooru, danbooru, yituyu
 
+Dataset Crawling:
+- DatasetCrawler: Large-scale image dataset crawler with batch storage
+- DatasetDirManager: Batch directory manager (100 images per subdirectory)
+- ProgressManager: Checkpoint/resume state manager
+- MetadataWriter: Thread-safe JSONL metadata writer
+- SpiderToolsBridge: Bridge adapter for spider_tools site crawlers
+
 Exports:
     SmartHttpClient, DynamicRenderer, UrlDeduplicator, CrawlStats,
     BrowserUseAgent, PagePerception, PersistentBrowserSession, ReActEngine,
     compute_clip_scores, extract_links, extract_images,
-    ImageSpiderPipeline, ImageDedupIndex, ImageStorage, ImageRecord
+    ImageSpiderPipeline, ImageDedupIndex, ImageStorage, ImageRecord,
+    DatasetCrawler, DatasetDirManager, ProgressManager, MetadataWriter,
+    SpiderToolsBridge, SpiderToolsURL
 """
 
 from .smart_http_client import SmartHttpClient
@@ -37,6 +46,10 @@ from .browser_use_agent import BrowserUseAgent
 from .re_act_engine import ReActEngine
 from .clip_integration import compute_clip_scores
 from .link_extraction import extract_links, extract_images
+
+# Dataset crawling (direct imports - no heavy dependencies)
+from .dataset_crawler import DatasetCrawler, DatasetDirManager, ProgressManager, MetadataWriter
+from .spider_tools_bridge import SpiderToolsBridge, SpiderToolsURL
 
 # Image crawling bridge (lazy imports to avoid hard dependency on spider_tools)
 def __getattr__(name):
@@ -73,4 +86,11 @@ __all__ = [
     'ImageDedupIndex',
     'ImageStorage',
     'ImageRecord',
+    # Dataset crawling
+    'DatasetCrawler',
+    'DatasetDirManager',
+    'ProgressManager',
+    'MetadataWriter',
+    'SpiderToolsBridge',
+    'SpiderToolsURL',
 ]

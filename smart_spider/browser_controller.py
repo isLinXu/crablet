@@ -9,7 +9,6 @@ automatically refreshing current_html after each action.
 """
 
 from typing import Tuple, Optional
-from playwright.sync_api import sync_playwright
 
 
 class BrowserController:
@@ -30,22 +29,34 @@ class BrowserController:
         self._current_html = ""
 
     def click(self, selector: str) -> Tuple[bool, str]:
-        self.page.click(selector)
-        success = self.page.query_selector(selector) is not None
-        self._current_html = self.page.content()
-        return (success, self._current_html)
+        if self.page is None:
+            return (False, "")
+        try:
+            self.page.click(selector)
+            self._current_html = self.page.content()
+            return (True, self._current_html)
+        except Exception:
+            return (False, self._current_html)
 
     def type_text(self, selector: str, text: str) -> Tuple[bool, str]:
-        self.page.fill(selector, text)
-        success = self.page.query_selector(selector) is not None
-        self._current_html = self.page.content()
-        return (success, self._current_html)
+        if self.page is None:
+            return (False, "")
+        try:
+            self.page.fill(selector, text)
+            self._current_html = self.page.content()
+            return (True, self._current_html)
+        except Exception:
+            return (False, self._current_html)
 
     def scroll(self, amount: int) -> Tuple[bool, str]:
-        self.page.mouse.wheel(0, amount)
-        success = True
-        self._current_html = self.page.content()
-        return (success, self._current_html)
+        if self.page is None:
+            return (False, "")
+        try:
+            self.page.mouse.wheel(0, amount)
+            self._current_html = self.page.content()
+            return (True, self._current_html)
+        except Exception:
+            return (False, self._current_html)
 
 
 class PersistentBrowserSession:
@@ -62,22 +73,34 @@ class PersistentBrowserSession:
         self._current_html = ""
 
     def click(self, selector: str) -> Tuple[bool, str]:
-        self.page.click(selector)
-        success = self.page.query_selector(selector) is not None
-        self._current_html = self.page.content()
-        return (success, self._current_html)
+        if self.page is None:
+            return (False, "")
+        try:
+            self.page.click(selector)
+            self._current_html = self.page.content()
+            return (True, self._current_html)
+        except Exception:
+            return (False, self._current_html)
 
     def type_text(self, selector: str, text: str) -> Tuple[bool, str]:
-        self.page.fill(selector, text)
-        success = self.page.query_selector(selector) is not None
-        self._current_html = self.page.content()
-        return (success, self._current_html)
+        if self.page is None:
+            return (False, "")
+        try:
+            self.page.fill(selector, text)
+            self._current_html = self.page.content()
+            return (True, self._current_html)
+        except Exception:
+            return (False, self._current_html)
 
     def scroll(self, amount: int) -> Tuple[bool, str]:
-        self.page.mouse.wheel(0, amount)
-        success = True
-        self._current_html = self.page.content()
-        return (success, self._current_html)
+        if self.page is None:
+            return (False, "")
+        try:
+            self.page.mouse.wheel(0, amount)
+            self._current_html = self.page.content()
+            return (True, self._current_html)
+        except Exception:
+            return (False, self._current_html)
 
 
 # Singleton
