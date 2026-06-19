@@ -119,6 +119,25 @@ def main():
         help="spider_tools 每站点最大收集数量（0=不限）",
     )
 
+    # ImageSource 多源选择
+    parser.add_argument(
+        "--sources", type=str, default=None,
+        help="图片源，多个用逗号分隔（如 'baidu,bing,wallhaven'）。"
+             "默认 baidu。可选: baidu, bing, wallhaven, pixabay, pexels, gelbooru, konachan",
+    )
+    parser.add_argument(
+        "--pixabay-key", type=str, default="",
+        help="Pixabay API Key",
+    )
+    parser.add_argument(
+        "--pexels-key", type=str, default="",
+        help="Pexels API Key",
+    )
+    parser.add_argument(
+        "--wallhaven-key", type=str, default="",
+        help="Wallhaven API Key（可选，提高速率限制）",
+    )
+
     # 磁盘保护
     parser.add_argument(
         "--disk-guard", type=int, default=100,
@@ -137,6 +156,16 @@ def main():
         from .spider_tools_bridge import parse_page_spec
         st_pages = parse_page_spec(args.st_pages)
 
+    # ImageSource 参数
+    source_names = [s.strip() for s in args.sources.split(",") if s.strip()] if args.sources else None
+    api_keys = {}
+    if args.pixabay_key:
+        api_keys["pixabay"] = args.pixabay_key
+    if args.pexels_key:
+        api_keys["pexels"] = args.pexels_key
+    if args.wallhaven_key:
+        api_keys["wallhaven"] = args.wallhaven_key
+
     # 导入并运行
     from .dataset_crawler import DatasetCrawler
 
@@ -153,6 +182,8 @@ def main():
         min_width=args.min_width,
         min_height=args.min_height,
         min_file_size=args.min_file_size,
+        source_names=source_names,
+        api_keys=api_keys if api_keys else None,
         st_sites=st_sites,
         st_tags=args.st_tags,
         st_query=args.st_query,

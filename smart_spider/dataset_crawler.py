@@ -341,7 +341,10 @@ class DatasetCrawler:
         min_height: int = 200,
         min_variance: float = 10.0,
         min_file_size: int = 1024,
-        # spider_tools 桥接
+        # 图片源（ImageSource 抽象层）
+        source_names: Optional[list[str]] = None,
+        api_keys: Optional[dict[str, str]] = None,
+        # spider_tools 桥接（旧接口，保留兼容）
         st_sites: Optional[list[str]] = None,
         st_tags: str = "",
         st_query: str = "",
@@ -402,6 +405,16 @@ class DatasetCrawler:
             max_retries=max_retries,
             timeout=timeout,
         )
+
+        # ImageSource 抽象层
+        from .sources import create_sources_from_config, BaiduImageSource
+        if source_names:
+            self._sources = create_sources_from_config(
+                source_names, http_client=self._http, api_keys=api_keys,
+            )
+        else:
+            # 默认使用百度图片（向后兼容）
+            self._sources = [BaiduImageSource(http_client=self._http)]
 
         # spider_tools 桥接参数
         self._st_sites = st_sites or []
@@ -599,102 +612,39 @@ class DatasetCrawler:
             return ""
 
     # ──────────────────────────────────────────────────────────────
-    # 搜索引擎爬取（百度图片）
+    # 通用图片源爬取（ImageSource 抽象层）
     # ──────────────────────────────────────────────────────────────
 
-    def _crawl_baidu_images(self, keyword: str, pbar: tqdm) -> int:
-        """通过百度图片搜索爬取指定关键词的图片。
+    def _crawl_source(self, source, keyword: str, pbar: tqdm) -> int:
+        """通过 ImageSource 收集图片 URL 并逐张下载保存。
 
-        百度图片 API：
-        - https://image.baidu.com/search/acjson?tn=resultjson_com&word={kw}&pn={offset}&rn=30
+        Args:
+            source: ImageSource 实例
+            keyword: 搜索关键词
+            pbar: tqdm 进度条
 
-        关键修复：
-        - 串行下载，避免并发触发 CDN 反爬
-        - 每次请求间添加随机延迟
-        - 使用 curl_cffi TLS 指纹伪造
+        Returns:
+            本次保存的图片数量
         """
         saved_before = self._dir_manager.saved_count
-        base_url = "https://image.baidu.com/search/acjson"
-        rn = 30  # 每页结果数
-
-        # 估算需要的页数
         remaining = self.total_count - self._dir_manager.saved_count
-        pages_needed = max(1, remaining // rn + 3)
-        pages_needed = min(pages_needed, 100)
+        if remaining <= 0:
+            return 0
 
-        logger.info(f"[baidu] keyword='{keyword}', pages={pages_needed}")
-
-        for page_idx in range(pages_needed):
-            if self._should_stop() or self._dir_manager.saved_count >= self.total_count:
-                break
-
-            pn = page_idx * rn
-            params = {
-                "tn": "resultjson_com",
-                "word": keyword,
-                "pn": str(pn),
-                "rn": str(rn),
-            }
-
-            try:
-                # 构建完整 URL
-                query_str = "&".join(f"{k}={v}" for k, v in params.items())
-                url = f"{base_url}?{query_str}"
-
-                headers = {
-                    "Referer": "https://image.baidu.com/",
-                    "Accept": "application/json, text/javascript, */*; q=0.01",
-                    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                                  "AppleWebKit/537.36 (KHTML, like Gecko) "
-                                  "Chrome/120.0.0.0 Safari/537.36",
-                }
-                resp = self._http.session.get(url, timeout=self._http.timeout, headers=headers)
-
-                if resp.encoding is None or resp.encoding.lower() == "iso-8859-1":
-                    resp.encoding = resp.apparent_encoding or "utf-8"
-
-                data = resp.json()
-            except Exception as e:
-                logger.debug(f"Baidu API error page {page_idx}: {e}")
-                # 随机延迟后继续
-                time.sleep(1.0 + __import__('random').random() * 2.0)
-                continue
-
-            # 解析图片 URL
-            items = data.get("data", []) if isinstance(data, dict) else []
-            img_urls = []
-            for item in items:
-                if not isinstance(item, dict):
-                    continue
-                # 百度图片返回多个 URL 字段，优先级：objURL > hoverURL > thumbURL
-                img_url = (
-                    item.get("objURL")
-                    or item.get("hoverURL")
-                    or item.get("thumbURL")
-                    or ""
-                )
-                if img_url and img_url.startswith("http"):
-                    img_urls.append(img_url)
-
-            if not img_urls:
-                logger.debug(f"Baidu page {page_idx}: no images found")
-                time.sleep(0.5 + __import__('random').random() * 1.0)
-                continue
-
-            # 串行下载每张图片（避免并发触发反爬）
-            for img_url in img_urls:
+        try:
+            for candidate in source.collect(keyword, limit=remaining):
                 if self._should_stop() or self._dir_manager.saved_count >= self.total_count:
                     break
 
-                if self._download_and_save(img_url, keyword, "baidu"):
+                if self._download_and_save(candidate.url, candidate.keyword or keyword, candidate.source):
                     with self._dir_manager._lock:
                         pbar.update(1)
 
                 # 随机延迟（0.3-1.5秒），模拟人类行为
                 time.sleep(0.3 + __import__('random').random() * 1.2)
 
-            # 页间延迟
-            time.sleep(0.5 + __import__('random').random() * 1.0)
+        except Exception as e:
+            logger.error(f"[{source.SOURCE_NAME}] crawl error: {e}")
 
         return self._dir_manager.saved_count - saved_before
 
@@ -763,23 +713,29 @@ class DatasetCrawler:
             with tqdm(total=self.total_count, initial=already_saved,
                      desc="DatasetCrawler") as pbar:
 
-                # 1. 百度图片搜索爬取
-                for keyword in keywords_remaining:
+                # 1. 遍历所有 ImageSource（百度/Bing/Wallhaven/Pixabay/Gelbooru/Konachan...）
+                for source in self._sources:
                     if self._should_stop() or self._dir_manager.saved_count >= self.total_count:
                         break
 
-                    logger.info(f"开始爬取关键词: '{keyword}' "
-                               f"(进度: {self._dir_manager.saved_count}/{self.total_count})")
-                    self._crawl_baidu_images(keyword, pbar)
-                    keywords_done.append(keyword)
+                    for keyword in keywords_remaining:
+                        if self._should_stop() or self._dir_manager.saved_count >= self.total_count:
+                            break
 
-                    # 定期保存进度
-                    self._progress.save(
-                        saved_count=self._dir_manager.saved_count,
-                        total_target=self.total_count,
-                        keywords_done=keywords_done,
-                        keywords_remaining=[kw for kw in self.keywords if kw not in keywords_done],
-                    )
+                        logger.info(f"[{source.SOURCE_NAME}] 开始爬取关键词: '{keyword}' "
+                                   f"(进度: {self._dir_manager.saved_count}/{self.total_count})")
+                        self._crawl_source(source, keyword, pbar)
+
+                        if keyword not in keywords_done:
+                            keywords_done.append(keyword)
+
+                        # 定期保存进度
+                        self._progress.save(
+                            saved_count=self._dir_manager.saved_count,
+                            total_target=self.total_count,
+                            keywords_done=keywords_done,
+                            keywords_remaining=[kw for kw in self.keywords if kw not in keywords_done],
+                        )
 
                 # 2. spider_tools 站点爬取
                 if self._st_sites:

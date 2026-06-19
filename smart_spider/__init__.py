@@ -27,6 +27,20 @@ Dataset Crawling:
 - MetadataWriter: Thread-safe JSONL metadata writer
 - SpiderToolsBridge: Bridge adapter for spider_tools site crawlers
 
+Image Sources:
+- ImageSource: Abstract base class for image sources
+- ImageCandidate: Unified image URL + metadata container
+- BaiduImageSource: Baidu image search source
+- BingImageSource: Bing image search source
+- WallhavenSource: Wallhaven API source
+- PixabaySource: Pixabay API source
+- PexelsSource: Pexels API source
+- GelbooruSource: Gelbooru anime image board source
+- KonachanSource: Konachan HD anime wallpaper source
+- list_sources: List available source names
+- create_source: Factory method to create source by name
+- create_sources_from_config: Batch create sources from config
+
 Exports:
     SmartHttpClient, DynamicRenderer, UrlDeduplicator, CrawlStats,
     BrowserUseAgent, PagePerception, PersistentBrowserSession, ReActEngine,
@@ -41,20 +55,32 @@ from .dynamic_renderer import DynamicRenderer
 from .url_deduplicator import UrlDeduplicator
 from .crawl_stats import CrawlStats
 from .browser_controller import BrowserController, PersistentBrowserSession
-from .page_perception import PagePerception
-from .browser_use_agent import BrowserUseAgent
 from .re_act_engine import ReActEngine
-from .clip_integration import compute_clip_scores
 from .link_extraction import extract_links, extract_images
 
 # Dataset crawling (direct imports - no heavy dependencies)
 from .dataset_crawler import DatasetCrawler, DatasetDirManager, ProgressManager, MetadataWriter
 from .spider_tools_bridge import SpiderToolsBridge, SpiderToolsURL
+from .sources import (
+    ImageSource, ImageCandidate,
+    BaiduImageSource, BingImageSource, WallhavenSource,
+    PixabaySource, PexelsSource, GelbooruSource, KonachanSource,
+    list_sources, create_source, create_sources_from_config,
+)
 
-# Image crawling bridge (lazy imports to avoid hard dependency on spider_tools)
+# Heavy imports moved to lazy loading to avoid slow startup
 def __getattr__(name):
-    """Lazy import for image crawling modules."""
-    if name == "ImageSpiderPipeline":
+    """Lazy import for heavy-dependency modules."""
+    if name == "PagePerception":
+        from .page_perception import PagePerception
+        return PagePerception
+    elif name == "BrowserUseAgent":
+        from .browser_use_agent import BrowserUseAgent
+        return BrowserUseAgent
+    elif name == "compute_clip_scores":
+        from .clip_integration import compute_clip_scores
+        return compute_clip_scores
+    elif name == "ImageSpiderPipeline":
         from .image_spider import ImageSpiderPipeline
         return ImageSpiderPipeline
     elif name == "ImageDedupIndex":
@@ -93,4 +119,17 @@ __all__ = [
     'MetadataWriter',
     'SpiderToolsBridge',
     'SpiderToolsURL',
+    # Image sources
+    'ImageSource',
+    'ImageCandidate',
+    'BaiduImageSource',
+    'BingImageSource',
+    'WallhavenSource',
+    'PixabaySource',
+    'PexelsSource',
+    'GelbooruSource',
+    'KonachanSource',
+    'list_sources',
+    'create_source',
+    'create_sources_from_config',
 ]
