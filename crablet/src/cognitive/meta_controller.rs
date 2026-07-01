@@ -42,12 +42,17 @@ use crate::types::Message;
 pub mod learner;
 pub mod monitor;
 pub mod optimizer;
+pub mod optimizer_v2;
 pub mod reflector;
 
 // 重新导出核心类型
 pub use learner::{LearnedKnowledge, Learner, Pattern, PatternType};
 pub use monitor::{ExecutionMetrics, Monitor, QualityMetrics, ResourceMetrics};
 pub use optimizer::{OptimizationResult, Optimizer};
+pub use optimizer_v2::{
+    AppliedImprovement as AppliedImprovementV2, ConfigChange, ConfigManager, ConfigSnapshot,
+    OptimizationResult as OptimizationResultV2, OptimizerV2, StrategyExecutor, StrategyStats,
+};
 pub use reflector::{ImprovementAction, ProblemDiagnosis, Reflector};
 
 /// 元认知控制器
@@ -57,7 +62,9 @@ pub struct MetaCognitiveController {
     reflector: Arc<RwLock<Reflector>>,
     learner: Arc<RwLock<Learner>>,
     optimizer: Arc<RwLock<Optimizer>>,
-    llm: Arc<Box<dyn LlmClient>>,
+    /// V2 优化器（可选），启用后替代 v1 优化器，支持实际配置修改与回滚
+    optimizer_v2: Option<Arc<OptimizerV2>>,
+    llm: Arc<dyn LlmClient>,
     config: MetaConfig,
 }
 
@@ -126,12 +133,12 @@ pub struct MetaStatistics {
 
 impl MetaCognitiveController {
     /// 创建新的元认知控制器
-    pub async fn new(llm: Arc<Box<dyn LlmClient>>) -> Result<Self> {
+    pub async fn new(llm: Arc<dyn LlmClient>) -> Result<Self> {
         Self::with_config(llm, MetaConfig::default()).await
     }
 
     /// 使用自定义配置创建
-    pub async fn with_config(llm: Arc<Box<dyn LlmClient>>, config: MetaConfig) -> Result<Self> {
+    pub async fn with_config(llm: Arc<dyn LlmClient>, config: MetaConfig) -> Result<Self> {
         let monitor = Arc::new(RwLock::new(Monitor::new(config.max_feedback_history)));
         let reflector = Arc::new(RwLock::new(Reflector::new(llm.clone())));
         let learner = Arc::new(RwLock::new(Learner::new(config.max_patterns)));
@@ -142,9 +149,23 @@ impl MetaCognitiveController {
             reflector,
             learner,
             optimizer,
+            optimizer_v2: None,
             llm,
             config,
         })
+    }
+
+    /// 注入 V2 优化器，启用后所有优化操作将走 v2 路径（实际修改配置 + 回滚支持）
+    pub fn with_optimizer_v2(
+        mut self,
+        config_manager: Arc<dyn ConfigManager>,
+        strategy_executor: Arc<dyn StrategyExecutor>,
+    ) -> Self {
+        self.optimizer_v2 = Some(Arc::new(OptimizerV2::new(
+            config_manager,
+            strategy_executor,
+        )));
+        self
     }
 
     /// 执行任务（带元认知监控）
@@ -218,12 +239,21 @@ impl MetaCognitiveController {
 
         info!("Learned {} new patterns", learned.len());
 
-        // 优化策略
+        // 优化策略 — 优先使用 V2（支持实际配置修改），回退到 V1
         if self.config.enable_auto_optimization {
-            let optimizer = self.optimizer.write().await;
-            let optimization = optimizer.apply_improvements(&learned).await?;
-
-            info!("Applied {} optimizations", optimization.improvements_count);
+            if let Some(ref opt_v2) = self.optimizer_v2 {
+                let result = opt_v2.apply_improvements(&learned).await?;
+                info!(
+                    "Applied {} optimizations (v2), {} config changes, rollback version {}",
+                    result.improvements_count,
+                    result.config_changes_applied.len(),
+                    result.rollback_version
+                );
+            } else {
+                let optimizer = self.optimizer.write().await;
+                let optimization = optimizer.apply_improvements(&learned).await?;
+                info!("Applied {} optimizations (v1)", optimization.improvements_count);
+            }
         }
 
         Ok(())
@@ -233,10 +263,21 @@ impl MetaCognitiveController {
     pub async fn get_statistics(&self) -> MetaStatistics {
         let monitor = self.monitor.read().await;
         let learner = self.learner.read().await;
-        let optimizer = self.optimizer.read().await;
 
         let metrics = monitor.get_global_metrics().await;
         let patterns = learner.get_all_patterns().await;
+
+        let (improvements_applied, last_optimization) =
+            if let Some(ref opt_v2) = self.optimizer_v2 {
+                let improvements = opt_v2.total_improvements_async().await;
+                let last = opt_v2.last_optimization_async().await;
+                (improvements, last)
+            } else {
+                let optimizer = self.optimizer.read().await;
+                let improvements = optimizer.get_applied_improvements().await.len();
+                let last = optimizer.last_optimization_async().await;
+                (improvements, last)
+            };
 
         MetaStatistics {
             total_tasks: metrics.total_executions,
@@ -245,8 +286,8 @@ impl MetaCognitiveController {
             avg_confidence: metrics.avg_confidence,
             avg_duration_ms: metrics.avg_duration_ms,
             patterns_extracted: patterns.len(),
-            improvements_applied: optimizer.get_applied_improvements().await.len(),
-            last_optimization: optimizer.last_optimization_async().await,
+            improvements_applied,
+            last_optimization,
         }
     }
 
@@ -324,14 +365,22 @@ impl MetaCognitiveController {
             return Ok(());
         }
 
-        // 应用优化
-        let optimizer = self.optimizer.read().await;
-        let result = optimizer.apply_improvements(&patterns).await?;
-
-        info!(
-            "Optimization completed: {} improvements applied",
-            result.improvements_count
-        );
+        // 应用优化 — 优先 V2
+        if let Some(ref opt_v2) = self.optimizer_v2 {
+            let result = opt_v2.apply_improvements(&patterns).await?;
+            info!(
+                "Optimization cycle (v2): {} improvements, {} config changes",
+                result.improvements_count,
+                result.config_changes_applied.len()
+            );
+        } else {
+            let optimizer = self.optimizer.read().await;
+            let result = optimizer.apply_improvements(&patterns).await?;
+            info!(
+                "Optimization cycle (v1): {} improvements applied",
+                result.improvements_count
+            );
+        }
 
         Ok(())
     }
@@ -344,14 +393,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_controller_creation() {
-        let llm = Arc::new(Box::new(MockClient) as Box<dyn LlmClient>);
+        let llm = Arc::new(MockClient) as Arc<dyn LlmClient>;
         let controller = MetaCognitiveController::new(llm).await;
         assert!(controller.is_ok());
     }
 
     #[tokio::test]
     async fn test_execute_with_meta() {
-        let llm = Arc::new(Box::new(MockClient) as Box<dyn LlmClient>);
+        let llm = Arc::new(MockClient) as Arc<dyn LlmClient>;
         let controller = MetaCognitiveController::new(llm).await.unwrap();
 
         let request = ExecutionRequest {
@@ -377,7 +426,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_statistics() {
-        let llm = Arc::new(Box::new(MockClient) as Box<dyn LlmClient>);
+        let llm = Arc::new(MockClient) as Arc<dyn LlmClient>;
         let controller = MetaCognitiveController::new(llm).await.unwrap();
 
         let stats = controller.get_statistics().await;

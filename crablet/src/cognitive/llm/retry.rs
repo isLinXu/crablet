@@ -4,6 +4,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use futures::Stream;
 use std::pin::Pin;
+use std::sync::Arc;
 use std::time::Duration;
 use tracing::warn;
 
@@ -78,19 +79,19 @@ impl RetryConfig {
 /// backoff. Streaming requests are delegated without retry because partial
 /// streams cannot be safely replayed.
 pub struct RetryLlmClient {
-    inner: Box<dyn LlmClient>,
+    inner: Arc<dyn LlmClient>,
     config: RetryConfig,
 }
 
 impl RetryLlmClient {
-    pub fn new(inner: Box<dyn LlmClient>) -> Self {
+    pub fn new(inner: Arc<dyn LlmClient>) -> Self {
         Self {
             inner,
             config: RetryConfig::default(),
         }
     }
 
-    pub fn with_config(inner: Box<dyn LlmClient>, config: RetryConfig) -> Self {
+    pub fn with_config(inner: Arc<dyn LlmClient>, config: RetryConfig) -> Self {
         Self { inner, config }
     }
 
@@ -224,7 +225,7 @@ mod tests {
     #[tokio::test]
     async fn retries_until_success() {
         let calls = Arc::new(AtomicUsize::new(0));
-        let inner = Box::new(FlakyClient {
+        let inner: Arc<dyn LlmClient> = Arc::new(FlakyClient {
             fail_times: 2,
             calls: calls.clone(),
             error_message: "transient failure".to_string(),
@@ -246,7 +247,7 @@ mod tests {
     #[tokio::test]
     async fn gives_up_after_max_retries() {
         let calls = Arc::new(AtomicUsize::new(0));
-        let inner = Box::new(FlakyClient {
+        let inner: Arc<dyn LlmClient> = Arc::new(FlakyClient {
             fail_times: 100,
             calls: calls.clone(),
             error_message: "transient failure".to_string(),
@@ -268,7 +269,7 @@ mod tests {
     #[tokio::test]
     async fn does_not_retry_non_retryable_errors() {
         let calls = Arc::new(AtomicUsize::new(0));
-        let inner = Box::new(FlakyClient {
+        let inner: Arc<dyn LlmClient> = Arc::new(FlakyClient {
             fail_times: 100,
             calls: calls.clone(),
             // Simulates "OpenAI API returned error: 401 Unauthorized"

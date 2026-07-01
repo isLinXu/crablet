@@ -146,9 +146,9 @@ impl Default for ModelHealth {
 pub struct FallbackLlmClient {
     config: FallbackConfig,
     /// Primary client
-    primary: Arc<Box<dyn LlmClient>>,
+    primary: Arc<dyn LlmClient>,
     /// Fallback clients
-    fallbacks: Vec<Arc<Box<dyn LlmClient>>>,
+    fallbacks: Vec<Arc<dyn LlmClient>>,
     /// Health status for each model
     health: Arc<RwLock<Vec<ModelHealth>>>,
 }
@@ -188,22 +188,22 @@ impl FallbackLlmClient {
     }
 
     /// Create a client from configuration
-    async fn create_client(config: &ModelConfig) -> Result<Arc<Box<dyn LlmClient>>, LlmError> {
+    async fn create_client(config: &ModelConfig) -> Result<Arc<dyn LlmClient>, LlmError> {
         use crate::cognitive::llm::{OllamaClient, OpenAiClient};
 
-        let client: Box<dyn LlmClient> = match config.provider.as_str() {
-            "openai" | "anthropic" | "deepseek" => Box::new(
+        let client: Arc<dyn LlmClient> = match config.provider.as_str() {
+            "openai" | "anthropic" | "deepseek" => Arc::new(
                 OpenAiClient::new(&config.model)
                     .map_err(|e| LlmError::ConfigError(e.to_string()))?,
-            ),
-            "kimi" => Box::new(
+            ) as Arc<dyn LlmClient>,
+            "kimi" => Arc::new(
                 KimiClient::new(&config.model).map_err(|e| LlmError::ConfigError(e.to_string()))?,
-            ),
-            "zhipu" | "glm" => Box::new(
+            ) as Arc<dyn LlmClient>,
+            "zhipu" | "glm" => Arc::new(
                 ZhipuClient::new(&config.model)
                     .map_err(|e| LlmError::ConfigError(e.to_string()))?,
-            ),
-            "ollama" | "local" => Box::new(OllamaClient::new(&config.model)),
+            ) as Arc<dyn LlmClient>,
+            "ollama" | "local" => Arc::new(OllamaClient::new(&config.model)) as Arc<dyn LlmClient>,
             _ => {
                 return Err(LlmError::ConfigError(format!(
                     "Unknown provider: {}",
@@ -212,7 +212,7 @@ impl FallbackLlmClient {
             }
         };
 
-        Ok(Arc::new(client))
+        Ok(client)
     }
 
     /// Complete with fallback
@@ -271,7 +271,7 @@ impl FallbackLlmClient {
     async fn try_complete(
         &self,
         health_idx: usize,
-        client: Arc<Box<dyn LlmClient>>,
+        client: Arc<dyn LlmClient>,
         messages: &[Message],
     ) -> Result<String, LlmError> {
         let start = Instant::now();

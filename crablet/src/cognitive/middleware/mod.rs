@@ -45,7 +45,7 @@ pub struct RagTracePayload {
 }
 
 pub struct MiddlewareState {
-    pub llm: Arc<Box<dyn LlmClient>>,
+    pub llm: Arc<dyn LlmClient>,
     pub skills: Arc<RwLock<SkillRegistry>>,
     pub event_bus: Arc<EventBus>,
     pub kg: Option<SharedKnowledgeGraph>,

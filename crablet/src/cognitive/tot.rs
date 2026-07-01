@@ -43,12 +43,12 @@ pub struct ThoughtNode {
 }
 
 pub struct TreeOfThoughts {
-    llm: Arc<Box<dyn LlmClient>>,
+    llm: Arc<dyn LlmClient>,
     config: TotConfig,
 }
 
 impl TreeOfThoughts {
-    pub fn new(llm: Arc<Box<dyn LlmClient>>, config: TotConfig) -> Self {
+    pub fn new(llm: Arc<dyn LlmClient>, config: TotConfig) -> Self {
         Self { llm, config }
     }
 

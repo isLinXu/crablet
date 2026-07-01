@@ -138,7 +138,7 @@ impl ActionParser {
 // --- ReAct 引擎主实现 ---
 
 pub struct ReActEngine {
-    llm: Arc<Box<dyn LlmClient>>,
+    llm: Arc<dyn LlmClient>,
     skills: Arc<RwLock<SkillRegistry>>,
     event_bus: Arc<EventBus>,
     // max_steps: usize,
@@ -147,7 +147,7 @@ pub struct ReActEngine {
 
 impl ReActEngine {
     pub fn new(
-        llm: Arc<Box<dyn LlmClient>>,
+        llm: Arc<dyn LlmClient>,
         skills: Arc<RwLock<SkillRegistry>>,
         event_bus: Arc<EventBus>,
     ) -> Self {

@@ -29,7 +29,7 @@ pub struct System3 {
 
 impl System3 {
     pub async fn new(
-        llm: Arc<Box<dyn LlmClient>>,
+        llm: Arc<dyn LlmClient>,
         event_bus: Arc<EventBus>,
         pool: Option<SqlitePool>,
     ) -> Self {

@@ -75,12 +75,12 @@ pub struct System4 {
     execution_history: Arc<RwLock<Vec<ExecutionRecord>>>,
 
     // LLM 客户端
-    llm: Arc<Box<dyn LlmClient>>,
+    llm: Arc<dyn LlmClient>,
 }
 
 impl System4 {
     /// 创建新的 System4 实例
-    pub async fn new(llm: Arc<Box<dyn LlmClient>>) -> Self {
+    pub async fn new(llm: Arc<dyn LlmClient>) -> Self {
         let perf_analyzer = Arc::new(PerformanceAnalyzer::new());
         let skill_discoverer = Arc::new(SkillDiscoverer::new());
         let knowledge_distiller = Arc::new(KnowledgeDistiller::new(llm.clone()));
@@ -101,7 +101,7 @@ impl System4 {
     }
 
     /// 使用配置创建
-    pub async fn with_config(llm: Arc<Box<dyn LlmClient>>, config: System4Config) -> Self {
+    pub async fn with_config(llm: Arc<dyn LlmClient>, config: System4Config) -> Self {
         let perf_analyzer = Arc::new(PerformanceAnalyzer::with_capacity(config.max_history_size));
         let skill_discoverer =
             Arc::new(SkillDiscoverer::with_config(SkillDiscoveryConfig::default()));
@@ -482,7 +482,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_system4_creation() {
-        let llm = Arc::new(Box::new(MockLlmClient::new()) as Box<dyn LlmClient>);
+        let llm = Arc::new(Arc::new(MockLlmClient::new()) as Arc<dyn LlmClient>);
         let system4 = System4::new(llm).await;
 
         assert_eq!(system4.name(), "System 4 (Self-Evolving)");
@@ -490,7 +490,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_execution_recording() {
-        let llm = Arc::new(Box::new(MockLlmClient::new()) as Box<dyn LlmClient>);
+        let llm = Arc::new(Arc::new(MockLlmClient::new()) as Arc<dyn LlmClient>);
         let system4 = System4::new(llm).await;
 
         // 记录一些执行

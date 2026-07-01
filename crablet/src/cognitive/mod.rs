@@ -23,6 +23,7 @@ pub mod context_handler;
 pub mod logical_expression;
 pub mod pattern_matcher;
 pub mod system1;
+pub mod system1_dynamic;
 pub mod system1_enhanced;
 pub mod system2;
 pub mod system3;
@@ -44,6 +45,11 @@ pub use meta_controller::{
     ExecutionRequest, ExecutionResult, MetaCognitiveController, MetaConfig, MetaStatistics,
 };
 
+// Re-export System 1 dynamic types
+pub use system1_dynamic::{
+    CommandMatch, ContextSnapshot, DynamicCommandRule, System1Dynamic,
+};
+
 #[async_trait]
 pub trait CognitiveSystem: Send + Sync {
     /// Process the input and return a response with traces
@@ -53,31 +59,31 @@ pub trait CognitiveSystem: Send + Sync {
     fn name(&self) -> &str;
 }
 
-pub async fn create_llm_client(config: &Config) -> Result<Arc<Box<dyn llm::LlmClient>>> {
+pub async fn create_llm_client(config: &Config) -> Result<Arc<dyn llm::LlmClient>> {
     let vendor = config
         .llm_vendor
         .as_deref()
         .unwrap_or("openai")
         .to_lowercase();
 
-    let client: Box<dyn llm::LlmClient> = match vendor.as_str() {
-        "mock" => Box::new(llm::MockClient),
-        "kimi" | "moonshot" => Box::new(llm::KimiClient::new(&config.model_name)?),
-        "zhipu" | "glm" => Box::new(llm::ZhipuClient::new(&config.model_name)?),
-        "ollama" => Box::new(llm::OllamaClient::new(&config.ollama_model)),
-        "aliyun" | "dashscope" => Box::new(llm::OpenAiClient::new(&config.model_name)?),
+    let client: Arc<dyn llm::LlmClient> = match vendor.as_str() {
+        "mock" => Arc::new(llm::MockClient),
+        "kimi" | "moonshot" => Arc::new(llm::KimiClient::new(&config.model_name)?) as Arc<dyn llm::LlmClient>,
+        "zhipu" | "glm" => Arc::new(llm::ZhipuClient::new(&config.model_name)?) as Arc<dyn llm::LlmClient>,
+        "ollama" => Arc::new(llm::OllamaClient::new(&config.ollama_model)) as Arc<dyn llm::LlmClient>,
+        "aliyun" | "dashscope" => Arc::new(llm::OpenAiClient::new(&config.model_name)?) as Arc<dyn llm::LlmClient>,
         _ => {
             if config.model_name.contains("mock") {
-                Box::new(llm::MockClient)
+                Arc::new(llm::MockClient) as Arc<dyn llm::LlmClient>
             } else if config.model_name.contains("kimi") {
-                Box::new(llm::KimiClient::new(&config.model_name)?)
+                Arc::new(llm::KimiClient::new(&config.model_name)?) as Arc<dyn llm::LlmClient>
             } else if config.model_name.contains("glm") {
-                Box::new(llm::ZhipuClient::new(&config.model_name)?)
+                Arc::new(llm::ZhipuClient::new(&config.model_name)?) as Arc<dyn llm::LlmClient>
             } else if config.model_name.starts_with("ollama:") {
                 let model = config.model_name.trim_start_matches("ollama:");
-                Box::new(llm::OllamaClient::new(model))
+                Arc::new(llm::OllamaClient::new(model)) as Arc<dyn llm::LlmClient>
             } else {
-                Box::new(llm::OpenAiClient::new(&config.model_name)?)
+                Arc::new(llm::OpenAiClient::new(&config.model_name)?) as Arc<dyn llm::LlmClient>
             }
         }
     };
@@ -85,15 +91,15 @@ pub async fn create_llm_client(config: &Config) -> Result<Arc<Box<dyn llm::LlmCl
     // Wrap network-backed clients with exponential-backoff retry so transient
     // API/network failures are recovered automatically. MockClient is left bare
     // to keep test behavior deterministic.
-    let resilient: Box<dyn llm::LlmClient> = if vendor == "mock" || config.model_name.contains("mock")
+    let resilient: Arc<dyn llm::LlmClient> = if vendor == "mock" || config.model_name.contains("mock")
     {
         client
     } else {
-        Box::new(llm::RetryLlmClient::new(client))
+        Arc::new(llm::RetryLlmClient::new(client)) as Arc<dyn llm::LlmClient>
     };
 
     // Wrap in cache (cache sits on top, so cache hits skip retries entirely)
-    let cached: Box<dyn llm::LlmClient> =
-        Box::new(llm::cache::CachedLlmClient::new(resilient, 100));
-    Ok(Arc::new(cached))
+    let cached: Arc<dyn llm::LlmClient> =
+        Arc::new(llm::cache::CachedLlmClient::new(resilient, 100)) as Arc<dyn llm::LlmClient>;
+    Ok(cached)
 }

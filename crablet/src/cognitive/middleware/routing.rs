@@ -19,7 +19,7 @@ pub struct RoutingMiddleware {
 }
 
 impl RoutingMiddleware {
-    pub fn new(_llm: Arc<Box<dyn LlmClient>>) -> Self {
+    pub fn new(_llm: Arc<dyn LlmClient>) -> Self {
         Self {
             // classifier: IntentClassifier::new(llm),
             #[cfg(feature = "knowledge")]

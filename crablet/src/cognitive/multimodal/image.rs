@@ -7,12 +7,12 @@ use std::fs;
 use std::sync::Arc;
 
 pub struct ImageProcessor {
-    llm: Arc<Box<dyn LlmClient>>,
+    llm: Arc<dyn LlmClient>,
 }
 
 impl ImageProcessor {
     /// Create with a provided LLM client (dependency injection)
-    pub fn new_with_client(llm: Arc<Box<dyn LlmClient>>) -> Self {
+    pub fn new_with_client(llm: Arc<dyn LlmClient>) -> Self {
         Self { llm }
     }
 
@@ -21,7 +21,7 @@ impl ImageProcessor {
         let model = env::var("OPENAI_VISION_MODEL").unwrap_or_else(|_| "gpt-4o-mini".to_string());
         let client = OpenAiClient::new(&model)?;
         Ok(Self {
-            llm: Arc::new(Box::new(client)),
+            llm: Arc::new(client) as Arc<dyn LlmClient>,
         })
     }
 

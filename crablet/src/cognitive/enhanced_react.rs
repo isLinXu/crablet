@@ -20,7 +20,7 @@ use tracing::{info, warn, error};
 
 /// Enhanced ReAct Engine with comprehensive guard mechanisms
 pub struct EnhancedReActEngine {
-    llm: Arc<Box<dyn LlmClient>>,
+    llm: Arc<dyn LlmClient>,
     skills: Arc<RwLock<SkillRegistry>>,
     event_bus: Arc<EventBus>,
     config: ReactGuardConfig,
@@ -29,7 +29,7 @@ pub struct EnhancedReActEngine {
 impl EnhancedReActEngine {
     /// Create a new enhanced ReAct engine with default guard configuration
     pub fn new(
-        llm: Arc<Box<dyn LlmClient>>,
+        llm: Arc<dyn LlmClient>,
         skills: Arc<RwLock<SkillRegistry>>,
         event_bus: Arc<EventBus>,
     ) -> Self {
@@ -43,7 +43,7 @@ impl EnhancedReActEngine {
     
     /// Create with custom configuration
     pub fn with_config(
-        llm: Arc<Box<dyn LlmClient>>,
+        llm: Arc<dyn LlmClient>,
         skills: Arc<RwLock<SkillRegistry>>,
         event_bus: Arc<EventBus>,
         config: ReactGuardConfig,

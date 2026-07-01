@@ -22,7 +22,7 @@ use tracing::{error, info, warn};
 
 /// Observable ReAct Engine with full tracing and debugging support
 pub struct ObservableReActEngine {
-    llm: Arc<Box<dyn LlmClient>>,
+    llm: Arc<dyn LlmClient>,
     skills: Arc<RwLock<SkillRegistry>>,
     event_bus: Arc<EventBus>,
     tracer: Arc<RwLock<AgentTracer>>,
@@ -32,7 +32,7 @@ pub struct ObservableReActEngine {
 
 impl ObservableReActEngine {
     pub fn new(
-        llm: Arc<Box<dyn LlmClient>>,
+        llm: Arc<dyn LlmClient>,
         skills: Arc<RwLock<SkillRegistry>>,
         event_bus: Arc<EventBus>,
         tracer: Arc<RwLock<AgentTracer>>,

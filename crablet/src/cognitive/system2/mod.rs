@@ -57,7 +57,7 @@ pub mod post_process;
 
 #[derive(Clone)]
 pub struct System2 {
-    pub llm: Arc<Box<dyn LlmClient>>,
+    pub llm: Arc<dyn LlmClient>,
     #[allow(dead_code)]
     oracle: SafetyOracle,
     pub kg: Option<Arc<dyn KnowledgeGraph>>,
@@ -116,10 +116,10 @@ impl System2 {
         // Read model from env, default to qwen-plus
         let model = env::var("OPENAI_MODEL_NAME").unwrap_or_else(|_| "qwen-plus".to_string());
 
-        let llm_inner: Box<dyn LlmClient> = match OpenAiClient::new(&model) {
+        let llm_inner: Arc<dyn LlmClient> = match OpenAiClient::new(&model) {
             Ok(client) => {
                 info!("System 2 initialized with OpenAI (model: {})", model);
-                Box::new(client)
+                Arc::new(client) as Arc<dyn LlmClient>
             }
             Err(_) => {
                 let ollama_model =
@@ -128,13 +128,13 @@ impl System2 {
                     "OpenAI API key not found, falling back to Ollama ({})",
                     ollama_model
                 );
-                Box::new(OllamaClient::new(&ollama_model))
+                Arc::new(OllamaClient::new(&ollama_model)) as Arc<dyn LlmClient>
             }
         };
 
         // Wrap with Cache (Optimization 1)
-        let llm: Box<dyn LlmClient> = Box::new(CachedLlmClient::new(llm_inner, 100));
-        let llm_arc = Arc::new(llm);
+        let llm: Arc<dyn LlmClient> = Arc::new(CachedLlmClient::new(llm_inner, 100)) as Arc<dyn LlmClient>;
+        let llm_arc = llm;
 
         // Initialize Safety Oracle (Default to Strict for MVP)
         let oracle = SafetyOracle::new(SafetyLevel::Strict);
@@ -202,7 +202,7 @@ impl System2 {
     /// and `with_client()` (local/custom) share an identical middleware stack,
     /// including `RoutingMiddleware`, which was previously only registered on
     /// the local path.
-    fn build_default_pipeline(llm_arc: &Arc<Box<dyn LlmClient>>) -> MiddlewarePipeline {
+    fn build_default_pipeline(llm_arc: &Arc<dyn LlmClient>) -> MiddlewarePipeline {
         MiddlewarePipeline::new()
             .with_middleware(SafetyMiddleware)
             .with_middleware(CostGuardMiddleware::new())
@@ -217,7 +217,7 @@ impl System2 {
         skills: Arc<RwLock<SkillRegistry>>,
         skill_manager: Arc<SkillManagerTool>,
         oracle: SafetyOracle,
-        llm_arc: Arc<Box<dyn LlmClient>>,
+        llm_arc: Arc<dyn LlmClient>,
     ) {
         let mut registry = skills.write().await;
         registry.register_plugin(Box::new(WebSearchPlugin::new()));
@@ -383,10 +383,10 @@ impl System2 {
         self
     }
 
-    pub async fn with_client(llm_inner: Box<dyn LlmClient>, event_bus: Arc<EventBus>) -> Self {
+    pub async fn with_client(llm_inner: Arc<dyn LlmClient>, event_bus: Arc<EventBus>) -> Self {
         // Wrap with Cache
-        let llm: Box<dyn LlmClient> = Box::new(CachedLlmClient::new(llm_inner, 100));
-        let llm_arc = Arc::new(llm);
+        let llm: Arc<dyn LlmClient> = Arc::new(CachedLlmClient::new(llm_inner, 100)) as Arc<dyn LlmClient>;
+        let llm_arc = llm;
 
         let skills = Arc::new(RwLock::new(SkillRegistry::new()));
         let oracle = SafetyOracle::new(SafetyLevel::Strict);

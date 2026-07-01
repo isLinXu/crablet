@@ -77,12 +77,12 @@ pub enum ActionType {
 
 /// 反思器
 pub struct Reflector {
-    llm: Arc<Box<dyn LlmClient>>,
+    llm: Arc<dyn LlmClient>,
 }
 
 impl Reflector {
     /// 创建新的反思器
-    pub fn new(llm: Arc<Box<dyn LlmClient>>) -> Self {
+    pub fn new(llm: Arc<dyn LlmClient>) -> Self {
         Self { llm }
     }
 
@@ -359,14 +359,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_reflector_creation() {
-        let llm = Arc::new(Box::new(MockClient) as Box<dyn LlmClient>);
+        let llm = Arc::new(MockClient) as Arc<dyn LlmClient>;
         let _reflector = Reflector::new(llm);
         // Test passes if reflector is created successfully
     }
 
     #[tokio::test]
     async fn test_diagnose_execution_failed() {
-        let llm = Arc::new(Box::new(MockClient) as Box<dyn LlmClient>);
+        let llm = Arc::new(MockClient) as Arc<dyn LlmClient>;
         let reflector = Reflector::new(llm);
 
         let metrics = ExecutionMetrics {
@@ -382,7 +382,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_diagnose_low_confidence() {
-        let llm = Arc::new(Box::new(MockClient) as Box<dyn LlmClient>);
+        let llm = Arc::new(MockClient) as Arc<dyn LlmClient>;
         let reflector = Reflector::new(llm);
 
         let metrics = ExecutionMetrics {

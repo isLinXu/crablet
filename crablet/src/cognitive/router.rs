@@ -1,5 +1,5 @@
 use crate::cognitive::llm::cache::CachedLlmClient;
-use crate::cognitive::llm::{LlmClient, OllamaClient, OpenAiClient};
+use crate::cognitive::llm::{LlmClient, OllamaClient};
 use crate::cognitive::system1_enhanced::System1Enhanced;
 use crate::cognitive::system2::System2;
 use crate::cognitive::system3::System3;
@@ -118,7 +118,7 @@ impl CognitiveRouter {
     async fn create_llm_client(
         config: &Config,
         model_hint: Option<&str>,
-    ) -> Arc<Box<dyn LlmClient>> {
+    ) -> Arc<dyn LlmClient> {
         let mut temp_config = config.clone();
         if let Some(model) = model_hint {
             temp_config.model_name = model.to_string();
@@ -128,28 +128,26 @@ impl CognitiveRouter {
             Ok(client) => client,
             Err(e) => {
                 error!(
-                    "Failed to create LLM client: {}. Falling back to default OpenAI.",
+                    "Failed to create LLM client: {}. Falling back to MockClient \
+                     (LLM features unavailable until API Key is configured).",
                     e
                 );
-                let llm_inner: Box<dyn LlmClient> = Box::new(
-                    OpenAiClient::new("gpt-4o-mini").unwrap_or_else(|e| {
-                        panic!("Default OpenAI model 'gpt-4o-mini' failed to initialize: {e}. \
-                               This is a built-in fallback and must succeed.")
-                    }),
+                let llm_inner: Arc<dyn LlmClient> = Arc::new(
+                    crate::cognitive::llm::MockClient,
                 );
-                let cached: Box<dyn LlmClient> = Box::new(CachedLlmClient::new(llm_inner, 100));
-                Arc::new(cached)
+                let cached: Arc<dyn LlmClient> = Arc::new(CachedLlmClient::new(llm_inner, 100)) as Arc<dyn LlmClient>;
+                cached
             }
         }
     }
 
-    async fn create_local_llm_client(config: &Config) -> Box<dyn LlmClient> {
+    async fn create_local_llm_client(config: &Config) -> Arc<dyn LlmClient> {
         let mut temp_config = config.clone();
         temp_config.llm_vendor = Some("ollama".to_string());
 
         match crate::cognitive::create_llm_client(&temp_config).await {
             Ok(client) => {
-                struct ArcLlm(Arc<Box<dyn LlmClient>>);
+                struct ArcLlm(Arc<dyn LlmClient>);
                 #[async_trait::async_trait]
                 impl LlmClient for ArcLlm {
                     async fn chat_complete(
@@ -169,15 +167,15 @@ impl CognitiveRouter {
                         self.0.model_name()
                     }
                 }
-                let boxed: Box<dyn LlmClient> = Box::new(ArcLlm(client));
+                let boxed: Arc<dyn LlmClient> = Arc::new(ArcLlm(client));
                 boxed
             }
             Err(_) => {
                 let ollama_model = config.ollama_model.clone();
-                let local_llm_inner: Box<dyn LlmClient> =
-                    Box::new(OllamaClient::new(&ollama_model));
-                let boxed: Box<dyn LlmClient> =
-                    Box::new(CachedLlmClient::new(local_llm_inner, 100));
+                let local_llm_inner: Arc<dyn LlmClient> =
+                Arc::new(OllamaClient::new(&ollama_model));
+                let boxed: Arc<dyn LlmClient> =
+                Arc::new(CachedLlmClient::new(local_llm_inner, 100));
                 boxed
             }
         }

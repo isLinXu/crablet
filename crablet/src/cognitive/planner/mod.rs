@@ -29,11 +29,11 @@ pub struct Plan {
 }
 
 pub struct TaskPlanner {
-    llm: Arc<Box<dyn LlmClient>>,
+    llm: Arc<dyn LlmClient>,
 }
 
 impl TaskPlanner {
-    pub fn new(llm: Arc<Box<dyn LlmClient>>) -> Self {
+    pub fn new(llm: Arc<dyn LlmClient>) -> Self {
         Self { llm }
     }
 

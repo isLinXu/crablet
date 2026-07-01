@@ -10,12 +10,12 @@ use std::sync::Arc;
 use tracing::info;
 
 pub struct CachedLlmClient {
-    inner: Box<dyn LlmClient>,
+    inner: Arc<dyn LlmClient>,
     cache: Arc<Mutex<LruCache<String, String>>>,
 }
 
 impl CachedLlmClient {
-    pub fn new(inner: Box<dyn LlmClient>, capacity: usize) -> Self {
+    pub fn new(inner: Arc<dyn LlmClient>, capacity: usize) -> Self {
         let normalized_capacity = if capacity == 0 { 100 } else { capacity };
         let cap = match NonZeroUsize::new(normalized_capacity) {
             Some(capacity) => capacity,

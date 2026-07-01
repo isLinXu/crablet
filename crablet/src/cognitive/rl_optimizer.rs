@@ -528,11 +528,11 @@ pub struct RLOptimizerStats {
 /// Strategy recommendation based on RL learned policy
 pub struct RLStrategyRecommender {
     optimizer: Arc<RLOptimizerCore>,
-    llm: Arc<Box<dyn LlmClient>>,
+    llm: Arc<dyn LlmClient>,
 }
 
 impl RLStrategyRecommender {
-    pub fn new(optimizer: Arc<RLOptimizerCore>, llm: Arc<Box<dyn LlmClient>>) -> Self {
+    pub fn new(optimizer: Arc<RLOptimizerCore>, llm: Arc<dyn LlmClient>) -> Self {
         Self { optimizer, llm }
     }
 

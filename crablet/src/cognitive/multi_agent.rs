@@ -183,7 +183,7 @@ pub struct Agent {
     /// Agent name for display
     pub name: String,
     /// LLM client for reasoning
-    llm: Arc<Box<dyn LlmClient>>,
+    llm: Arc<dyn LlmClient>,
     /// Message queue
     message_queue: VecDeque<AgentMessage>,
     /// Agent's knowledge/context
@@ -195,7 +195,7 @@ pub struct Agent {
 
 impl Agent {
     /// Create a new agent
-    pub fn new(id: AgentId, role: AgentRole, name: String, llm: Arc<Box<dyn LlmClient>>) -> Self {
+    pub fn new(id: AgentId, role: AgentRole, name: String, llm: Arc<dyn LlmClient>) -> Self {
         Self {
             id,
             role,
@@ -525,7 +525,7 @@ pub struct AgentTeam {
     /// Team ID
     pub id: String,
     /// LLM client
-    llm: Arc<Box<dyn LlmClient>>,
+    llm: Arc<dyn LlmClient>,
     /// Agents in the team
     agents: RwLock<HashMap<AgentId, Agent>>,
     /// Collaboration protocol
@@ -540,7 +540,7 @@ pub struct AgentTeam {
 
 impl AgentTeam {
     /// Create a new agent team
-    pub fn new(id: String, llm: Arc<Box<dyn LlmClient>>) -> Self {
+    pub fn new(id: String, llm: Arc<dyn LlmClient>) -> Self {
         let (tx, _rx) = broadcast::channel(100);
         
         Self {
@@ -776,14 +776,14 @@ impl MessageBus {
 /// Builder for creating agent teams
 pub struct AgentTeamBuilder {
     team_id: String,
-    llm: Arc<Box<dyn LlmClient>>,
+    llm: Arc<dyn LlmClient>,
     roles: Vec<AgentRole>,
     protocol: CollaborationProtocol,
 }
 
 impl AgentTeamBuilder {
     /// Create a new builder
-    pub fn new(team_id: String, llm: Arc<Box<dyn LlmClient>>) -> Self {
+    pub fn new(team_id: String, llm: Arc<dyn LlmClient>) -> Self {
         Self {
             team_id,
             llm,

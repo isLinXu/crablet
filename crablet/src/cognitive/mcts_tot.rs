@@ -61,12 +61,12 @@ impl MCTSNode {
 }
 
 pub struct MCTSTreeOfThoughts {
-    llm: Arc<Box<dyn LlmClient>>,
+    llm: Arc<dyn LlmClient>,
     config: MCTSConfig,
 }
 
 impl MCTSTreeOfThoughts {
-    pub fn new(llm: Arc<Box<dyn LlmClient>>, config: MCTSConfig) -> Self {
+    pub fn new(llm: Arc<dyn LlmClient>, config: MCTSConfig) -> Self {
         Self { llm, config }
     }
 

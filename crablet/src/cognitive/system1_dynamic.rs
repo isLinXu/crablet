@@ -6,7 +6,11 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use strsim::levenshtein;
 use tokio::sync::RwLock;
-use tracing::debug;
+
+/// Type alias for the dynamic condition predicate.
+type ConditionFn = Arc<dyn Fn(&ContextSnapshot) -> bool + Send + Sync>;
+/// Type alias for the command handler closure.
+type HandlerFn = Arc<dyn Fn(&str, &ContextSnapshot) -> String + Send + Sync>;
 
 /// 动态上下文快照，用于上下文感知匹配
 #[derive(Clone, Debug, Default)]
@@ -37,8 +41,8 @@ pub struct DynamicCommandRule {
     pub description: String,
     pub weight: f32, // 默认 1.0，可动态调整
     pub context_tags: Vec<String>, // 如 ["coding", "onboarding"]
-    pub condition: Option<Arc<dyn Fn(&ContextSnapshot) -> bool + Send + Sync>>,
-    pub handler: Arc<dyn Fn(&str, &ContextSnapshot) -> String + Send + Sync>,
+    pub condition: Option<ConditionFn>,
+    pub handler: HandlerFn,
 }
 
 /// 动态 System 1 — 支持运行时注册、上下文感知、权重排序
@@ -156,10 +160,7 @@ impl System1Dynamic {
         let mut rules = self.rules.write().await;
         let len_before = rules.len();
         rules.retain(|r| r.id != rule_id);
-        let removed = rules.len() < len_before;
-        // NOTE: Trie 中残留 id 不影响功能（search 后会过滤无效 id）
-        // 如需完全清理，可重建 Trie
-        removed
+        rules.len() < len_before
     }
 
     /// 更新规则权重
@@ -451,17 +452,13 @@ impl CognitiveSystem for System1Dynamic {
         let input_trim = input.trim();
 
         // 1. 从 context 中提取会话上下文（或创建默认）
-        let session_id = context
-            .first()
-            .and_then(|m| m.session_id.as_ref())
-            .map(|s| s.as_str())
-            .unwrap_or("default");
+        // Message 没有 session_id 字段，使用 "default" 会话
+        let session_id = "default";
 
         let mut ctx = self.get_context(session_id).await;
 
         // 更新上下文：提取最近话题
-        if !context.is_empty() {
-            let last = context.last().unwrap();
+        if let Some(last) = context.last() {
             if let Some(ref text) = last.text() {
                 let lower = text.to_lowercase();
                 if lower.contains("code") || lower.contains("rust") || lower.contains("python") {

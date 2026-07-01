@@ -260,13 +260,13 @@ pub struct VerificationStatistics {
 
 /// Main self-reflective CoT verifier
 pub struct SelfCotVerifier {
-    llm: Arc<Box<dyn LlmClient>>,
+    llm: Arc<dyn LlmClient>,
     config: SelfCotConfig,
 }
 
 impl SelfCotVerifier {
     /// Create a new SelfCotVerifier
-    pub fn new(llm: Arc<Box<dyn LlmClient>>, config: SelfCotConfig) -> Self {
+    pub fn new(llm: Arc<dyn LlmClient>, config: SelfCotConfig) -> Self {
         Self { llm, config }
     }
 

@@ -119,14 +119,14 @@ pub struct ExtractedSkill {
 
 /// 知识蒸馏引擎
 pub struct KnowledgeDistiller {
-    llm: Arc<Box<dyn LlmClient>>,
+    llm: Arc<dyn LlmClient>,
     knowledge_base: Arc<RwLock<Vec<DistilledKnowledge>>>,
     extracted_skills: Arc<RwLock<Vec<ExtractedSkill>>>,
     max_knowledge_entries: usize,
 }
 
 impl KnowledgeDistiller {
-    pub fn new(llm: Arc<Box<dyn LlmClient>>) -> Self {
+    pub fn new(llm: Arc<dyn LlmClient>) -> Self {
         Self {
             llm,
             knowledge_base: Arc::new(RwLock::new(Vec::new())),
@@ -135,7 +135,7 @@ impl KnowledgeDistiller {
         }
     }
 
-    pub fn with_capacity(llm: Arc<Box<dyn LlmClient>>, max_entries: usize) -> Self {
+    pub fn with_capacity(llm: Arc<dyn LlmClient>, max_entries: usize) -> Self {
         Self {
             llm,
             knowledge_base: Arc::new(RwLock::new(Vec::new())),
@@ -548,7 +548,7 @@ mod tests {
 
     #[test]
     fn test_knowledge_confidence_calculation() {
-        let distiller = KnowledgeDistiller::new(Arc::new(Box::new(MockLlmClient::new())));
+        let distiller = KnowledgeDistiller::new(Arc::new(MockLlmClient::new()) as Arc<dyn crate::cognitive::llm::LlmClient>);
 
         let relationships = vec![
             Relationship {
