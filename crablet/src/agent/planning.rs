@@ -22,11 +22,11 @@ pub struct ExecutionPlan {
 
 #[derive(Clone)]
 pub struct TaskPlanner {
-    llm: Arc<Box<dyn LlmClient>>,
+    llm: Arc<dyn LlmClient>,
 }
 
 impl TaskPlanner {
-    pub fn new(llm: Arc<Box<dyn LlmClient>>) -> Self {
+    pub fn new(llm: Arc<dyn LlmClient>) -> Self {
         Self { llm }
     }
 
@@ -107,7 +107,7 @@ pub struct PlannerAgent {
 }
 
 impl PlannerAgent {
-    pub fn new(llm: Arc<Box<dyn LlmClient>>) -> Self {
+    pub fn new(llm: Arc<dyn LlmClient>) -> Self {
         Self {
             planner: TaskPlanner::new(llm),
         }

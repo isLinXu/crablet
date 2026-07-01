@@ -7,11 +7,11 @@ use tracing::info;
 
 pub struct ReviewerAgent {
     id: AgentId,
-    llm: Arc<Box<dyn LlmClient>>,
+    llm: Arc<dyn LlmClient>,
 }
 
 impl ReviewerAgent {
-    pub fn new(name: &str, llm: Arc<Box<dyn LlmClient>>) -> Self {
+    pub fn new(name: &str, llm: Arc<dyn LlmClient>) -> Self {
         Self {
             id: AgentId::from_name(name),
             llm,

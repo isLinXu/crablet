@@ -9,7 +9,7 @@ pub struct VotingAgent {
     id: AgentId,
     swarm: Arc<Swarm>,
     #[allow(dead_code)]
-    llm: Arc<Box<dyn LlmClient>>,
+    llm: Arc<dyn LlmClient>,
     voters: Vec<AgentId>,
 
     // State
@@ -24,7 +24,7 @@ impl VotingAgent {
     pub fn new(
         name: &str,
         swarm: Arc<Swarm>,
-        llm: Arc<Box<dyn LlmClient>>,
+        llm: Arc<dyn LlmClient>,
         voters: Vec<AgentId>,
     ) -> Self {
         Self {

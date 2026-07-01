@@ -15,7 +15,7 @@ use tokio::sync::{mpsc, RwLock};
 pub struct CoordinatorAgent {
     id: AgentId,
     planner: TaskPlanner,
-    pub llm: Arc<Box<dyn LlmClient>>,
+    pub llm: Arc<dyn LlmClient>,
     swarm: Arc<Swarm>,
     tasks: Arc<RwLock<HashMap<String, Task>>>,
     // Channel to notify execution loop about subtask completion
@@ -24,7 +24,7 @@ pub struct CoordinatorAgent {
 }
 
 impl CoordinatorAgent {
-    pub fn new(llm: Arc<Box<dyn LlmClient>>, swarm: Arc<Swarm>) -> Self {
+    pub fn new(llm: Arc<dyn LlmClient>, swarm: Arc<Swarm>) -> Self {
         Self {
             id: AgentId::from_name("coordinator"),
             planner: TaskPlanner::new(llm.clone()),

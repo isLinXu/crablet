@@ -9,11 +9,11 @@ use std::sync::Arc;
 
 pub struct CoderAgent {
     id: AgentId,
-    llm: Arc<Box<dyn LlmClient>>,
+    llm: Arc<dyn LlmClient>,
 }
 
 impl CoderAgent {
-    pub fn new(llm: Arc<Box<dyn LlmClient>>) -> Self {
+    pub fn new(llm: Arc<dyn LlmClient>) -> Self {
         Self {
             id: AgentId::from_name("coder"),
             llm,

@@ -11,7 +11,7 @@ use walkdir::WalkDir;
 #[derive(Clone)]
 pub struct SecurityAuditAgent {
     id: AgentId,
-    llm: Arc<Box<dyn LlmClient>>,
+    llm: Arc<dyn LlmClient>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -30,7 +30,7 @@ struct AuditReport {
 }
 
 impl SecurityAuditAgent {
-    pub fn new(llm: Arc<Box<dyn LlmClient>>) -> Self {
+    pub fn new(llm: Arc<dyn LlmClient>) -> Self {
         Self {
             id: AgentId::new(),
             llm,

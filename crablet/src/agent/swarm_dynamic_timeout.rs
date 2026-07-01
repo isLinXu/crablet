@@ -8,7 +8,12 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
-use tracing::{debug, info, warn};
+use tracing::debug;
+
+/// Shorthand for the execution-history map keyed by (role, task_type).
+type HistoryMap = HashMap<(String, String), VecDeque<ExecutionRecord>>;
+/// Shorthand for the per-key stats map.
+type StatsMap = HashMap<(String, String), ExecutionStats>;
 
 // ----------------------------------------------------------------------
 // Data structures
@@ -79,8 +84,8 @@ impl Default for TimeoutConfig {
 #[derive(Clone)]
 pub struct DynamicTimeoutEngine {
     config: Arc<RwLock<TimeoutConfig>>,
-    history: Arc<RwLock<HashMap<(String, String), VecDeque<ExecutionRecord>>>>,
-    stats: Arc<RwLock<HashMap<(String, String), ExecutionStats>>>,
+    history: Arc<RwLock<HistoryMap>>,
+    stats: Arc<RwLock<StatsMap>>,
     current_load: Arc<RwLock<SystemLoadSnapshot>>,
 }
 
@@ -88,18 +93,19 @@ impl DynamicTimeoutEngine {
     pub fn new() -> Self {
         Self {
             config: Arc::new(RwLock::new(TimeoutConfig::default())),
-            history: Arc::new(RwLock::new(HashMap::new())),
-            stats: Arc::new(RwLock::new(HashMap::new())),
+            history: Arc::new(RwLock::new(HistoryMap::new())),
+            stats: Arc::new(RwLock::new(StatsMap::new())),
             current_load: Arc::new(RwLock::new(SystemLoadSnapshot::default())),
         }
     }
 
     pub fn with_config(config: TimeoutConfig) -> Self {
-        let s = Self::new();
-        // fire-and-forget in constructor: use blocking or move to async builder
-        // For simplicity we keep default and provide `set_config` below.
-        let _ = s; // satisfy clippy
-        Self::new() // will call set_config via caller
+        Self {
+            config: Arc::new(RwLock::new(config)),
+            history: Arc::new(RwLock::new(HistoryMap::new())),
+            stats: Arc::new(RwLock::new(StatsMap::new())),
+            current_load: Arc::new(RwLock::new(SystemLoadSnapshot::default())),
+        }
     }
 
     pub async fn set_config(&self, config: TimeoutConfig) {
@@ -113,7 +119,7 @@ impl DynamicTimeoutEngine {
 
         {
             let mut history = self.history.write().await;
-            let queue = history.entry(key.clone()).or_insert_with(|| VecDeque::new());
+            let queue = history.entry(key.clone()).or_default();
             queue.push_back(record.clone());
             // Keep only last 100 records
             while queue.len() > 100 {
@@ -236,15 +242,10 @@ impl DynamicTimeoutEngine {
         // Estimate complexity from goal length and token count
         let complexity = ((context_length as f32 / 4000.0) + (goal.len() as f32 / 500.0)).min(1.0);
 
-        // System 3 uses "orchestrator" as role and higher base
-        let mut config = self.config.read().await.clone();
-        config.base_timeout_ms = 60_000; // System 3 base 60s
-        config.max_timeout_ms = 600_000; // 10m ceiling for System 3
-        drop(self.config.write().await); // drop old lock before write
-        // NOTE: we just read a clone above, no need to write back in this simplified API
-        // In real usage, you'd pass an override config or use a separate System3 config
-        // For this module, we call the base engine with orchestrator role:
-
+        // System 3 uses "orchestrator" as role with higher complexity tolerance.
+        // The base/max timeout is governed by the shared config; here we only
+        // route through the orchestrator role to pick up System 3 scaling.
+        let _config = self.config.read().await.clone();
         self.compute_timeout("orchestrator", task_type, complexity, 128, false).await
     }
 

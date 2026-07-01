@@ -10,12 +10,12 @@ use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct AgentFactory {
-    llm: Arc<Box<dyn LlmClient>>,
+    llm: Arc<dyn LlmClient>,
     event_bus: Arc<EventBus>,
 }
 
 impl AgentFactory {
-    pub fn new(llm: Arc<Box<dyn LlmClient>>, event_bus: Arc<EventBus>) -> Self {
+    pub fn new(llm: Arc<dyn LlmClient>, event_bus: Arc<EventBus>) -> Self {
         Self { llm, event_bus }
     }
 

@@ -18,7 +18,7 @@ use crate::types::Message as ChatMessage;
 use serde::Deserialize;
 
 pub struct SwarmCoordinator {
-    pub llm: Arc<Box<dyn LlmClient>>,
+    pub llm: Arc<dyn LlmClient>,
     pub executor: Arc<SwarmExecutor>,
     pub persister: Arc<SwarmPersister>,
     pub active_graphs: Arc<RwLock<HashMap<String, TaskGraph>>>,
@@ -33,7 +33,7 @@ pub struct PauseGraphResult {
 
 impl SwarmCoordinator {
     pub fn new(
-        llm: Arc<Box<dyn LlmClient>>,
+        llm: Arc<dyn LlmClient>,
         executor: Arc<SwarmExecutor>,
         persister: Arc<SwarmPersister>,
     ) -> Self {

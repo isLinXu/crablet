@@ -68,7 +68,7 @@ fn build_test_coordinator(pool: sqlx::SqlitePool, responses: &[&str]) -> SwarmCo
         mock_llm = mock_llm.with_response(response);
     }
 
-    let llm = Arc::new(Box::new(mock_llm) as Box<dyn crate::cognitive::llm::LlmClient>);
+    let llm = Arc::new(mock_llm) as Arc<dyn crate::cognitive::llm::LlmClient>;
     let event_bus = Arc::new(EventBus::new(100));
     let factory = Arc::new(AgentFactory::new(llm.clone(), event_bus));
     let persister = Arc::new(SwarmPersister::new(Some(pool)));
@@ -101,9 +101,8 @@ async fn init_resumes_active_graphs_from_persistence() {
         .unwrap();
 
     let llm = Arc::new(
-        Box::new(MockLlmClient::new().with_response("resumed result"))
-            as Box<dyn crate::cognitive::llm::LlmClient>,
-    );
+        MockLlmClient::new().with_response("resumed result")
+    ) as Arc<dyn crate::cognitive::llm::LlmClient>;
     let event_bus = Arc::new(EventBus::new(100));
     let factory = Arc::new(AgentFactory::new(llm.clone(), event_bus));
     let persister = Arc::new(SwarmPersister::new(Some(pool)));

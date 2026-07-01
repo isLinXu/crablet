@@ -20,6 +20,14 @@ pub mod executor;
 pub mod persister;
 #[path = "swarm/types.rs"]
 pub mod types;
+#[path = "swarm_dynamic_timeout.rs"]
+pub mod dynamic_timeout;
+
+// Re-export dynamic timeout types
+pub use dynamic_timeout::{
+    DynamicTimeoutEngine, ExecutionRecord as TimeoutExecutionRecord,
+    ExecutionStats as TimeoutExecutionStats, SystemLoadSnapshot, TimeoutConfig,
+};
 
 // Re-export common types
 pub use types::{
@@ -39,7 +47,7 @@ pub struct SwarmOrchestrator {
 
 impl SwarmOrchestrator {
     pub fn new(
-        llm: Arc<Box<dyn LlmClient>>,
+        llm: Arc<dyn LlmClient>,
         swarm: Arc<Swarm>,
         pool: Option<SqlitePool>,
         agent_factory: Arc<AgentFactory>,

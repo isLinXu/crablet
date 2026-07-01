@@ -22,7 +22,7 @@ use tokio::time::Duration;
 use tracing::{debug, error, info, warn};
 
 pub struct SwarmExecutor {
-    pub llm: Arc<Box<dyn LlmClient>>,
+    pub llm: Arc<dyn LlmClient>,
     pub agent_factory: Arc<AgentFactory>,
     pub capability_router: Arc<CapabilityRouter>,
     pub smart_allocator: Arc<SmartTaskAllocator>,
@@ -35,6 +35,11 @@ pub struct SwarmExecutor {
     running_harnesses: Arc<DashMap<String, RunningHarnessTask>>,
     pub limits: HashMap<String, i64>, // Concurrency limits by role
     pub task_semaphore: Arc<Semaphore>,
+
+    /// Dynamic timeout engine (optional). When present, task timeouts are
+    /// computed from historical performance, system load, and task complexity
+    /// instead of using the static `task_node.timeout_ms`.
+    pub dynamic_timeout: Option<Arc<super::dynamic_timeout::DynamicTimeoutEngine>>,
 }
 
 #[derive(Debug, Clone)]
@@ -135,7 +140,7 @@ impl HarnessAgent for SwarmHarnessAgentAdapter {
 
 impl SwarmExecutor {
     pub fn new(
-        llm: Arc<Box<dyn LlmClient>>,
+        llm: Arc<dyn LlmClient>,
         agent_factory: Arc<AgentFactory>,
         capability_router: Arc<CapabilityRouter>,
         event_bus: Option<Arc<EventBus>>,
@@ -160,7 +165,14 @@ impl SwarmExecutor {
             running_harnesses: Arc::new(DashMap::new()),
             limits,
             task_semaphore: Arc::new(Semaphore::new(max_concurrent)),
+            dynamic_timeout: None,
         }
+    }
+
+    /// Inject a dynamic timeout engine to enable adaptive timeout calculation
+    pub fn with_dynamic_timeout(mut self, engine: Arc<super::dynamic_timeout::DynamicTimeoutEngine>) -> Self {
+        self.dynamic_timeout = Some(engine);
+        self
     }
 
     pub async fn execute_graph(
@@ -329,7 +341,33 @@ impl SwarmExecutor {
                     .await
                     .map_err(|_| anyhow::anyhow!("Semaphore closed"))?;
 
-                let timeout_ms = task_node.timeout_ms;
+                // Compute timeout: use dynamic engine if available, else fall back to static
+                let timeout_ms = if let Some(ref engine) = self.dynamic_timeout {
+                    // Infer task type from the prompt content
+                    let prompt_lower = task_node.prompt.to_lowercase();
+                    let task_type = if prompt_lower.contains("code") || prompt_lower.contains("implement") {
+                        "coding"
+                    } else if prompt_lower.contains("research") || prompt_lower.contains("search") {
+                        "research"
+                    } else if prompt_lower.contains("analyz") || prompt_lower.contains("evaluat") {
+                        "analysis"
+                    } else if prompt_lower.contains("draft") || prompt_lower.contains("write") {
+                        "draft"
+                    } else {
+                        "general"
+                    };
+                    // Estimate complexity from prompt length (0.1 - 1.0)
+                    let complexity = (task_node.prompt.len() as f32 / 500.0).clamp(0.1, 1.0);
+                    engine.compute_timeout(
+                        &selected_role,
+                        task_type,
+                        complexity,
+                        task_node.priority,
+                        false, // is_burst
+                    ).await.as_millis() as u64
+                } else {
+                    task_node.timeout_ms
+                };
                 let context = self.build_dependency_context(&graph, &task_node, &selected_role);
                 let execution_state = self.prepare_task_execution_state(&task_node, &context);
 
@@ -417,6 +455,30 @@ impl SwarmExecutor {
                 let agent_succeeded = matches!(&agent_result, Ok(result) if result.success);
                 self.capability_router
                     .record_result(&selected_role, agent_succeeded, elapsed);
+
+                // Record to dynamic timeout engine for future predictions
+                if let Some(ref engine) = self.dynamic_timeout {
+                    let prompt_lower = task_node.prompt.to_lowercase();
+                    let task_type = if prompt_lower.contains("code") || prompt_lower.contains("implement") {
+                        "coding".to_string()
+                    } else if prompt_lower.contains("research") || prompt_lower.contains("search") {
+                        "research".to_string()
+                    } else if prompt_lower.contains("analyz") || prompt_lower.contains("evaluat") {
+                        "analysis".to_string()
+                    } else if prompt_lower.contains("draft") || prompt_lower.contains("write") {
+                        "draft".to_string()
+                    } else {
+                        "general".to_string()
+                    };
+                    engine.record_execution(super::dynamic_timeout::ExecutionRecord {
+                        role: selected_role.clone(),
+                        task_type,
+                        duration_ms: elapsed,
+                        success: agent_succeeded,
+                        token_count: None,
+                        timestamp: chrono::Utc::now(),
+                    }).await;
+                }
 
                 let mut latest_execution_state = execution_state.clone();
                 let agent_result = match agent_result {
@@ -1216,7 +1278,7 @@ mod tests {
     async fn test_swarm_executor_retry_logic() {
         // Setup Mocks
         let llm =
-            Arc::new(Box::new(MockLlmClient::new()) as Box<dyn crate::cognitive::llm::LlmClient>);
+            Arc::new(MockLlmClient::new()) as Arc<dyn crate::cognitive::llm::LlmClient>;
         let event_bus = Arc::new(crate::events::EventBus::new(100));
         let factory = Arc::new(AgentFactory::new(llm.clone(), event_bus.clone()));
         let router = Arc::new(CapabilityRouter::new());
@@ -1262,7 +1324,7 @@ mod tests {
     #[test]
     fn test_build_dependency_context_uses_structured_handoff() {
         let llm =
-            Arc::new(Box::new(MockLlmClient::new()) as Box<dyn crate::cognitive::llm::LlmClient>);
+            Arc::new(MockLlmClient::new()) as Arc<dyn crate::cognitive::llm::LlmClient>;
         let event_bus = Arc::new(crate::events::EventBus::new(100));
         let factory = Arc::new(AgentFactory::new(llm.clone(), event_bus.clone()));
         let router = Arc::new(CapabilityRouter::new());
@@ -1306,7 +1368,7 @@ mod tests {
     async fn test_execute_graph_uses_harness_bridge_without_step_prefix() {
         let llm_client = SequenceLlm::new(&["plain harness result"]);
         let llm =
-            Arc::new(Box::new(llm_client.clone()) as Box<dyn crate::cognitive::llm::LlmClient>);
+            Arc::new(llm_client.clone()) as Arc<dyn crate::cognitive::llm::LlmClient>;
         let event_bus = Arc::new(crate::events::EventBus::new(100));
         let factory = Arc::new(AgentFactory::new(llm.clone(), event_bus.clone()));
         let router = Arc::new(CapabilityRouter::new());
@@ -1342,7 +1404,7 @@ mod tests {
     #[test]
     fn test_build_harness_config_marks_swarm_execution_metadata() {
         let llm =
-            Arc::new(Box::new(MockLlmClient::new()) as Box<dyn crate::cognitive::llm::LlmClient>);
+            Arc::new(MockLlmClient::new()) as Arc<dyn crate::cognitive::llm::LlmClient>;
         let event_bus = Arc::new(crate::events::EventBus::new(100));
         let factory = Arc::new(AgentFactory::new(llm.clone(), event_bus.clone()));
         let router = Arc::new(CapabilityRouter::new());

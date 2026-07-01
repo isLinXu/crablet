@@ -7,12 +7,12 @@ use std::sync::Arc;
 
 pub struct GenericAgent {
     role: AgentRole,
-    llm: Arc<Box<dyn LlmClient>>,
+    llm: Arc<dyn LlmClient>,
     system_prompt: String,
 }
 
 impl GenericAgent {
-    pub fn new(role: AgentRole, llm: Arc<Box<dyn LlmClient>>, system_prompt: &str) -> Self {
+    pub fn new(role: AgentRole, llm: Arc<dyn LlmClient>, system_prompt: &str) -> Self {
         Self {
             role,
             llm,

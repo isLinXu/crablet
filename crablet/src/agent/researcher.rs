@@ -14,13 +14,13 @@ use crate::events::{AgentEvent, EventBus};
 #[derive(Clone)]
 pub struct ResearchAgent {
     id: AgentId,
-    llm: Arc<Box<dyn LlmClient>>,
+    llm: Arc<dyn LlmClient>,
     search: Arc<WebSearchTool>,
     event_bus: Arc<EventBus>,
 }
 
 impl ResearchAgent {
-    pub fn new(llm: Arc<Box<dyn LlmClient>>, event_bus: Arc<EventBus>) -> Self {
+    pub fn new(llm: Arc<dyn LlmClient>, event_bus: Arc<EventBus>) -> Self {
         Self {
             id: AgentId::from_name("researcher"),
             llm,

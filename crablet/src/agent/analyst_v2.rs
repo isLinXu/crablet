@@ -12,7 +12,7 @@ use tracing::{error, info, warn};
 #[derive(Clone)]
 pub struct DataAnalystAgent {
     id: AgentId,
-    llm: Arc<Box<dyn LlmClient>>,
+    llm: Arc<dyn LlmClient>,
     work_dir: PathBuf,
 }
 
@@ -30,7 +30,7 @@ struct AnalysisResult {
 }
 
 impl DataAnalystAgent {
-    pub fn new(llm: Arc<Box<dyn LlmClient>>, work_dir: PathBuf) -> Self {
+    pub fn new(llm: Arc<dyn LlmClient>, work_dir: PathBuf) -> Self {
         Self {
             id: AgentId::new(),
             llm,
