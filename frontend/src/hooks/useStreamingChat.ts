@@ -2,6 +2,7 @@ import { useCallback } from 'react';
 import { useChatStore } from '../store/chatStore';
 import type { CitationItem } from '../store/chatStore';
 import { LOCAL_STORAGE_KEYS, resolveApiUrl } from '../utils/constants';
+import { getSecureItem } from '../utils/secureStorage';
 import { useModelStore } from '@/store/modelStore';
 
 type StreamEvent = {
@@ -44,8 +45,8 @@ const getErrorMessage = (error: unknown) =>
   error instanceof Error ? error.message : '流式发送失败，请稍后重试';
 
 const buildHeaders = () => {
-  const token = localStorage.getItem(LOCAL_STORAGE_KEYS.AUTH_TOKEN);
-  const apiKey = localStorage.getItem(LOCAL_STORAGE_KEYS.API_KEY);
+  const token = getSecureItem(LOCAL_STORAGE_KEYS.AUTH_TOKEN);
+  const apiKey = getSecureItem(LOCAL_STORAGE_KEYS.API_KEY);
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     Accept: 'text/event-stream',

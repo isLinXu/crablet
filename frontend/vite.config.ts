@@ -17,11 +17,11 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': {
-        target: 'http://127.0.0.1:18790',
+        target: 'http://127.0.0.1:18799',
         changeOrigin: true,
       },
       '/ws': {
-        target: 'ws://127.0.0.1:18790',
+        target: 'ws://127.0.0.1:18799',
         ws: true,
       }
     }
@@ -47,6 +47,12 @@ export default defineConfig({
             id.includes('pdfjs-dist')
           ) {
             return 'pdf-vendor'
+          }
+          if (
+            id.includes('chart.js') ||
+            id.includes('react-chartjs-2')
+          ) {
+            return 'chart-vendor'
           }
           if (
             id.includes('@xyflow/react') ||

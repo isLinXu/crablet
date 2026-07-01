@@ -4,6 +4,7 @@ import { useEffect, lazy, Suspense, useCallback, useRef } from 'react';
 import { useModelStore } from '@/store/modelStore';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Sidebar } from './components/sidebar/Sidebar';
+import { BackendStatus } from './components/BackendStatus';
 
 const routeLoaders = {
   '/chat': () => import('./layouts/ChatLayout'),
@@ -73,6 +74,7 @@ function App() {
 
   return (
     <ErrorBoundary>
+      <BackendStatus>
         <div className="flex h-screen w-full bg-zinc-50 dark:bg-zinc-950 transition-colors duration-200">
           <Sidebar onRouteIntent={preloadRoute} />
           
@@ -97,6 +99,7 @@ function App() {
             className: 'dark:bg-zinc-800 dark:text-white',
           }} />
         </div>
+      </BackendStatus>
     </ErrorBoundary>
   );
 }

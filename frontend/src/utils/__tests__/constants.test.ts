@@ -5,7 +5,7 @@ describe('getApiBaseUrl', () => {
   const getExpectedFallback = () => {
     if (window.location.port === '5173') return '/api';
     const apiProtocol = window.location.protocol === 'https:' ? 'https:' : 'http:';
-    return `${apiProtocol}//${window.location.hostname}:18790/api`;
+    return `${apiProtocol}//${window.location.hostname}:18799/api`;
   };
 
   beforeEach(() => {
@@ -18,8 +18,8 @@ describe('getApiBaseUrl', () => {
   });
 
   it('keeps explicit localhost url unchanged', () => {
-    localStorage.setItem(LOCAL_STORAGE_KEYS.API_BASE_URL, 'http://localhost:18790/api');
-    expect(getApiBaseUrl()).toBe('http://localhost:18790/api');
+    localStorage.setItem(LOCAL_STORAGE_KEYS.API_BASE_URL, 'http://localhost:18799/api');
+    expect(getApiBaseUrl()).toBe('http://localhost:18799/api');
   });
 
   it('normalizes relative api path', () => {
@@ -44,7 +44,7 @@ describe('getApiBaseUrl', () => {
 
   it('detects gateway base urls by api prefix instead of hard-coded legacy port checks', () => {
     expect(isGatewayApiBaseUrl('/api')).toBe(true);
-    expect(isGatewayApiBaseUrl('http://localhost:18790/api')).toBe(true);
+    expect(isGatewayApiBaseUrl('http://localhost:18799/api')).toBe(true);
     expect(isGatewayApiBaseUrl('https://gateway.example.com/api')).toBe(true);
     expect(isGatewayApiBaseUrl('https://api.openai.com/v1')).toBe(false);
   });

@@ -8,6 +8,7 @@ import type {
   ExecutionEvent,
 } from '../types/workflow';
 import { LOCAL_STORAGE_KEYS, getApiBaseUrl } from '../utils/constants';
+import { getSecureItem } from '../utils/secureStorage';
 
 const getWorkflowApiBase = () => {
   const apiBase = getApiBaseUrl().replace(/\/+$/, '');
@@ -16,8 +17,8 @@ const getWorkflowApiBase = () => {
 };
 
 const getAuthHeaders = (): HeadersInit => {
-  const token = localStorage.getItem(LOCAL_STORAGE_KEYS.AUTH_TOKEN);
-  const apiKey = localStorage.getItem(LOCAL_STORAGE_KEYS.API_KEY);
+  const token = getSecureItem(LOCAL_STORAGE_KEYS.AUTH_TOKEN);
+  const apiKey = getSecureItem(LOCAL_STORAGE_KEYS.API_KEY);
   return {
     'Content-Type': 'application/json',
     ...(token ? { Authorization: `Bearer ${token}` } : {}),

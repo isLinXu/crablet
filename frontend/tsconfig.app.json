@@ -7,11 +7,10 @@
     "module": "ESNext",
     "types": ["vite/client", "node", "vitest/globals"],
     "skipLibCheck": true,
-    "ignoreDeprecations": "6.0",
+    "ignoreDeprecations": "5.0",
 
     /* Bundler mode */
     "moduleResolution": "bundler",
-    "baseUrl": ".",
     "paths": {
       "@/*": ["src/*"]
     },
@@ -25,7 +24,6 @@
     "strict": true,
     "noUnusedLocals": false,
     "noUnusedParameters": false,
-    "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true,
     "noUncheckedSideEffectImports": true
   },

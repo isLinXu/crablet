@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { getApiBaseUrl, isGatewayApiBaseUrl, LOCAL_STORAGE_KEYS } from '../../utils/constants';
+import { getSecureItem, setSecureItem, removeSecureItem } from '../../utils/secureStorage';
 import toast from 'react-hot-toast';
 import type { ApiKeyInfo, McpOverview, RoutingEvaluationReport, RoutingSettings } from '@/types/domain';
 import { settingsService } from '@/services/settingsService';
@@ -138,7 +139,7 @@ export function useSettingsState(): UseSettingsState {
   // Load initial data
   useEffect(() => {
     const savedUrl = getApiBaseUrl();
-    const savedKey = localStorage.getItem(LOCAL_STORAGE_KEYS.API_KEY) || '';
+    const savedKey = getSecureItem(LOCAL_STORAGE_KEYS.API_KEY) || '';
     const savedProfileName = localStorage.getItem('crablet-profile-name') || '';
     const savedProfileEmail = localStorage.getItem('crablet-profile-email') || '';
     const savedProfileOrg = localStorage.getItem('crablet-profile-org') || '';
@@ -207,16 +208,16 @@ export function useSettingsState(): UseSettingsState {
         }, { duration: 6000, icon: '⚠️' });
       }
       if (isLocalGateway) {
-        localStorage.setItem(LOCAL_STORAGE_KEYS.API_KEY, apiKeyValue);
-        localStorage.setItem(LOCAL_STORAGE_KEYS.AUTH_TOKEN, apiKeyValue);
+        setSecureItem(LOCAL_STORAGE_KEYS.API_KEY, apiKeyValue);
+        setSecureItem(LOCAL_STORAGE_KEYS.AUTH_TOKEN, apiKeyValue);
       } else {
-        localStorage.removeItem(LOCAL_STORAGE_KEYS.API_KEY);
-        localStorage.removeItem(LOCAL_STORAGE_KEYS.AUTH_TOKEN);
+        removeSecureItem(LOCAL_STORAGE_KEYS.API_KEY);
+        removeSecureItem(LOCAL_STORAGE_KEYS.AUTH_TOKEN);
         toast('当前是第三方API地址，已忽略Gateway鉴权Token注入');
       }
     } else {
-      localStorage.removeItem(LOCAL_STORAGE_KEYS.API_KEY);
-      localStorage.removeItem(LOCAL_STORAGE_KEYS.AUTH_TOKEN);
+      removeSecureItem(LOCAL_STORAGE_KEYS.API_KEY);
+      removeSecureItem(LOCAL_STORAGE_KEYS.AUTH_TOKEN);
     }
 
     if (providerMode) {
@@ -286,8 +287,8 @@ export function useSettingsState(): UseSettingsState {
       const rawKey = apiKey.trim();
       const normalizedBase = /^https?:\/\//i.test(rawBase) || rawBase.startsWith('/') ? rawBase.replace(/\/+$/, '') : `http://${rawBase}`.replace(/\/+$/, '');
       localStorage.setItem(LOCAL_STORAGE_KEYS.API_BASE_URL, normalizedBase || '/api');
-      if (rawKey) { localStorage.setItem(LOCAL_STORAGE_KEYS.API_KEY, rawKey); localStorage.setItem(LOCAL_STORAGE_KEYS.AUTH_TOKEN, rawKey); }
-      else { localStorage.removeItem(LOCAL_STORAGE_KEYS.API_KEY); localStorage.removeItem(LOCAL_STORAGE_KEYS.AUTH_TOKEN); }
+      if (rawKey) { setSecureItem(LOCAL_STORAGE_KEYS.API_KEY, rawKey); setSecureItem(LOCAL_STORAGE_KEYS.AUTH_TOKEN, rawKey); }
+      else { removeSecureItem(LOCAL_STORAGE_KEYS.API_KEY); removeSecureItem(LOCAL_STORAGE_KEYS.AUTH_TOKEN); }
       const autoVendor = detectVendor(normalizedBase);
       if (!autoVendor) {
         const target = normalizedBase.startsWith('/') ? `${window.location.origin}${normalizedBase}/v1/swarm/stats` : `${normalizedBase}/v1/swarm/stats`;

@@ -23,7 +23,7 @@ const loadTesseract = async () => {
 const loadPdfJs = async () => {
   const pdfjs = await import('pdfjs-dist');
   // 设置worker
-  pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
+  pdfjs.GlobalWorkerOptions.workerSrc = new URL('/pdf.worker.min.mjs', window.location.origin).href;
   return pdfjs;
 };
 

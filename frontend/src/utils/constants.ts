@@ -10,9 +10,11 @@ export const LOCAL_STORAGE_KEYS = {
 
 const GATEWAY_API_PREFIX = '/api';
 
+const CRABLET_DEFAULT_PORT = 18799;
+
 const getDefaultApiFallback = () => {
   if (typeof window === 'undefined' || !window.location) {
-    return 'http://127.0.0.1:18790/api';
+    return 'http://127.0.0.1:18799/api';
   }
 
   const { protocol, hostname, port } = window.location;
@@ -22,8 +24,13 @@ const getDefaultApiFallback = () => {
     return '/api';
   }
 
+  // Tauri production: tauri:// protocol has no port, fallback to sidecar port
+  if (!port || protocol === 'tauri:') {
+    return 'http://127.0.0.1:18799/api';
+  }
+
   const apiProtocol = protocol === 'https:' ? 'https:' : 'http:';
-  return `${apiProtocol}//${hostname}:18790/api`;
+  return `${apiProtocol}//${hostname}:${CRABLET_DEFAULT_PORT}/api`;
 };
 
 export const normalizeApiRequestPath = (path: string) => {
@@ -54,7 +61,7 @@ export const getApiBaseUrl = () => {
   }
 
   // Auto-fix if pointing to legacy UI ports or the stale 18789 gateway port.
-  if (url.includes(':3333') || url.includes(':3000') || url.includes(':18789')) {
+  if (url.includes(':3333') || url.includes(':3000') || url.includes(':18789') || url.includes(':18790')) {
       localStorage.setItem(LOCAL_STORAGE_KEYS.API_BASE_URL, fallback);
       return fallback;
   }
@@ -153,13 +160,18 @@ export const resolveApiUrl = (path: string, baseUrl = getApiBaseUrl()) => {
 
 const getDefaultWsBase = () => {
   if (typeof window === 'undefined' || !window.location) {
-    return 'ws://127.0.0.1:18790';
+    return 'ws://127.0.0.1:18799';
   }
 
   const apiBaseUrl = getApiBaseUrl();
   if (apiBaseUrl.startsWith('/')) {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     return `${protocol}//${window.location.host}`;
+  }
+
+  // Tauri production: fallback to sidecar port
+  if (window.location.protocol === 'tauri:') {
+    return 'ws://127.0.0.1:18799';
   }
 
   try {

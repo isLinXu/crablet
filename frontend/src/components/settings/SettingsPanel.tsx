@@ -19,7 +19,7 @@ import {
 
 const API_PRESETS = [
   { label: 'Local Proxy', value: '/api' },
-  { label: 'Local Backend', value: 'http://127.0.0.1:18790/api' },
+  { label: 'Local Backend', value: 'http://127.0.0.1:18799/api' },
   { label: 'OpenAI', value: 'https://api.openai.com/v1' },
   { label: 'Anthropic', value: 'https://api.anthropic.com/v1' },
   { label: 'Google', value: 'https://generativelanguage.googleapis.com/v1beta' },
@@ -272,7 +272,7 @@ export const SettingsPanel: React.FC = () => {
                   <Link className="w-4 h-4 text-slate-500 dark:text-slate-400" />
                   API Base URL
                 </label>
-                <Input value={s.apiBaseUrl} onChange={(e) => s.setApiBaseUrl(e.target.value)} placeholder="e.g., http://localhost:18790/api" className="bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-600 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:ring-blue-500 focus:border-blue-500" />
+                <Input value={s.apiBaseUrl} onChange={(e) => s.setApiBaseUrl(e.target.value)} placeholder="e.g., http://localhost:18799/api" className="bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-600 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:ring-blue-500 focus:border-blue-500" />
                 <div className="flex flex-wrap gap-2">
                   {API_PRESETS.map((preset) => (
                     <Button key={preset.value} type="button" size="sm" variant={s.apiBaseUrl.trim() === preset.value ? 'primary' : 'secondary'} onClick={() => s.handlePresetSelect(preset.value)}>

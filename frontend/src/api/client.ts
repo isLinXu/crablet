@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { LOCAL_STORAGE_KEYS, getApiBaseUrl, isGatewayApiBaseUrl } from '../utils/constants';
+import { getSecureItem } from '../utils/secureStorage';
 import toast from 'react-hot-toast';
 
 const client = axios.create({
@@ -14,8 +15,8 @@ const client = axios.create({
 client.interceptors.request.use(
   (config) => {
     config.baseURL = getApiBaseUrl();
-    const token = localStorage.getItem(LOCAL_STORAGE_KEYS.AUTH_TOKEN);
-    const apiKey = localStorage.getItem(LOCAL_STORAGE_KEYS.API_KEY);
+    const token = getSecureItem(LOCAL_STORAGE_KEYS.AUTH_TOKEN);
+    const apiKey = getSecureItem(LOCAL_STORAGE_KEYS.API_KEY);
     const shouldSendAuth = isGatewayApiBaseUrl(config.baseURL);
     if (token && shouldSendAuth) {
       config.headers.Authorization = `Bearer ${token}`;
