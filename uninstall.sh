@@ -24,8 +24,9 @@ done
 
 # 1. Stop running services
 echo -e "\n${YELLOW}[1/4] Stopping services...${NC}"
-pkill -f "crablet" || true
-pkill -f "node" || true
+pkill -f "target/release/crablet" || true
+pkill -f "target/debug/crablet" || true
+pkill -f "vite" || true
 echo "Services stopped."
 
 # 2. Clean Backend

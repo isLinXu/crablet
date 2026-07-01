@@ -82,6 +82,16 @@ else
     echo -e "  ${YELLOW}⚠️ 警告: 前端产物不存在且无法自动构建${NC}"
     echo -e "  ${YELLOW}   桌面端启动后可能无法显示前端界面。请手动构建：cd frontend && npm install && npm run build${NC}"
 fi
+
+# 同步前端产物到 desktop/ui/（Tauri frontendDist 指向 ./ui）
+DESKTOP_UI="$DESKTOP_DIR/ui"
+if [ -d "${FRONTEND_DIST}" ] && [ -f "${FRONTEND_DIST}/index.html" ]; then
+    echo -e "  🔄 同步前端产物到 desktop/ui/ ..."
+    rm -rf "${DESKTOP_UI}"
+    mkdir -p "${DESKTOP_UI}"
+    cp -R "${FRONTEND_DIST}/"* "${DESKTOP_UI}/"
+    echo -e "  ${GREEN}✅ desktop/ui/ 已更新${NC}"
+fi
 echo ""
 
 # --------------------------------------------------

@@ -119,7 +119,7 @@ up:
     docker compose up -d
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Desktop (Tauri 2)
+# Desktop (Tauri 2) — 统一使用 scripts/pack.sh
 # ═══════════════════════════════════════════════════════════════════════════
 
 # Build sidecar binary (release, web-only)
@@ -153,27 +153,33 @@ desktop-sidecar-copy: desktop-sidecar
     chmod +x "desktop/binaries/crablet-$target"
     echo "Copied sidecar for $target"
 
-# Copy sidecar binary for Linux
-desktop-sidecar-copy-linux: desktop-sidecar
-    mkdir -p desktop/binaries
-    cp target/release/crablet desktop/binaries/crablet-x86_64-unknown-linux-gnu
-    chmod +x desktop/binaries/crablet-x86_64-unknown-linux-gnu
+# ═══════════════════════════════════════════════════════════════════════════
+# 一键打包入口（统一脚本 scripts/pack.sh）
+# ═══════════════════════════════════════════════════════════════════════════
 
-# Copy sidecar binary for Windows
-desktop-sidecar-copy-windows: desktop-sidecar
-    mkdir -p desktop/binaries
-    cp target/release/crablet.exe desktop/binaries/crablet-x86_64-pc-windows-msvc.exe
+# 完整打包（前端→sidecar→Tauri→签名→DMG）
+desktop-pack:
+    bash scripts/pack.sh
 
-# Copy sidecar binaries for all platforms
-desktop-sidecar-copy-all: desktop-sidecar-copy desktop-sidecar-copy-linux desktop-sidecar-copy-windows
+# 快速打包（跳过前端构建）
+desktop-pack-quick:
+    bash scripts/pack.sh --quick
 
-# Build Tauri desktop app (macOS .app)
-desktop-build: desktop-sidecar-copy
-    cd desktop && cargo tauri build --bundles app
+# 只构建 .app（不创 DMG）
+desktop-pack-app:
+    bash scripts/pack.sh --app-only
 
-# Build Tauri desktop app + create DMG (macOS)
-desktop-dmg: desktop-sidecar-copy
-    cd desktop && cargo tauri build --bundles dmg
+# 只创建 DMG（需先有 .app）
+desktop-pack-dmg:
+    bash scripts/pack.sh --dmg-only
+
+# 只签名已有 .app
+desktop-pack-sign:
+    bash scripts/pack.sh --sign-only
+
+# CI 模式打包
+desktop-pack-ci:
+    bash scripts/pack.sh --ci
 
 # Dev mode: launch Tauri dev server with hot reload
 desktop-dev:

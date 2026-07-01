@@ -14,6 +14,7 @@ echo -e "${BLUE}🔨 Crablet Builder${NC}"
 
 # Parse arguments
 BUILD_MODE="release"
+# BUILD_FEATURES must match install.sh and CI web profile
 FEATURES="knowledge,auto-working,web"
 BACKEND_ONLY=false
 FRONTEND_ONLY=false

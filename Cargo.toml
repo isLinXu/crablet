@@ -8,4 +8,12 @@ tauri = { version = "2", features = ["tray-icon", "devtools"] }
 
 # 锁定 tauri-runtime 到与 tauri-runtime-wry 2.9.x 兼容的版本
 # tauri-runtime 2.11+ 更改了 NewWindowFeatures API，导致 tauri-runtime-wry 2.9.x 编译失败
+
+[profile.release]
+strip = true
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+opt-level = "s"
+
 [workspace.lints]

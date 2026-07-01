@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # Stage: Frontend Builder
-FROM node:22-alpine AS frontend-builder
+FROM node:24-alpine AS frontend-builder
 WORKDIR /app/frontend
 # COPY frontend/package.json frontend/package-lock.json ./
 COPY frontend/package*.json ./
@@ -21,6 +21,7 @@ WORKDIR /app
 COPY Cargo.toml Cargo.lock ./
 COPY crablet/Cargo.toml ./crablet/
 COPY crablet/src/ ./crablet/src/
+COPY desktop/Cargo.toml ./desktop/
 WORKDIR /app/crablet
 # Only copy necessary files for recipe generation
 RUN cargo chef prepare --recipe-path recipe.json
@@ -31,6 +32,7 @@ WORKDIR /app
 COPY --from=planner /app/crablet/recipe.json ./crablet/recipe.json
 COPY Cargo.toml Cargo.lock ./
 COPY crablet/Cargo.toml ./crablet/
+COPY desktop/Cargo.toml ./desktop/
 WORKDIR /app/crablet
 # Build dependencies - this is the caching layer!
 RUN cargo chef cook --release --recipe-path recipe.json

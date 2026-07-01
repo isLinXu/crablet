@@ -8,6 +8,10 @@ on:
       version:
         description: "Version override (e.g. 0.1.0)"
         required: false
+      platforms:
+        description: "Platforms (comma-sep: macos,linux,windows)"
+        required: false
+        default: "macos,windows"
 
 concurrency:
   group: desktop-${{ github.workflow }}-${{ github.ref }}
@@ -22,111 +26,196 @@ env:
   CRABLET_RUN_REAL_LLM_TESTS: 0
 
 jobs:
-  # ─── macOS (arm64) ───
+  # ─── macOS (arm64 + x64) ───
   build-macos:
-    runs-on: macos-latest
+    if: contains(github.event.inputs.platforms, 'macos') || github.event_name == 'push'
+    strategy:
+      matrix:
+        include:
+          - runner: macos-latest       # Apple Silicon
+            target: aarch64-apple-darwin
+            dmg_arch: aarch64
+          - runner: macos-13           # Intel
+            target: x86_64-apple-darwin
+            dmg_arch: x64
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-action@stable
-        with:
-          toolchain: stable
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: |
             ./crablet -> target
-
-      - name: Cache tauri-cli
-        uses: actions/cache@v4
-        with:
-          path: ~/.cargo/bin/cargo-tauri
-          key: tauri-cli-${{ runner.os }}-v2
+            ./desktop -> target
 
       - name: Install tauri-cli
         run: |
-          if [ ! -f ~/.cargo/bin/cargo-tauri ]; then
+          if ! command -v cargo-tauri &>/dev/null; then
             cargo install tauri-cli --version "^2"
           fi
 
-      - name: Build crablet sidecar (release)
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build frontend
+        run: |
+          cd frontend
+          npm install
+          npm run build
+
+      - name: Sync frontend to desktop/ui
+        run: |
+          rm -rf desktop/ui
+          cp -R frontend/dist desktop/ui
+
+      - name: Build sidecar (release)
         run: cargo build --release -p crablet --no-default-features --features web
 
       - name: Copy sidecar binary
         run: |
           mkdir -p desktop/binaries
-          cp target/release/crablet desktop/binaries/crablet-aarch64-apple-darwin
-          chmod +x desktop/binaries/crablet-aarch64-apple-darwin
+          cp target/release/crablet desktop/binaries/crablet-${{ matrix.target }}
+          chmod +x desktop/binaries/crablet-${{ matrix.target }}
 
       - name: Build Tauri app
-        run: |
-          cd desktop
-          cargo tauri build --bundles app
+        run: cd desktop && cargo tauri build --bundles app
 
-      - name: Fix sidecar paths in .app bundle
+      - name: Fix sidecar paths
         run: |
           APP_PATH="target/release/bundle/macos/Crablet.app"
-          SIDECAR_TARGET="crablet-aarch64-apple-darwin"
-
+          SIDECAR="crablet-${{ matrix.target }}"
           for dir in \
             "${APP_PATH}/Contents/MacOS/binaries" \
             "${APP_PATH}/Contents/Resources/binaries" \
             "${APP_PATH}/Contents/MacOS"; do
-            if [ -d "${dir}" ]; then
-              if [ ! -f "${dir}/${SIDECAR_TARGET}" ] && [ -f "${dir}/crablet" ]; then
-                FILE_SIZE=$(stat -f%z "${dir}/crablet" 2>/dev/null || echo 0)
-                if [ "${FILE_SIZE}" -gt 1000000 ]; then
-                  echo "Creating hard-link: ${dir}/${SIDECAR_TARGET} -> crablet"
-                  ln -f "${dir}/crablet" "${dir}/${SIDECAR_TARGET}" 2>/dev/null || {
-                    echo "WARN: hard-link failed, falling back to copy"
-                    cp "${dir}/crablet" "${dir}/${SIDECAR_TARGET}"
-                  }
-                fi
+            if [ -d "${dir}" ] && [ ! -f "${dir}/${SIDECAR}" ]; then
+              if [ -f "${dir}/crablet" ] && "${dir}/crablet" --help 2>/dev/null | grep -q "serve-web"; then
+                ln -f "${dir}/crablet" "${dir}/${SIDECAR}" 2>/dev/null || cp "${dir}/crablet" "${dir}/${SIDECAR}"
               fi
             fi
           done
+          # 兜底：从 binaries/ 直接复制
+          mkdir -p "${APP_PATH}/Contents/MacOS/binaries"
+          cp -f "desktop/binaries/${SIDECAR}" "${APP_PATH}/Contents/MacOS/binaries/${SIDECAR}"
 
-      - name: Code sign (Ad-hoc)
+      - name: Code sign
         run: |
           codesign --force --deep --sign - target/release/bundle/macos/Crablet.app
-        # 如有 Developer ID 证书，取消注释以下行并配置 secrets：
-        # env:
-        #   CODE_SIGN_IDENTITY: ${{ secrets.APPLE_SIGN_IDENTITY }}
 
       - name: Create DMG
         run: |
           APP_PATH="target/release/bundle/macos/Crablet.app"
           DMG_DIR="target/release/bundle/dmg"
-          STAGING="${{ runner.temp }}/crablet-dmg-staging"
-          mkdir -p "${STAGING}" "${DMG_DIR}"
+          STAGING=$(mktemp -d)
+          mkdir -p "${DMG_DIR}"
           cp -R "${APP_PATH}" "${STAGING}/"
           ln -sf /Applications "${STAGING}/Applications"
+          VERSION="${{ github.event.inputs.version || '0.1.0' }}"
           hdiutil create \
             -volname "Crablet" \
             -srcfolder "${STAGING}" \
             -ov \
             -format UDZO \
-            "${DMG_DIR}/Crablet_${{ github.event.inputs.version || '0.1.0' }}_aarch64.dmg"
+            "${DMG_DIR}/Crablet_${VERSION}_${{ matrix.dmg_arch }}.dmg"
           rm -rf "${STAGING}"
 
-      - name: Upload DMG artifact
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Crablet-macOS-arm64
+          name: Crablet-macOS-${{ matrix.dmg_arch }}
           path: target/release/bundle/dmg/*.dmg
+
+  # ─── Linux (x64) ───
+  build-linux:
+    if: contains(github.event.inputs.platforms, 'linux') || github.event_name == 'push'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            patchelf
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            ./crablet -> target
+            ./desktop -> target
+
+      - name: Install tauri-cli
+        run: |
+          if ! command -v cargo-tauri &>/dev/null; then
+            cargo install tauri-cli --version "^2"
+          fi
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build frontend
+        run: |
+          cd frontend
+          npm install
+          npm run build
+
+      - name: Sync frontend to desktop/ui
+        run: |
+          rm -rf desktop/ui
+          cp -R frontend/dist desktop/ui
+
+      - name: Build sidecar
+        run: cargo build --release -p crablet --no-default-features --features web
+
+      - name: Copy sidecar binary
+        run: |
+          mkdir -p desktop/binaries
+          cp target/release/crablet desktop/binaries/crablet-x86_64-unknown-linux-gnu
+          chmod +x desktop/binaries/crablet-x86_64-unknown-linux-gnu
+
+      - name: Build Tauri (AppImage + DEB)
+        run: cd desktop && cargo tauri build --bundles "deb,appimage"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: Crablet-Linux-x64
+          path: |
+            target/release/bundle/deb/*.deb
+            target/release/bundle/appimage/*.AppImage
 
   # ─── Windows (x64) ───
   build-windows:
+    if: contains(github.event.inputs.platforms, 'windows') || github.event_name == 'push'
     runs-on: windows-latest
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-action@stable
+        uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-pc-windows-msvc
 
@@ -135,21 +224,34 @@ jobs:
         with:
           workspaces: |
             ./crablet -> target
-
-      - name: Cache tauri-cli
-        uses: actions/cache@v4
-        with:
-          path: ~/.cargo/bin/cargo-tauri.exe
-          key: tauri-cli-${{ runner.os }}-v2
+            ./desktop -> target
 
       - name: Install tauri-cli
-        shell: pwsh
         run: |
-          if (-not (Test-Path "$env:USERPROFILE\.cargo\bin\cargo-tauri.exe")) {
+          if (-not (Get-Command cargo-tauri -ErrorAction SilentlyContinue)) {
             cargo install tauri-cli --version "^2"
           }
 
-      - name: Build crablet sidecar (release)
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build frontend
+        run: |
+          cd frontend
+          npm install
+          npm run build
+
+      - name: Sync frontend to desktop/ui
+        shell: pwsh
+        run: |
+          if (Test-Path desktop/ui) { Remove-Item -Recurse -Force desktop/ui }
+          Copy-Item -Recurse frontend/dist desktop/ui
+
+      - name: Build sidecar
         run: cargo build --release -p crablet --no-default-features --features web
         env:
           RUSTFLAGS: "-C target-feature=+crt-static"
@@ -160,26 +262,10 @@ jobs:
           New-Item -ItemType Directory -Force -Path desktop\binaries
           Copy-Item target\release\crablet.exe desktop\binaries\crablet-x86_64-pc-windows-msvc.exe
 
-      - name: Build Tauri app (NSIS installer)
-        run: |
-          cd desktop
-          cargo tauri build --bundles nsis
+      - name: Build Tauri (NSIS)
+        run: cd desktop && cargo tauri build --bundles nsis
 
-      - name: Fix sidecar paths in Windows bundle
-        shell: pwsh
-        run: |
-          $SIDECAR_TARGET = "crablet-x86_64-pc-windows-msvc.exe"
-          $NSIS_DIR = "target\release\bundle\nsis"
-          if (Test-Path $NSIS_DIR) {
-            Get-ChildItem $NSIS_DIR -Recurse -Filter "crablet.exe" | ForEach-Object {
-              $targetPath = Join-Path $_.DirectoryName $SIDECAR_TARGET
-              if (-not (Test-Path $targetPath)) {
-                Copy-Item $_.FullName $targetPath
-              }
-            }
-          }
-
-      - name: Upload Windows installer
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: Crablet-Windows-x64
@@ -187,10 +273,10 @@ jobs:
 
   # ─── Release ───
   release:
-    needs: [build-macos, build-windows]
+    needs: [build-macos, build-linux, build-windows]
+    if: always() && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    if: startsWith(github.ref, 'refs/tags/v')
     permissions:
       contents: write
     steps:
@@ -201,7 +287,9 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            Crablet-macOS-arm64/*.dmg
-            Crablet-Windows-x64/*.exe
+            Crablet-macOS-*/*.dmg
+            Crablet-Linux-*/*.deb
+            Crablet-Linux-*/*.AppImage
+            Crablet-Windows-*/*.exe
           draft: true
           generate_release_notes: true
