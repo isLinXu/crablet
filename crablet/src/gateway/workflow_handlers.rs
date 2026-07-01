@@ -70,7 +70,11 @@ pub async fn execute_workflow(
     if gateway.workflow_registry.get(&id).await.is_none() {
         return Err(StatusCode::NOT_FOUND);
     }
-    let execution = gateway.workflow_engine.execute(&id, payload).await;
+    let execution = gateway
+        .workflow_engine
+        .execute(&id, payload)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(execution))
 }
 
@@ -82,7 +86,11 @@ pub async fn run_workflow_stream(
     if gateway.workflow_registry.get(&id).await.is_none() {
         return Err(StatusCode::NOT_FOUND);
     }
-    let events = gateway.workflow_engine.stream_events(&id, payload).await;
+    let events = gateway
+        .workflow_engine
+        .stream_events(&id, payload)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let s = stream::iter(events.into_iter().map(|evt| {
         let data = serde_json::to_string(&evt).unwrap_or_else(|_| "{}".to_string());
         Ok::<Event, Infallible>(Event::default().data(data))

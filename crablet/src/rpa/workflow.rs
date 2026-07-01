@@ -355,11 +355,16 @@ impl RpaWorkflowEngine {
                 // Execute branch steps recursively
                 for step in &branch.steps {
                     let step_def = WorkflowDefinition {
+                        id: format!("condition-branch-{}", branch.condition),
                         name: format!("condition-branch-{}", branch.condition),
+                        description: String::new(),
+                        version: "1.0".to_string(),
+                        triggers: Vec::new(),
+                        variables: Vec::new(),
                         steps: vec![step.clone()],
-                        error_policy: ErrorPolicy::Continue,
                     };
-                    self.execute(&step_def, &mut context.clone()).await?;
+                    let mut branch_ctx = context.clone();
+                    self.execute(&step_def, &mut branch_ctx).await?;
                 }
                 return Ok(StepResult::success());
             }
@@ -381,9 +386,13 @@ impl RpaWorkflowEngine {
         while self.evaluate_condition(condition, context).await? && iterations < max_iterations {
             for step in steps {
                 let step_def = WorkflowDefinition {
+                    id: format!("loop-iteration-{}", iterations),
                     name: format!("loop-iteration-{}", iterations),
+                    description: String::new(),
+                    version: "1.0".to_string(),
+                    triggers: Vec::new(),
+                    variables: Vec::new(),
                     steps: vec![step.clone()],
-                    error_policy: ErrorPolicy::Continue,
                 };
                 self.execute(&step_def, context).await?;
             }
@@ -600,14 +609,14 @@ impl Default for ErrorAction {
 }
 
 /// Workflow context
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct WorkflowContext {
     pub variables: HashMap<String, String>,
     pub trigger_data: Option<serde_json::Value>,
 }
 
 /// Step result
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct StepResult {
     pub success: bool,
     pub outputs: HashMap<String, String>,
@@ -624,7 +633,7 @@ impl StepResult {
 }
 
 /// Workflow result
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct WorkflowResult {
     pub success: bool,
     pub execution_time: Duration,

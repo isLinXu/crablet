@@ -16,7 +16,7 @@ use uuid::Uuid;
 /// memory consolidation, and predictive maintenance.
 pub struct HeartbeatEngine {
     memory_mgr: Arc<MemoryManager>,
-    llm: Arc<Box<dyn LlmClient>>,
+    llm: Arc<dyn LlmClient>,
     skills: Arc<RwLock<SkillRegistry>>,
     swarm_orch: Option<Arc<SwarmOrchestrator>>,
     idle_threshold: Duration,
@@ -26,7 +26,7 @@ pub struct HeartbeatEngine {
 impl HeartbeatEngine {
     pub fn new(
         memory_mgr: Arc<MemoryManager>,
-        llm: Arc<Box<dyn LlmClient>>,
+        llm: Arc<dyn LlmClient>,
         skills: Arc<RwLock<SkillRegistry>>,
     ) -> Self {
         Self {

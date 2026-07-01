@@ -21,17 +21,17 @@ pub async fn handle_research(topic: String, depth: usize) -> Result<()> {
     // 1. Initialize LLM (System 2 Config)
     let model = env::var("OPENAI_MODEL_NAME").unwrap_or_else(|_| "gpt-4o-mini".to_string());
 
-    let llm_inner: Box<dyn LlmClient> = match crate::cognitive::llm::OpenAiClient::new(&model) {
-        Ok(client) => Box::new(client),
+    let llm_inner: Arc<dyn LlmClient> = match crate::cognitive::llm::OpenAiClient::new(&model) {
+        Ok(client) => Arc::new(client) as Arc<dyn LlmClient>,
         Err(_) => {
             println!("{}", "Warning: OPENAI_API_KEY not found. Using Mock/Ollama for research might yield limited results.".yellow());
             let ollama_model =
                 env::var("OLLAMA_MODEL").unwrap_or_else(|_| "qwen2.5:14b".to_string());
-            Box::new(crate::cognitive::llm::OllamaClient::new(&ollama_model))
+            Arc::new(crate::cognitive::llm::OllamaClient::new(&ollama_model)) as Arc<dyn LlmClient>
         }
     };
 
-    let llm = Arc::new(Box::new(CachedLlmClient::new(llm_inner, 50)) as Box<dyn LlmClient>);
+    let llm = Arc::new(CachedLlmClient::new(llm_inner, 50)) as Arc<dyn LlmClient>;
     let event_bus = Arc::new(EventBus::new(100));
 
     // 2. Initialize Research Agent

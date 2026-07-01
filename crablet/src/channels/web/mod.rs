@@ -45,6 +45,65 @@ use swarm_timeline::{
 const MAX_LEGACY_UPLOAD_BYTES: usize = 10 * 1024 * 1024;
 const MAX_LEGACY_UPLOADS_PER_REQUEST: usize = 20;
 
+/// Resolve the static directory for serving the web UI.
+/// Mirrors the gateway's `resolve_static_dir()` logic:
+/// 1. CRABLET_RESOURCE_DIR env var → nested frontend/dist
+/// 2. Exe-relative paths (bundle layout without env var)
+/// 3. CWD-relative fallback (dev mode)
+fn resolve_static_dir_web() -> PathBuf {
+    use std::env;
+
+    // 1. CRABLET_RESOURCE_DIR env var
+    if let Ok(resource_dir) = env::var("CRABLET_RESOURCE_DIR") {
+        let p = PathBuf::from(&resource_dir);
+        if p.join("index.html").exists() {
+            return p;
+        }
+        let nested = p.join("frontend/dist");
+        if nested.join("index.html").exists() {
+            return nested;
+        }
+        let up_nested = p.join("_up_/frontend/dist");
+        if up_nested.join("index.html").exists() {
+            return up_nested;
+        }
+    }
+
+    // 2. Exe-relative (bundle layout)
+    if let Ok(exe) = env::current_exe() {
+        if let Some(exe_dir) = exe.parent() {
+            if exe_dir.join("index.html").exists() {
+                return exe_dir.to_path_buf();
+            }
+            let exe_fe = exe_dir.join("../frontend/dist");
+            if exe_fe.join("index.html").exists() {
+                return exe_fe;
+            }
+            if let Some(contents) = exe_dir.parent() {
+                let res = contents.join("Resources");
+                if res.join("index.html").exists() {
+                    return res;
+                }
+                let res_fe = res.join("_up_/frontend/dist");
+                if res_fe.join("index.html").exists() {
+                    return res_fe;
+                }
+            }
+        }
+    }
+
+    // 3. CWD-relative fallback
+    let candidates = [
+        PathBuf::from("frontend/dist"),
+        PathBuf::from("../frontend/dist"),
+        PathBuf::from("static"),
+    ];
+    candidates
+        .into_iter()
+        .find(|d| d.join("index.html").exists())
+        .unwrap_or_else(|| PathBuf::from("frontend/dist"))
+}
+
 #[derive(Deserialize, Debug, Clone)]
 struct ChatInput {
     prompt: String,
@@ -59,11 +118,7 @@ pub async fn run(
 ) -> anyhow::Result<()> {
     // Create uploads directory if it doesn't exist
     fs::create_dir_all("uploads").await?;
-    let static_dir = if PathBuf::from("frontend/dist/index.html").exists() {
-        PathBuf::from("frontend/dist")
-    } else {
-        PathBuf::from("../frontend/dist")
-    };
+    let static_dir = resolve_static_dir_web();
     let index_file = static_dir.join("index.html");
 
     let app_state = router;

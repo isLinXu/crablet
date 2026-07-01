@@ -76,7 +76,7 @@ pub async fn check_llm_provider(client: &dyn LlmClient) -> std::result::Result<(
 
 pub async fn startup_health_check(
     config: &Config,
-    llm_client: Arc<Box<dyn LlmClient>>,
+    llm_client: Arc<dyn LlmClient>,
 ) -> std::result::Result<HealthReport, anyhow::Error> {
     let mut report = HealthReport::new();
 
@@ -86,7 +86,7 @@ pub async fn startup_health_check(
     // 2. LLM Check
     report.check(
         "llm_provider",
-        check_llm_provider(llm_client.as_ref().as_ref()).await,
+        check_llm_provider(llm_client.as_ref()).await,
     );
 
     // 3. MCP Servers Check

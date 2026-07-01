@@ -15,7 +15,7 @@ pub struct VisionPlugin {
 }
 
 impl VisionPlugin {
-    pub fn new(llm: Arc<Box<dyn LlmClient>>) -> Self {
+    pub fn new(llm: Arc<dyn LlmClient>) -> Self {
         Self {
             tool: VisionTool::new(llm),
         }
@@ -56,11 +56,11 @@ impl Plugin for VisionPlugin {
 }
 
 pub struct VisionTool {
-    llm: Arc<Box<dyn LlmClient>>,
+    llm: Arc<dyn LlmClient>,
 }
 
 impl VisionTool {
-    pub fn new(llm: Arc<Box<dyn LlmClient>>) -> Self {
+    pub fn new(llm: Arc<dyn LlmClient>) -> Self {
         Self { llm }
     }
 

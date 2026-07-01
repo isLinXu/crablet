@@ -3,12 +3,20 @@ use super::types::{
     UpdateWorkflowRequest, ValidationResult, Workflow,
 };
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use tracing::{debug, warn};
 
+/// Workflow registry with optional JSON-file persistence.
+///
+/// When `persist_path` is set the registry will:
+/// - Load all workflows from the JSON file on construction.
+/// - Persist the full workflow map after every mutating operation.
 #[derive(Clone, Default)]
 pub struct WorkflowRegistry {
     workflows: Arc<RwLock<HashMap<String, Workflow>>>,
+    persist_path: Option<PathBuf>,
 }
 
 impl WorkflowRegistry {
@@ -16,9 +24,59 @@ impl WorkflowRegistry {
         Self::default()
     }
 
+    /// Create a registry backed by a JSON file at `path`.
+    /// Existing workflows are loaded immediately; errors are logged but ignored.
+    pub async fn with_persistence(path: impl Into<PathBuf>) -> Self {
+        let path = path.into();
+        let workflows = Self::load_from_file(&path).await.unwrap_or_default();
+        Self {
+            workflows: Arc::new(RwLock::new(workflows)),
+            persist_path: Some(path),
+        }
+    }
+
+    /// Expose the shared workflows store for injection into `WorkflowEngine`.
+    pub fn workflows_store(&self) -> Arc<RwLock<HashMap<String, Workflow>>> {
+        self.workflows.clone()
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // Persistence helpers
+    // ──────────────────────────────────────────────────────────────
+
+    async fn load_from_file(path: &PathBuf) -> Option<HashMap<String, Workflow>> {
+        let data = tokio::fs::read_to_string(path).await.ok()?;
+        let list: Vec<Workflow> = serde_json::from_str(&data).ok()?;
+        Some(list.into_iter().map(|w| (w.id.clone(), w)).collect())
+    }
+
+    async fn persist(&self) {
+        let path = match &self.persist_path {
+            Some(p) => p.clone(),
+            None => return,
+        };
+        let map = self.workflows.read().await;
+        let list: Vec<&Workflow> = map.values().collect();
+        match serde_json::to_string_pretty(&list) {
+            Ok(json) => {
+                if let Some(parent) = path.parent() {
+                    let _ = tokio::fs::create_dir_all(parent).await;
+                }
+                if let Err(e) = tokio::fs::write(&path, json).await {
+                    warn!("WorkflowRegistry: failed to persist to {:?}: {}", path, e);
+                } else {
+                    debug!("WorkflowRegistry: persisted {} workflows to {:?}", list.len(), path);
+                }
+            }
+            Err(e) => warn!("WorkflowRegistry: serialization error: {}", e),
+        }
+    }
+
     pub async fn list(&self) -> Vec<Workflow> {
         let map = self.workflows.read().await;
-        map.values().cloned().collect()
+        let mut list: Vec<Workflow> = map.values().cloned().collect();
+        list.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+        list
     }
 
     pub async fn get(&self, id: &str) -> Option<Workflow> {
@@ -41,34 +99,47 @@ impl WorkflowRegistry {
             version: 1,
             is_active: true,
         };
-        let mut map = self.workflows.write().await;
-        map.insert(workflow.id.clone(), workflow.clone());
+        {
+            let mut map = self.workflows.write().await;
+            map.insert(workflow.id.clone(), workflow.clone());
+        }
+        self.persist().await;
         workflow
     }
 
     pub async fn update(&self, id: &str, req: UpdateWorkflowRequest) -> Option<Workflow> {
-        let mut map = self.workflows.write().await;
-        let current = map.get(id)?.clone();
-        let updated = Workflow {
-            id: current.id.clone(),
-            name: req.name.unwrap_or(current.name),
-            description: req.description.or(current.description),
-            nodes: req.nodes.unwrap_or(current.nodes),
-            edges: req.edges.unwrap_or(current.edges),
-            variables: current.variables,
-            created_at: current.created_at,
-            updated_at: now_rfc3339(),
-            created_by: current.created_by,
-            version: current.version + 1,
-            is_active: current.is_active,
+        let updated = {
+            let mut map = self.workflows.write().await;
+            let current = map.get(id)?.clone();
+            let updated = Workflow {
+                id: current.id.clone(),
+                name: req.name.unwrap_or(current.name),
+                description: req.description.or(current.description),
+                nodes: req.nodes.unwrap_or(current.nodes),
+                edges: req.edges.unwrap_or(current.edges),
+                variables: current.variables,
+                created_at: current.created_at,
+                updated_at: now_rfc3339(),
+                created_by: current.created_by,
+                version: current.version + 1,
+                is_active: current.is_active,
+            };
+            map.insert(id.to_string(), updated.clone());
+            updated
         };
-        map.insert(id.to_string(), updated.clone());
+        self.persist().await;
         Some(updated)
     }
 
     pub async fn delete(&self, id: &str) -> bool {
-        let mut map = self.workflows.write().await;
-        map.remove(id).is_some()
+        let removed = {
+            let mut map = self.workflows.write().await;
+            map.remove(id).is_some()
+        };
+        if removed {
+            self.persist().await;
+        }
+        removed
     }
 
     pub fn validate(req: &CreateWorkflowRequest) -> ValidationResult {

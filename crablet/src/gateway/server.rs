@@ -188,9 +188,41 @@ impl CrabletGateway {
             if resource_frontend.join("index.html").exists() {
                 return resource_frontend;
             }
+            // 1c) _up_/frontend/dist nested (Tauri macOS bundle: Resources/_up_/frontend/dist)
+            let up_frontend = resource_path.join("_up_/frontend/dist");
+            if up_frontend.join("index.html").exists() {
+                return up_frontend;
+            }
         }
 
-        // 2. Fall back to existing candidate paths
+        // 2. Exe-relative fallback (sidecar running from a bundle without CRABLET_RESOURCE_DIR)
+        if let Ok(exe_path) = std::env::current_exe() {
+            if let Some(exe_dir) = exe_path.parent() {
+                // 2a) Same dir as exe (sidecar + index.html side by side)
+                if exe_dir.join("index.html").exists() {
+                    return exe_dir.to_path_buf();
+                }
+                // 2b) ../frontend/dist relative to exe (crablet/ + frontend/ siblings)
+                let exe_frontend = exe_dir.join("../frontend/dist");
+                if exe_frontend.join("index.html").exists() {
+                    return exe_frontend;
+                }
+                // 2c) macOS .app bundle: exe in Contents/MacOS/, static in Contents/Resources/
+                if let Some(contents_dir) = exe_dir.parent() {
+                    let resources_dir = contents_dir.join("Resources");
+                    if resources_dir.join("index.html").exists() {
+                        return resources_dir;
+                    }
+                    // 2d) Resources/_up_/frontend/dist (Tauri macOS bundle layout)
+                    let resources_frontend = resources_dir.join("_up_/frontend/dist");
+                    if resources_frontend.join("index.html").exists() {
+                        return resources_frontend;
+                    }
+                }
+            }
+        }
+
+        // 3. Fall back to CWD-relative candidate paths
         let candidates = [
             PathBuf::from("frontend/dist"),
             PathBuf::from("../frontend/dist"),
@@ -289,8 +321,12 @@ impl CrabletGateway {
 
         // Initialize workflow system
         let executor_registry = Arc::new(NodeExecutorRegistry::new());
-        let workflow_engine = Arc::new(WorkflowEngine::new(executor_registry));
         let workflow_registry = Arc::new(WorkflowRegistry::new());
+        // Share the same in-memory workflows store between engine and registry
+        let workflow_engine = Arc::new(
+            WorkflowEngine::with_registry(executor_registry)
+                .with_workflows(workflow_registry.workflows_store()),
+        );
 
         // Initialize Heartbeat Engine for Draft Mode and proactive tasks
         let mut heartbeat = HeartbeatEngine::new(

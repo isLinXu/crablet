@@ -71,7 +71,7 @@ struct StreamRagPreparation {
     prompt_context: String,
 }
 
-fn llm_from_route(route: Option<&RouteSelection>) -> Option<Arc<Box<dyn LlmClient>>> {
+fn llm_from_route(route: Option<&RouteSelection>) -> Option<Arc<dyn LlmClient>> {
     let base_url = route
         .and_then(|r| r.api_base_url.as_ref().map(|v| v.trim().to_string()))
         .filter(|v| !v.is_empty())
@@ -101,7 +101,7 @@ fn llm_from_route(route: Option<&RouteSelection>) -> Option<Arc<Box<dyn LlmClien
             .build()
             .ok()?,
     };
-    Some(Arc::new(Box::new(client)))
+    Some(Arc::new(client) as Arc<dyn LlmClient>)
 }
 
 async fn prepare_stream_rag(

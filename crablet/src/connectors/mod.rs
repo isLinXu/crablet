@@ -435,14 +435,14 @@ fn apply_filter(event: &ConnectorEvent, filter: &EventFilter) -> bool {
                 },
                 FilterOperator::In => {
                     if let Some(arr) = filter.value.as_array() {
-                        arr.contains(field_value)
+                        arr.contains(&field_value)
                     } else {
                         false
                     }
                 }
                 FilterOperator::NotIn => {
                     if let Some(arr) = filter.value.as_array() {
-                        !arr.contains(field_value)
+                        !arr.contains(&field_value)
                     } else {
                         true
                     }

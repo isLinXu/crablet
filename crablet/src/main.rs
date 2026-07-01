@@ -1,6 +1,7 @@
 use crablet as sqlx;
 use crablet::channels::cli;
 use crablet::config::Config;
+use std::sync::Arc;
 use tracing::info;
 
 #[tokio::main]
@@ -43,7 +44,20 @@ async fn main() -> anyhow::Result<()> {
     }
 
     // Initialize LLM Client for Health Check
-    let llm_client = crablet::cognitive::create_llm_client(&config).await?;
+    // 桌面端首次启动时用户可能尚未配置 API Key，此时不应 panic，
+    // 而是跳过 LLM 健康检查、使用 MockClient 占位，让 Web Gateway 正常启动。
+    // 用户在 Settings 中配置 API Key 后，sidecar 会重启并走正常路径。
+    let llm_client = match crablet::cognitive::create_llm_client(&config).await {
+        Ok(client) => client,
+        Err(e) => {
+            tracing::warn!(
+                "LLM client initialization failed (API Key not configured?): {}. \
+                 Starting with MockClient — LLM features will be unavailable until API Key is set.",
+                e
+            );
+            Arc::new(crablet::cognitive::llm::MockClient) as Arc<dyn crablet::cognitive::llm::LlmClient>
+        }
+    };
 
     // Health Check
     info!("Running startup health checks...");

@@ -3,11 +3,12 @@ use super::types::{
     next_id, now_rfc3339, ExecuteWorkflowRequest, ExecutionEvent, NodeExecution, WorkflowExecution,
     Workflow, WorkflowNode, WorkflowEdge,
 };
+use futures::future::join_all;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{debug, error, info, warn};
+use tracing::{error, info, warn};
 
 #[derive(Clone)]
 pub struct WorkflowEngine {
@@ -26,6 +27,22 @@ impl WorkflowEngine {
             executor_registry,
             workflows,
         }
+    }
+
+    /// Convenience constructor: creates an internal, empty workflows store.
+    /// Use this when the caller wants to manage workflows via `WorkflowRegistry`
+    /// separately and inject the shared store later via `with_workflows`.
+    pub fn with_registry(executor_registry: Arc<NodeExecutorRegistry>) -> Self {
+        Self::new(
+            executor_registry,
+            Arc::new(RwLock::new(HashMap::new())),
+        )
+    }
+
+    /// Replace the shared workflows store (e.g. to link with `WorkflowRegistry`).
+    pub fn with_workflows(mut self, workflows: Arc<RwLock<HashMap<String, Workflow>>>) -> Self {
+        self.workflows = workflows;
+        self
     }
 
     /// Execute a workflow by ID with proper DAG scheduling
@@ -167,9 +184,9 @@ impl WorkflowEngine {
                     .cloned()
                     .ok_or_else(|| WorkflowEngineError::NodeNotFound(node_id.clone()))?;
 
-                let inputs = self.resolve_node_inputs(node_id, &node, &node_outputs, &dag)?;
+                let inputs = self.resolve_node_inputs(node_id, &node, &node_outputs, dag)?;
                 let registry = self.executor_registry.clone();
-                let exec_id = execution_id.to_string();
+                let _exec_id = execution_id.to_string();
                 let node_id_clone = node_id.clone();
 
                 futures.push(tokio::spawn(async move {
@@ -181,7 +198,7 @@ impl WorkflowEngine {
             }
 
             // Wait for all batch executions
-            let results = futures::future::join_all(futures).await;
+            let results = join_all(futures).await;
 
             for res in results {
                 let (node_id, result, started_at, completed_at) = match res {
@@ -198,7 +215,7 @@ impl WorkflowEngine {
                     .nodes
                     .iter()
                     .find(|n| n.id == node_id)
-                    .expect("Node must exist");
+                    .ok_or_else(|| WorkflowEngineError::NodeNotFound(node_id.clone()))?;
 
                 match result {
                     Ok(outputs) => {
@@ -211,7 +228,7 @@ impl WorkflowEngine {
                             node_id: node_id.clone(),
                             status: "completed".to_string(),
                             inputs: Some(
-                                self.resolve_node_inputs(&node_id, node, &node_outputs, &dag)?,
+                                self.resolve_node_inputs(&node_id, node, &node_outputs, dag)?,
                             ),
                             outputs: Some(outputs),
                             started_at: Some(started_at),
@@ -239,7 +256,7 @@ impl WorkflowEngine {
                             node_id: node_id.clone(),
                             status: "failed".to_string(),
                             inputs: Some(
-                                self.resolve_node_inputs(&node_id, node, &node_outputs, &dag)?,
+                                self.resolve_node_inputs(&node_id, node, &node_outputs, dag)?,
                             ),
                             outputs: None,
                             started_at: Some(started_at),
