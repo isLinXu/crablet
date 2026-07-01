@@ -236,7 +236,7 @@ pub struct KnowledgeWeaver {
     event_bus: Arc<EventBus>,
     knowledge_graph: Option<Arc<RwLock<KnowledgeGraph>>>,
     vector_store: Option<Arc<VectorStore>>,
-    llm: Arc<Box<dyn LlmClient>>,
+    llm: Arc<dyn LlmClient>,
     /// Discovered relationships
     relationships: Arc<RwLock<Vec<DiscoveredRelationship>>>,
     /// Concept clusters
@@ -259,7 +259,7 @@ impl KnowledgeWeaver {
         event_bus: Arc<EventBus>,
         knowledge_graph: Option<Arc<RwLock<KnowledgeGraph>>>,
         vector_store: Option<Arc<VectorStore>>,
-        llm: Arc<Box<dyn LlmClient>>,
+        llm: Arc<dyn LlmClient>,
     ) -> Self {
         Self {
             config,

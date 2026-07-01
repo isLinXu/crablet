@@ -32,7 +32,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::events::{AgentEvent, EventBus, Event};
 use crate::memory::manager::MemoryManager;
-use crate::memory::core::{CoreMemoryBlock};
 use crate::memory::consolidator::MemoryConsolidator;
 use crate::knowledge::vector_store::VectorStore;
 use crate::error::Result;
@@ -156,18 +155,21 @@ impl EventDrivenMemory {
     }
 
     /// Start the event-driven system
-    pub fn start(self: Arc<Self>, mut receiver: mpsc::Receiver<(AgentEvent, EventContext, EventPriority)>) {
+    pub fn start(self: Arc<Self>, receiver: mpsc::Receiver<(AgentEvent, EventContext, EventPriority)>) {
         // Start event listener
         let self_clone = self.clone();
         tokio::spawn(async move {
             self_clone.listen_for_events().await;
         });
 
+        // Shared receiver across workers (competing-consumers pattern).
+        let shared_receiver = Arc::new(tokio::sync::Mutex::new(receiver));
+
         // Start worker pool
         for worker_id in 0..self.config.worker_count {
             let self_clone = self.clone();
-            let receiver_clone = receiver.resubscribe();
-            
+            let receiver_clone = shared_receiver.clone();
+
             tokio::spawn(async move {
                 self_clone.worker_loop(worker_id, receiver_clone).await;
             });
@@ -230,7 +232,7 @@ impl EventDrivenMemory {
     }
 
     /// Worker loop for processing events
-    async fn worker_loop(&self, worker_id: usize, mut receiver: mpsc::Receiver<(AgentEvent, EventContext, EventPriority)>) {
+    async fn worker_loop(&self, worker_id: usize, receiver: Arc<tokio::sync::Mutex<mpsc::Receiver<(AgentEvent, EventContext, EventPriority)>>>) {
         info!("Event worker {} started", worker_id);
 
         loop {
@@ -238,7 +240,12 @@ impl EventDrivenMemory {
                 break;
             }
 
-            match receiver.recv().await {
+            let next = {
+                let mut rx = receiver.lock().await;
+                rx.recv().await
+            };
+
+            match next {
                 Some((event, context, priority)) => {
                     let start = std::time::Instant::now();
                     
@@ -448,6 +455,7 @@ impl EventDrivenMemory {
             AgentEvent::BackgroundThinkingTriggered { .. } => "BackgroundThinkingTriggered".to_string(),
             AgentEvent::BackgroundThinkingResult { .. } => "BackgroundThinkingResult".to_string(),
             AgentEvent::CoreMemoryUpdated { .. } => "CoreMemoryUpdated".to_string(),
+            AgentEvent::InsightLearningSignal { .. } => "InsightLearningSignal".to_string(),
         }
     }
 
@@ -499,7 +507,7 @@ impl EventHandler for KnowledgeGraphUpdateHandler {
     }
 
     async fn handle(&self, event: &AgentEvent, _context: &EventContext) -> Result<()> {
-        if let AgentEvent::ToolExecutionFinished { tool, output } = event {
+        if let AgentEvent::ToolExecutionFinished { tool, .. } = event {
             // Update knowledge graph with tool execution results
             debug!("KnowledgeGraphUpdateHandler processing tool: {}", tool);
         }

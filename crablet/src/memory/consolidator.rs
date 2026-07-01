@@ -11,7 +11,7 @@ use tokio::sync::{Mutex, Notify};
 use tracing::info;
 
 pub struct MemoryConsolidator {
-    llm: Arc<Box<dyn LlmClient>>,
+    llm: Arc<dyn LlmClient>,
     vector_store: Option<Arc<VectorStore>>,
     event_bus: Option<Arc<EventBus>>,
     last_consolidation: Arc<Mutex<HashMap<String, Instant>>>,
@@ -22,7 +22,7 @@ pub struct MemoryConsolidator {
 
 impl MemoryConsolidator {
     pub fn new(
-        llm: Arc<Box<dyn LlmClient>>,
+        llm: Arc<dyn LlmClient>,
         vector_store: Option<Arc<VectorStore>>,
         event_bus: Option<Arc<EventBus>>,
     ) -> Self {

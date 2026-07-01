@@ -28,11 +28,11 @@ use std::sync::Arc;
 use std::collections::{HashMap, VecDeque};
 use std::time::Duration;
 use tokio::sync::RwLock;
-use tracing::{info, warn, debug};
-use chrono::{DateTime, Utc, Timelike};
+use tracing::{warn, debug};
+use chrono::{DateTime, Utc, Timelike, Datelike};
 use serde::{Deserialize, Serialize};
 
-use crate::events::{AgentEvent, EventBus};
+use crate::events::EventBus;
 use crate::memory::manager::MemoryManager;
 use crate::knowledge::vector_store::VectorStore;
 use crate::cognitive::llm::LlmClient;
@@ -152,7 +152,7 @@ pub struct PredictiveMemory {
     event_bus: Arc<EventBus>,
     memory_manager: Arc<MemoryManager>,
     vector_store: Option<Arc<VectorStore>>,
-    llm: Arc<Box<dyn LlmClient>>,
+    llm: Arc<dyn LlmClient>,
     /// Pattern history
     pattern_history: Arc<RwLock<VecDeque<String>>>,
     /// Learned patterns
@@ -171,7 +171,7 @@ impl PredictiveMemory {
         event_bus: Arc<EventBus>,
         memory_manager: Arc<MemoryManager>,
         vector_store: Option<Arc<VectorStore>>,
-        llm: Arc<Box<dyn LlmClient>>,
+        llm: Arc<dyn LlmClient>,
     ) -> Self {
         Self {
             config,

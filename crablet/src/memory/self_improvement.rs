@@ -29,7 +29,7 @@ use std::sync::Arc;
 use std::collections::{HashMap, VecDeque};
 use std::time::Duration;
 use tokio::sync::RwLock;
-use tracing::{info, warn, debug};
+use tracing::{info, warn};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
@@ -196,8 +196,9 @@ impl SelfImprovementLoop {
 
     /// Register an optimizable component
     pub async fn register_component(&self, component: OptimizableComponent) {
-        self.components.write().await.insert(component.name.clone(), component);
-        info!("Registered optimizable component: {}", component.name);
+        let component_name = component.name.clone();
+        self.components.write().await.insert(component_name.clone(), component);
+        info!("Registered optimizable component: {}", component_name);
     }
 
     /// Record a performance metric

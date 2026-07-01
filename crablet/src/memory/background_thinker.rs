@@ -163,7 +163,7 @@ pub struct BackgroundThinker {
     config: BackgroundThinkerConfig,
     event_bus: Arc<EventBus>,
     memory_manager: Arc<MemoryManager>,
-    llm: Arc<Box<dyn LlmClient>>,
+    llm: Arc<dyn LlmClient>,
     /// Generated insights storage
     insights: Arc<RwLock<Vec<Insight>>>,
     /// Statistics
@@ -177,7 +177,7 @@ impl BackgroundThinker {
         config: BackgroundThinkerConfig,
         event_bus: Arc<EventBus>,
         memory_manager: Arc<MemoryManager>,
-        llm: Arc<Box<dyn LlmClient>>,
+        llm: Arc<dyn LlmClient>,
     ) -> Self {
         Self {
             config,
@@ -273,6 +273,7 @@ impl BackgroundThinker {
         }
 
         // Store insights
+        let insights_count = insights.len();
         {
             let mut stored_insights = self.insights.write().await;
             for insight in insights {
@@ -302,7 +303,7 @@ impl BackgroundThinker {
 
         // Publish completion event
         self.event_bus.publish(AgentEvent::BackgroundThinkingResult {
-            insights: format!("Generated {} insights", insights.len()),
+            insights: format!("Generated {} insights", insights_count),
             suggested_actions: vec![],
             memories_updated: vec![],
         });

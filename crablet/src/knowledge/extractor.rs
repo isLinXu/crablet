@@ -6,7 +6,7 @@ use std::env;
 use std::sync::Arc;
 
 pub struct KnowledgeExtractor {
-    llm: Arc<Box<dyn LlmClient>>,
+    llm: Arc<dyn LlmClient>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -33,7 +33,7 @@ impl KnowledgeExtractor {
         let model = env::var("OPENAI_MODEL_NAME").unwrap_or_else(|_| "gpt-4o-mini".to_string());
         let client = OpenAiClient::new(&model)?;
         Ok(Self {
-            llm: Arc::new(Box::new(client)),
+            llm: Arc::new(client) as Arc<dyn LlmClient>,
         })
     }
 

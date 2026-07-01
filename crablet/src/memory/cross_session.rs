@@ -31,12 +31,11 @@ use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 use tokio::sync::RwLock;
 use tracing::{info, warn, debug};
-use chrono::{DateTime, Utc, Duration as ChronoDuration};
+use chrono::{DateTime, Utc, Timelike};
 use serde::{Deserialize, Serialize};
 
 use crate::events::{AgentEvent, EventBus};
 use crate::memory::manager::MemoryManager;
-use crate::memory::core::{CoreMemory, CoreMemoryBlock};
 use crate::knowledge::vector_store::VectorStore;
 use crate::cognitive::llm::LlmClient;
 use crate::types::Message;
@@ -229,7 +228,7 @@ pub struct CrossSessionFusion {
     event_bus: Arc<EventBus>,
     memory_manager: Arc<MemoryManager>,
     vector_store: Option<Arc<VectorStore>>,
-    llm: Arc<Box<dyn LlmClient>>,
+    llm: Arc<dyn LlmClient>,
     /// User profiles
     profiles: Arc<RwLock<HashMap<String, UnifiedUserProfile>>>,
     /// Session index
@@ -246,7 +245,7 @@ impl CrossSessionFusion {
         event_bus: Arc<EventBus>,
         memory_manager: Arc<MemoryManager>,
         vector_store: Option<Arc<VectorStore>>,
-        llm: Arc<Box<dyn LlmClient>>,
+        llm: Arc<dyn LlmClient>,
     ) -> Self {
         Self {
             config,
@@ -341,6 +340,7 @@ impl CrossSessionFusion {
             .cloned()
             .collect();
         drop(sessions);
+        let sessions_count = sessions_to_analyze.len() as u64;
 
         // 1. Identity Resolution
         let identity_groups = if self.config.enable_identity_resolution {
@@ -359,7 +359,7 @@ impl CrossSessionFusion {
         {
             let mut stats = self.stats.write().await;
             stats.total_fusion_runs += 1;
-            stats.sessions_analyzed += sessions_to_analyze.len() as u64;
+            stats.sessions_analyzed += sessions_count;
             stats.last_fusion = Some(Utc::now());
 
             if stats.total_fusion_runs == 1 {

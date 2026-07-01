@@ -11,13 +11,13 @@ use tracing::{info, warn};
 #[derive(Clone)]
 pub struct KnowledgeGraph {
     graph: Arc<Graph>,
-    llm: Arc<Box<dyn LlmClient>>,
+    llm: Arc<dyn LlmClient>,
 }
 
 #[cfg(not(feature = "knowledge"))]
 #[derive(Clone)]
 pub struct KnowledgeGraph {
-    llm: Arc<Box<dyn LlmClient>>,
+    llm: Arc<dyn LlmClient>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -33,7 +33,7 @@ impl KnowledgeGraph {
         uri: &str,
         user: &str,
         pass: &str,
-        llm: Arc<Box<dyn LlmClient>>,
+        llm: Arc<dyn LlmClient>,
     ) -> Result<Self> {
         let graph = Graph::new(uri, user, pass)
             .await
@@ -50,7 +50,7 @@ impl KnowledgeGraph {
         _uri: &str,
         _user: &str,
         _pass: &str,
-        llm: Arc<Box<dyn LlmClient>>,
+        llm: Arc<dyn LlmClient>,
     ) -> Result<Self> {
         Ok(Self { llm })
     }

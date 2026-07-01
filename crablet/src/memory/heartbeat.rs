@@ -97,7 +97,7 @@ pub struct HeartbeatWorker {
     /// Memory manager reference
     memory_manager: Arc<MemoryManager>,
     /// LLM client for background thinking
-    llm: Arc<Box<dyn LlmClient>>,
+    llm: Arc<dyn LlmClient>,
     /// Statistics
     stats: Arc<RwLock<HeartbeatStats>>,
     /// Shutdown signal
@@ -110,7 +110,7 @@ impl HeartbeatWorker {
         config: HeartbeatConfig,
         event_bus: Arc<EventBus>,
         memory_manager: Arc<MemoryManager>,
-        llm: Arc<Box<dyn LlmClient>>,
+        llm: Arc<dyn LlmClient>,
     ) -> Self {
         Self {
             config,

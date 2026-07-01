@@ -27,7 +27,7 @@
 
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{info, error};
+use tracing::info;
 
 use crate::events::EventBus;
 use crate::memory::manager::MemoryManager;
@@ -118,7 +118,7 @@ impl AlwaysOnMemory {
         event_bus: Arc<EventBus>,
         memory_manager: Arc<MemoryManager>,
         vector_store: Option<Arc<VectorStore>>,
-        llm: Arc<Box<dyn LlmClient>>,
+        llm: Arc<dyn LlmClient>,
     ) -> Result<Self> {
         let mut system = Self {
             config: config.clone(),
@@ -164,7 +164,7 @@ impl AlwaysOnMemory {
                 None, // consolidator
             );
             let event_arc = Arc::new(event_system);
-            event_arc.start(receiver);
+            event_arc.clone().start(receiver);
             system.event_driven = Some(event_arc);
         }
 

@@ -281,7 +281,7 @@ impl MemoryGardener {
         for memory_quality in memories_to_evaluate {
             let action = self.evaluate_action(&memory_quality, now).await?;
             
-            match action {
+            match &action {
                 GardenerAction::Prune => {
                     if self.config.enable_pruning {
                         if let Err(e) = self.remove_memory(&memory_quality.memory_id).await {
@@ -304,7 +304,7 @@ impl MemoryGardener {
                 }
                 GardenerAction::Consolidate { target_id } => {
                     if self.config.enable_consolidation {
-                        if let Err(e) = self.consolidate_memories(&memory_quality.memory_id, &target_id).await {
+                        if let Err(e) = self.consolidate_memories(&memory_quality.memory_id, target_id).await {
                             warn!("Failed to consolidate memories: {}", e);
                         } else {
                             result.memories_consolidated += 1;
