@@ -37,7 +37,6 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "resources": ["../frontend/dist"],
     "externalBin": ["binaries/crablet"],
     "copyright": "© 2026 Crablet",
     "category": "Productivity",

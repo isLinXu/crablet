@@ -68,8 +68,8 @@ fn restart_sidecar(app: &tauri::AppHandle) {
     if let Some(child) = state.0.lock().unwrap().take() {
         let _ = child.kill();
     }
-    // 重新 spawn。
-    match spawn_sidecar(app) {
+    // 重新 spawn（带 CORS 环境变量）。
+    match spawn_sidecar_with_cors(app) {
         Ok(child) => {
             *state.0.lock().unwrap() = Some(child);
             eprintln!("[crablet-desktop] ✅ sidecar 已重启（API Key 更新生效）");
@@ -172,11 +172,44 @@ fn start_log_reader(app: tauri::AppHandle, mut rx: tauri::async_runtime::Receive
 /// 启动 crablet sidecar，注入 CRABLET_ALLOW_ANY_ORIGIN=true 环境变量。
 /// 对于本地桌面应用，允许所有跨域请求是安全的（无安全风险）。
 fn spawn_sidecar_with_cors(app: &tauri::AppHandle) -> Result<CommandChild, String> {
-    // 设置 CRABLET_ALLOW_ANY_ORIGIN=true
+    // 通过子进程 env 注入 CORS 放开标志（不使用 std::env::set_var，Rust 1.80+ 多线程下不安全）
     // 本地桌面应用无公网暴露风险，CORS 限制可安全放开
-    std::env::set_var("CRABLET_ALLOW_ANY_ORIGIN", "true");
+    spawn_sidecar_with_env(app, &[("CRABLET_ALLOW_ANY_ORIGIN".to_string(), "true".to_string())])
+}
 
-    spawn_sidecar(app)
+/// 带额外环境变量启动 sidecar（用于注入 CORS 等运行时配置）。
+fn spawn_sidecar_with_env(
+    app: &tauri::AppHandle,
+    extra_envs: &[(String, String)],
+) -> Result<CommandChild, String> {
+    let api_key_state = app.state::<ApiKeyState>();
+    let mut envs = collect_envs(&api_key_state.0);
+    envs.extend_from_slice(extra_envs);
+    let port_args = ["serve-web", "--port", &SERVE_PORT.to_string()];
+
+    // 尝试 1: Tauri sidecar API（会自动追加 target triple 后缀查找二进制）
+    match app.shell().sidecar("crablet") {
+        Ok(cmd) => {
+            eprintln!("[crablet-desktop] 尝试 Tauri sidecar API 启动...");
+            let cmd = cmd.args(port_args).envs(envs.clone());
+            match cmd.spawn() {
+                Ok((rx, child)) => {
+                    start_log_reader(app.clone(), rx);
+                    eprintln!("[crablet-desktop] ✅ sidecar 启动成功 (Tauri API)");
+                    return Ok(child);
+                }
+                Err(e) => {
+                    eprintln!("[crablet-desktop] Tauri sidecar API 启动失败: {}，尝试手动查找...", e);
+                }
+            }
+        }
+        Err(e) => {
+            eprintln!("[crablet-desktop] Tauri sidecar API 定位失败: {}，尝试手动查找...", e);
+        }
+    }
+
+    // 尝试 2: 手动查找 sidecar 二进制
+    spawn_sidecar_manual(app, &envs, &port_args)
 }
 
 /// 手动查找并启动 sidecar 二进制（当 Tauri sidecar API 失败时的回退方案）。
@@ -249,6 +282,34 @@ fn spawn_sidecar_manual(
     ))
 }
 
+/// 前端调用：手动启动 sidecar（用于首次配置后触发）。
+#[tauri::command]
+async fn start_sidecar(app: tauri::AppHandle) -> Result<String, String> {
+    let state = app.state::<SidecarState>();
+    // 如果已有 sidecar 在运行，直接返回
+    if state.0.lock().unwrap().is_some() {
+        return Ok("sidecar already running".to_string());
+    }
+    drop(state);
+
+    match spawn_sidecar_with_cors(&app) {
+        Ok(child) => {
+            let state = app.state::<SidecarState>();
+            *state.0.lock().unwrap() = Some(child);
+            Ok("sidecar started".to_string())
+        }
+        Err(e) => Err(e),
+    }
+}
+
+/// 前端调用：检查 sidecar 是否在运行。
+#[tauri::command]
+fn is_sidecar_running(app: tauri::AppHandle) -> bool {
+    let state = app.state::<SidecarState>();
+    let is_running = state.0.lock().unwrap().is_some();
+    is_running
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
@@ -259,7 +320,9 @@ fn main() {
             save_api_key,
             has_api_key,
             has_api_key_async,
-            server_url
+            server_url,
+            start_sidecar,
+            is_sidecar_running
         ])
         .setup(|app| {
             let handle = app.handle().clone();
@@ -276,21 +339,25 @@ fn main() {
                 }
             }
 
-            // 启动 sidecar 服务，注入 CRABLET_ALLOW_ANY_ORIGIN=true。
-            // 对于本地桌面应用，允许所有跨域请求是安全的。
-            match spawn_sidecar_with_cors(&handle) {
-                Ok(child) => {
-                    let state = app.state::<SidecarState>();
-                    *state.0.lock().unwrap() = Some(child);
+            // 异步启动 sidecar：不阻塞窗口加载。
+            // 前端 BackendStatus 组件会轮询后端 health 端点，
+            // 后端就绪后自动移除覆盖层。
+            let handle_clone = handle.clone();
+            tauri::async_runtime::spawn_blocking(move || {
+                // 短暂延迟，让窗口先完成渲染
+                std::thread::sleep(std::time::Duration::from_millis(500));
+                match spawn_sidecar_with_cors(&handle_clone) {
+                    Ok(child) => {
+                        let state = handle_clone.state::<SidecarState>();
+                        *state.0.lock().unwrap() = Some(child);
+                        eprintln!("[crablet-desktop] ✅ sidecar 异步启动成功");
+                    }
+                    Err(e) => {
+                        eprintln!("[crablet-desktop] sidecar 异步启动失败: {}", e);
+                        let _ = handle_clone.emit("sidecar-error", e);
+                    }
                 }
-                Err(e) => {
-                    eprintln!("{}", e);
-                    let _ = handle.emit("sidecar-error", e);
-                }
-            }
-
-            // 前端 splash 页已自行轮询 http://127.0.0.1:18799 并在返回 200 后跳转，
-            // 无需 Rust 侧 wait_and_navigate。
+            });
 
             Ok(())
         })
@@ -305,13 +372,4 @@ fn main() {
         })
         .run(tauri::generate_context!())
         .expect("运行 Crablet 桌面应用时出错");
-}
-
-/// 启动 crablet sidecar，注入 CRABLET_ALLOW_ANY_ORIGIN=true 环境变量。
-fn spawn_sidecar_with_cors(app: &tauri::AppHandle) -> Result<CommandChild, String> {
-    // 设置 CRABLET_ALLOW_ANY_ORIGIN=true 允许所有跨域请求
-    // 对于本地桌面应用，这是安全的（无安全风险）
-    std::env::set_var("CRABLET_ALLOW_ANY_ORIGIN", "true");
-
-    spawn_sidecar(app)
 }
