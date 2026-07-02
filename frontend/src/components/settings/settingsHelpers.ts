@@ -33,18 +33,22 @@ export const KEY_PLACEHOLDER: Record<string, string> = {
   custom: '输入 API Key',
 };
 
-export function modelSuggestionsForVendor(vendor: string): string[] {
-  const suggestions: Record<string, string[]> = {
-    openai: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'o1-mini'],
-    anthropic: ['claude-sonnet-4-20250514', 'claude-3-5-haiku-20241022'],
-    google: ['gemini-2.0-flash', 'gemini-1.5-pro'],
-    dashscope: ['qwen-max', 'qwen-plus', 'qwen-turbo'],
-    hunyuan: ['hunyuan-lite', 'hunyuan-standard', 'hunyuan-pro'],
-    doubao: ['doubao-pro-32k', 'doubao-lite-32k'],
-    ollama: ['llama3', 'mistral', 'codellama'],
-    custom: [],
-  };
-  return suggestions[vendor] || [];
+export const VENDOR_DEFAULTS: Record<string, { endpoint: string; chatModels: string[]; imageModels?: string[]; keyHint?: string; keyFormat?: string[]; permission?: string; cors?: string }> = {
+  openai: { endpoint: 'https://api.openai.com/v1', chatModels: ['gpt-4o', 'gpt-4o-mini'], imageModels: ['dall-e-3'], keyHint: 'sk-...', keyFormat: ['sk-'], permission: 'openai', cors: 'enabled' },
+  anthropic: { endpoint: 'https://api.anthropic.com/v1', chatModels: ['claude-sonnet-4-20250514', 'claude-3-5-haiku-20241022'], keyHint: 'sk-ant-...', keyFormat: ['sk-ant-'], permission: 'anthropic', cors: 'enabled' },
+  google: { endpoint: 'https://generativelanguage.googleapis.com/v1beta', chatModels: ['gemini-2.0-flash', 'gemini-1.5-pro'], keyHint: 'AIza...', keyFormat: ['AIza'], permission: 'google', cors: 'enabled' },
+  dashscope: { endpoint: 'https://dashscope.aliyuncs.com/compatible-mode/v1', chatModels: ['qwen-max', 'qwen-plus', 'qwen-turbo'], keyHint: 'sk-...', keyFormat: ['sk-'], permission: 'dashscope', cors: 'enabled' },
+  hunyuan: { endpoint: 'https://api.hunyuan.cloud.tencent.com/v1', chatModels: ['hunyuan-lite', 'hunyuan-standard', 'hunyuan-pro'], keyHint: '...', keyFormat: [], permission: 'hunyuan', cors: 'enabled' },
+  doubao: { endpoint: 'https://ark.cn-beijing.volces.com/api/v3', chatModels: ['doubao-pro-32k', 'doubao-lite-32k'], keyHint: '...', keyFormat: [], permission: 'doubao', cors: 'enabled' },
+  ollama: { endpoint: 'http://localhost:11434', chatModels: ['llama3', 'mistral', 'codellama'], keyHint: '无需 Key', keyFormat: [], permission: 'ollama', cors: 'disabled' },
+  custom: { endpoint: '', chatModels: [], keyHint: '输入 API Key', keyFormat: [], permission: 'custom', cors: 'enabled' },
+};
+
+export function modelSuggestionsForVendor(vendor: string, modelType?: 'chat' | 'image'): string[] {
+  const defaults = VENDOR_DEFAULTS[vendor];
+  if (!defaults) return [];
+  if (modelType === 'image') return defaults.imageModels || [];
+  return defaults.chatModels;
 }
 
 export function normalizeVendorName(vendor: string): string {
@@ -113,7 +117,16 @@ export function showHttpError(error: unknown): string {
   return String(error);
 }
 
-export async function verifySystemChatConfig(_baseUrl: string): Promise<{ ok: boolean; message: string }> {
+export interface SystemChatConfigParams {
+  base: string;
+  model: string;
+  key: string;
+  vendor: string;
+}
+
+export async function verifySystemChatConfig(params: SystemChatConfigParams | string): Promise<{ ok: boolean; message: string }> {
+  const base = typeof params === 'string' ? params : params.base;
+  if (!base) return { ok: false, message: 'API Base URL 为空' };
   return { ok: true, message: '配置验证通过' };
 }
 

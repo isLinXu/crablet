@@ -144,17 +144,17 @@ const StepDetailPanel: React.FC<{ step: DecisionStep }> = ({ step }) => {
         <div className="p-3 rounded-lg bg-zinc-100/50 dark:bg-zinc-800/50 space-y-2">
           <div className="flex items-center gap-2">
             <span className="text-zinc-500 w-16">提供商:</span>
-            <span className="font-medium text-zinc-700 dark:text-zinc-300">{details.vendor}</span>
+            <span className="font-medium text-zinc-700 dark:text-zinc-300">{String(details.vendor ?? '')}</span>
           </div>
           <div className="flex items-center gap-2">
             <span className="text-zinc-500 w-16">模型:</span>
-            <span className="font-medium text-zinc-700 dark:text-zinc-300">{details.model}</span>
+            <span className="font-medium text-zinc-700 dark:text-zinc-300">{String(details.model ?? '')}</span>
           </div>
           <div className="flex items-center gap-2">
             <span className="text-zinc-500 w-16">原因:</span>
-            <span className="text-zinc-600 dark:text-zinc-400">{details.reason}</span>
+            <span className="text-zinc-600 dark:text-zinc-400">{String(details.reason ?? '')}</span>
           </div>
-          {details.complexityScore !== undefined && (
+          {typeof details.complexityScore === 'number' && (
             <div className="flex items-center gap-2">
               <span className="text-zinc-500 w-16">复杂度:</span>
               <div className="flex-1 flex items-center gap-2">
@@ -178,14 +178,14 @@ const StepDetailPanel: React.FC<{ step: DecisionStep }> = ({ step }) => {
             <div>
               <div className="text-zinc-500 mb-1">System Prompt:</div>
               <div className="font-mono text-zinc-600 dark:text-zinc-400 bg-zinc-200/50 dark:bg-zinc-700/50 p-2 rounded">
-                {details.systemPrompt}
+                {String(details.systemPrompt)}
               </div>
             </div>
           )}
           {details.triggerCondition && (
             <div className="flex items-center gap-2">
               <span className="text-zinc-500">触发条件:</span>
-              <span className="text-zinc-600 dark:text-zinc-400">{details.triggerCondition}</span>
+              <span className="text-zinc-600 dark:text-zinc-400">{String(details.triggerCondition)}</span>
             </div>
           )}
         </div>
@@ -198,20 +198,20 @@ const StepDetailPanel: React.FC<{ step: DecisionStep }> = ({ step }) => {
             {details.fromParadigm && (
               <>
                 <span className="px-2 py-1 bg-zinc-200 dark:bg-zinc-700 rounded text-zinc-600 dark:text-zinc-400">
-                  {paradigmLabels[details.fromParadigm as AgentParadigm]?.label || details.fromParadigm}
+                  {paradigmLabels[details.fromParadigm as AgentParadigm]?.label || String(details.fromParadigm)}
                 </span>
                 <ArrowRightLeft className="w-4 h-4 text-zinc-400" />
               </>
             )}
             {details.toParadigm && (
               <span className="px-2 py-1 bg-purple-500/20 text-purple-400 rounded">
-                {paradigmLabels[details.toParadigm as AgentParadigm]?.label || details.toParadigm}
+                {paradigmLabels[details.toParadigm as AgentParadigm]?.label || String(details.toParadigm)}
               </span>
             )}
           </div>
           {details.paradigmReason && (
             <div className="mt-2 text-zinc-600 dark:text-zinc-400">
-              原因: {details.paradigmReason}
+              原因: {String(details.paradigmReason)}
             </div>
           )}
         </div>
@@ -222,12 +222,12 @@ const StepDetailPanel: React.FC<{ step: DecisionStep }> = ({ step }) => {
         <div className="p-3 rounded-lg bg-zinc-100/50 dark:bg-zinc-800/50 space-y-2">
           <div className="flex items-center gap-2">
             <span className="text-zinc-500 w-16">代理:</span>
-            <span className="font-medium text-zinc-700 dark:text-zinc-300">{details.agentName}</span>
+            <span className="font-medium text-zinc-700 dark:text-zinc-300">{String(details.agentName)}</span>
           </div>
           {details.agentType && (
             <div className="flex items-center gap-2">
               <span className="text-zinc-500 w-16">类型:</span>
-              <span className="text-zinc-600 dark:text-zinc-400">{details.agentType}</span>
+              <span className="text-zinc-600 dark:text-zinc-400">{String(details.agentType)}</span>
             </div>
           )}
           {details.params && Object.keys(details.params).length > 0 && (
@@ -251,19 +251,19 @@ const StepDetailPanel: React.FC<{ step: DecisionStep }> = ({ step }) => {
           {details.thought && (
             <div>
               <div className="text-zinc-500 mb-1">思考:</div>
-              <div className="text-zinc-700 dark:text-zinc-300">{details.thought}</div>
+              <div className="text-zinc-700 dark:text-zinc-300">{String(details.thought)}</div>
             </div>
           )}
           {details.action && (
             <div>
               <div className="text-zinc-500 mb-1">行动:</div>
-              <div className="text-zinc-700 dark:text-zinc-300">{details.action}</div>
+              <div className="text-zinc-700 dark:text-zinc-300">{String(details.action)}</div>
             </div>
           )}
           {details.observation && (
             <div>
               <div className="text-zinc-500 mb-1">观察:</div>
-              <div className="text-zinc-600 dark:text-zinc-400">{details.observation}</div>
+              <div className="text-zinc-600 dark:text-zinc-400">{String(details.observation)}</div>
             </div>
           )}
         </div>
@@ -274,15 +274,15 @@ const StepDetailPanel: React.FC<{ step: DecisionStep }> = ({ step }) => {
         <div className="p-3 rounded-lg bg-zinc-100/50 dark:bg-zinc-800/50 space-y-2">
           <div className="flex items-center gap-2">
             <span className="text-zinc-500 w-16">工具:</span>
-            <span className="font-medium text-zinc-700 dark:text-zinc-300">{details.toolName}</span>
+            <span className="font-medium text-zinc-700 dark:text-zinc-300">{String(details.toolName)}</span>
           </div>
-          {details.toolDuration && (
+          {typeof details.toolDuration === 'number' && (
             <div className="flex items-center gap-2">
               <span className="text-zinc-500 w-16">耗时:</span>
               <span className="text-zinc-600 dark:text-zinc-400">{details.toolDuration}ms</span>
             </div>
           )}
-          {details.toolInput && (
+          {details.toolInput != null && (
             <div>
               <div className="text-zinc-500 mb-1">输入:</div>
               <pre className="text-xs bg-zinc-200/50 dark:bg-zinc-700/50 p-2 rounded overflow-x-auto">
@@ -290,7 +290,7 @@ const StepDetailPanel: React.FC<{ step: DecisionStep }> = ({ step }) => {
               </pre>
             </div>
           )}
-          {details.toolOutput && (
+          {details.toolOutput != null && (
             <div>
               <div className="text-zinc-500 mb-1">输出:</div>
               <pre className="text-xs bg-zinc-200/50 dark:bg-zinc-700/50 p-2 rounded overflow-x-auto">
@@ -307,13 +307,13 @@ const StepDetailPanel: React.FC<{ step: DecisionStep }> = ({ step }) => {
           {details.tokenCount !== undefined && (
             <div className="flex items-center gap-2">
               <span className="text-zinc-500 w-20">Token 数:</span>
-              <span className="text-zinc-700 dark:text-zinc-300">{details.tokenCount}</span>
+              <span className="text-zinc-700 dark:text-zinc-300">{String(details.tokenCount)}</span>
             </div>
           )}
           {details.contextWindow !== undefined && (
             <div className="flex items-center gap-2">
               <span className="text-zinc-500 w-20">上下文窗口:</span>
-              <span className="text-zinc-700 dark:text-zinc-300">{details.contextWindow}</span>
+              <span className="text-zinc-700 dark:text-zinc-300">{String(details.contextWindow)}</span>
             </div>
           )}
           {details.memoryAccessed !== undefined && (
@@ -333,15 +333,15 @@ const StepDetailPanel: React.FC<{ step: DecisionStep }> = ({ step }) => {
           {details.previousState && details.currentState && (
             <div className="flex items-center gap-2">
               <span className="px-2 py-1 bg-zinc-200 dark:bg-zinc-700 rounded text-zinc-600 dark:text-zinc-400">
-                {details.previousState}
+                {String(details.previousState)}
               </span>
               <ArrowRightLeft className="w-4 h-4 text-zinc-400" />
               <span className="px-2 py-1 bg-violet-500/20 text-violet-400 rounded">
-                {details.currentState}
+                {String(details.currentState)}
               </span>
             </div>
           )}
-          {details.stateDiff && (
+          {details.stateDiff != null && (
             <div>
               <div className="text-zinc-500 mb-1">变更详情:</div>
               <pre className="text-xs bg-zinc-200/50 dark:bg-zinc-700/50 p-2 rounded overflow-x-auto">
@@ -353,7 +353,7 @@ const StepDetailPanel: React.FC<{ step: DecisionStep }> = ({ step }) => {
       )}
 
       {/* 置信度详情 */}
-      {type === 'confidence' && details.confidenceScore !== undefined && (
+      {type === 'confidence' && typeof details.confidenceScore === 'number' && (
         <div className="p-3 rounded-lg bg-zinc-100/50 dark:bg-zinc-800/50 space-y-2">
           <div className="flex items-center gap-2">
             <span className="text-zinc-500 w-16">置信度:</span>
@@ -371,10 +371,10 @@ const StepDetailPanel: React.FC<{ step: DecisionStep }> = ({ step }) => {
           </div>
           {details.confidenceReason && (
             <div className="text-zinc-600 dark:text-zinc-400">
-              评估依据: {details.confidenceReason}
+              评估依据: {String(details.confidenceReason)}
             </div>
           )}
-          {details.alternatives && details.alternatives.length > 0 && (
+          {Array.isArray(details.alternatives) && details.alternatives.length > 0 && (
             <div>
               <div className="text-zinc-500 mb-1">备选方案:</div>
               <div className="flex flex-wrap gap-1">
@@ -874,16 +874,20 @@ export const AgentThinkingVisualization: React.FC<AgentThinkingVisualizationProp
                               {(step.confidence * 100).toFixed(0)}%
                             </span>
                           )}
-                          {step.metadata?.layer && (
+                          {(() => {
+                            const layer = step.metadata?.layer;
+                            if (typeof layer !== 'string') return null;
+                            return (
                             <span className={cn(
                               "text-[10px] px-1.5 py-0.5 rounded",
-                              step.metadata.layer === 'system1' ? 'bg-yellow-500/20 text-yellow-400' :
-                              step.metadata.layer === 'system2' ? 'bg-blue-500/20 text-blue-400' :
+                              layer === 'system1' ? 'bg-yellow-500/20 text-yellow-400' :
+                              layer === 'system2' ? 'bg-blue-500/20 text-blue-400' :
                               'bg-purple-500/20 text-purple-400'
                             )}>
-                              {cognitiveLayerLabels[step.metadata.layer].label}
+                              {cognitiveLayerLabels[layer as CognitiveLayer].label}
                             </span>
-                          )}
+                            );
+                          })()}
                           {hasDetails && (
                             <button
                               onClick={() => toggleStepDetail(step.id)}

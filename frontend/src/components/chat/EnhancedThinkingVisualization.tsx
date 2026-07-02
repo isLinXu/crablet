@@ -333,7 +333,7 @@ export const EnhancedThinkingVisualization: React.FC<EnhancedThinkingVisualizati
         completed_at: step.timestamp + (step.duration || 0),
         duration_ms: step.duration,
         confidence: step.confidence,
-        depth: step.metadata?.depth || 0,
+        depth: typeof step.metadata?.depth === 'number' ? step.metadata.depth : 0,
         metadata: step.metadata || {},
       };
     });

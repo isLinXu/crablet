@@ -112,7 +112,7 @@ export function useActivityState() {
   const flowMatrix24h: Record<string, number> = {};
   const transitionSessions: Record<string, TransitionSession[]> = {};
 
-  const getAllocatorMode = (_sessionId: string) => 'bar' as const;
+  const getAllocatorMode = (_sessionId: string): 'bar' | 'stacked' => 'bar';
   const setAllocatorModeFor = (_mode: 'bar' | 'stacked', _sessionId: string) => {};
   const exportRagSnapshot = () => {};
   const copyPinnedSummary = () => {};

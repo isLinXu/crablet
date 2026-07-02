@@ -6,7 +6,7 @@ import { useRef } from 'react';
 import toast from 'react-hot-toast';
 import { convertChatToCanvas, downloadWorkflow, readWorkflowFromFile } from '@/utils/chatToCanvas';
 import { useNavigate } from 'react-router-dom';
-import type { ExtendedMessage } from '../../../store/chatStore';
+import type { ExtendedMessage } from '../../store/chatStore';
 
 interface ChatHeaderProps {
   isConnected: boolean;

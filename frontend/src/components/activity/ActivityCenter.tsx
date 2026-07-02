@@ -256,7 +256,7 @@ export const ActivityCenter: React.FC = () => {
                   <div className="text-xs text-gray-600 dark:text-gray-300 space-y-1">
                     <div className="inline-flex items-center gap-1 mr-2 px-2 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300"><Workflow className="w-3 h-3" /> Swarm</div>
                     <div>{item.from} → {item.to} · {item.eventType}</div>
-                    <div>{formatSwarmContent(item.eventType, item.content)}</div>
+                    <div>{formatSwarmContent(item.eventType || '', item.content)}</div>
                     {item.eventType === 'AllocatorDecision' && (() => {
                       const parsed = parseAllocatorDecision(item.eventType, item.content);
                       if (!parsed || parsed.candidates.length === 0) return null;

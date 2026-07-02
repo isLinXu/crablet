@@ -6,8 +6,6 @@ import type { ApiKeyInfo, McpOverview, RoutingEvaluationReport, RoutingSettings 
 import { settingsService } from '@/services/settingsService';
 import { useModelStore, type ModelProvider } from '@/store/modelStore';
 import {
-  type VendorName,
-  type SystemConfig,
   detectVendor,
   modelSuggestionsForVendor,
   vendorToEnvVendor,
@@ -15,7 +13,12 @@ import {
   validateVendorModel,
   showHttpError,
   verifySystemChatConfig,
+  VENDOR_DEFAULTS,
 } from './settingsHelpers';
+
+// Local type definitions (not exported by settingsHelpers)
+type VendorName = string;
+type SystemConfig = Record<string, unknown>;
 
 export interface UseSettingsState {
   // API settings
@@ -63,7 +66,7 @@ export interface UseSettingsState {
   savingSystemConfig: boolean;
 
   // Derived
-  currentVendor: VendorName | null;
+  currentVendor: string;
   keyPatternIssue: string;
 
   // Actions
@@ -82,8 +85,8 @@ export interface UseSettingsState {
   handleSaveSystemConfig: () => Promise<void>;
   handleSetAsSystemDefault: (p: ModelProvider) => Promise<void>;
   handleAddProvider: () => void;
-  applySystemVendorPreset: (vendor: VendorName) => void;
-  updateProviderVendor: (id: string, vendor: VendorName) => void;
+  applySystemVendorPreset: (vendor: string) => void;
+  updateProviderVendor: (id: string, vendor: string) => void;
   updateProviderModelType: (id: string, modelType: 'chat' | 'image') => void;
 }
 
@@ -157,7 +160,7 @@ export function useSettingsState(): UseSettingsState {
     setDraftProviders(providers);
     setLoadingSystemConfig(true);
     settingsService.getSystemConfig()
-      .then((res) => setSystemConfig(res?.data || res || {}))
+      .then((res) => setSystemConfig((res?.data || res || {}) as SystemConfig))
       .catch((e) => console.error('Failed to load system config', e))
       .finally(() => setLoadingSystemConfig(false));
   }, []);
@@ -221,7 +224,7 @@ export function useSettingsState(): UseSettingsState {
     }
 
     if (providerMode) {
-      const model = modelSuggestionsForVendor(providerMode, 'chat')[0] || 'qwen-plus';
+      const model = modelSuggestionsForVendor(providerMode)[0] || 'qwen-plus';
       upsertProvider({
         id: `${providerMode.toLowerCase()}-${model.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
         vendor: providerMode, model,
@@ -241,7 +244,7 @@ export function useSettingsState(): UseSettingsState {
         await settingsService.updateSystemConfig(newConfig);
         const confirmed: any = await settingsService.getSystemConfig();
         const confirmedConfig = confirmed?.data || confirmed || {};
-        setSystemConfig((prev) => ({ ...prev, ...confirmedConfig }));
+        setSystemConfig((prev: SystemConfig) => ({ ...prev, ...confirmedConfig }));
         const expected = { openai_api_key: newConfig.openai_api_key || '', openai_api_base: newConfig.openai_api_base || '', openai_model_name: newConfig.openai_model_name || '', llm_vendor: newConfig.llm_vendor || '' };
         const actual = { openai_api_key: confirmedConfig.openai_api_key || '', openai_api_base: confirmedConfig.openai_api_base || '', openai_model_name: confirmedConfig.openai_model_name || '', llm_vendor: confirmedConfig.llm_vendor || '' };
         if (JSON.stringify(expected) !== JSON.stringify(actual)) toast.error('后端配置回读校验不一致，请检查 .env 文件权限或路径');
@@ -254,7 +257,7 @@ export function useSettingsState(): UseSettingsState {
   const handleCopyEndpoint = useCallback(async () => {
     if (!currentVendor) return;
     const { VENDOR_GUIDE } = await import('./settingsHelpers');
-    const text = VENDOR_GUIDE[currentVendor].endpoint;
+    const text = VENDOR_GUIDE[currentVendor] || '';
     const afterCopied = () => {
       if (autoFillEndpointOnCopy) {
         setApiBaseUrl(text);
@@ -296,7 +299,7 @@ export function useSettingsState(): UseSettingsState {
         if (res.status === 200) toast.success('连接测试通过：API可用');
         else if (res.status === 401) toast.error('连接到网关但鉴权失败(401)。请清空或更换Gateway Token后再试。');
         else if (res.status === 404) toast.error('连接到服务但路径不匹配(404)。请确认API地址应以 /api 结尾。');
-        else showHttpError(res.status, '连接测试失败');
+        else toast.error(`连接测试失败：${showHttpError(res.status)}`);
         return;
       }
       if (!rawKey) { toast.error('请先填写该厂商的 API Key'); return; }
@@ -307,11 +310,11 @@ export function useSettingsState(): UseSettingsState {
         if (autoVendor === 'OpenAI') {
           const res = await fetch(`${normalizedBase.replace(/\/v1$/i, '')}/v1/models`, { headers: { Authorization: `Bearer ${rawKey}` } });
           if (!res.ok) throw new Error(`OpenAI 模型列表获取失败：HTTP ${res.status}`);
-          discoveredModels.push(...((await res.json()) as { data?: Array<{ id?: string }> }).data?.map((x) => x?.id).filter(Boolean) ?? []);
+          discoveredModels.push(...((await res.json()) as { data?: Array<{ id?: string }> }).data?.map((x) => x?.id).filter((id): id is string => Boolean(id)) ?? []);
         } else if (autoVendor === 'Anthropic') {
           const res = await fetch(`${normalizedBase.replace(/\/v1$/i, '')}/v1/models`, { headers: { 'x-api-key': rawKey, 'anthropic-version': '2023-06-01' } });
           if (!res.ok) throw new Error(`Anthropic 模型列表获取失败：HTTP ${res.status}`);
-          discoveredModels.push(...((await res.json()) as { data?: Array<{ id?: string }> }).data?.map((x) => x?.id).filter(Boolean) ?? []);
+          discoveredModels.push(...((await res.json()) as { data?: Array<{ id?: string }> }).data?.map((x) => x?.id).filter((id): id is string => Boolean(id)) ?? []);
         } else if (autoVendor === 'Google') {
           const res = await fetch(`${normalizedBase.replace(/\?key=.*/i, '')}/models?key=${encodeURIComponent(rawKey)}`);
           if (!res.ok) throw new Error(`Google 模型列表获取失败：HTTP ${res.status}`);
@@ -319,17 +322,17 @@ export function useSettingsState(): UseSettingsState {
         } else if (autoVendor === 'Aliyun') {
           const base = normalizedBase.replace(/\/+$/, '');
           const json = await fetchFirstAvailable<{ data?: Array<{ id?: string }> }>([`${base.replace(/\/v1$/i, '')}/v1/models`, `${base.replace(/\/compatible-mode\/v1$/i, '')}/compatible-mode/v1/models`], { Authorization: `Bearer ${rawKey}` });
-          discoveredModels.push(...(json?.data?.map((x) => x?.id).filter(Boolean)) ?? []);
+          discoveredModels.push(...(json?.data?.map((x) => x?.id).filter((id): id is string => Boolean(id))) ?? []);
           if (!discoveredModels.length) discoveredModels.push('qwen-plus', 'qwen-turbo', 'qwen-max', 'qwen2.5-72b-instruct');
         } else if (autoVendor === 'ByteDance') {
           const base = normalizedBase.replace(/\/+$/, '');
           const json = await fetchFirstAvailable<{ data?: Array<{ id?: string }> }>([`${base.replace(/\/api\/v3$/i, '')}/api/v3/models`, `${base.replace(/\/v1$/i, '')}/v1/models`], { Authorization: `Bearer ${rawKey}` });
-          discoveredModels.push(...(json?.data?.map((x) => x?.id).filter(Boolean)) ?? []);
+          discoveredModels.push(...(json?.data?.map((x) => x?.id).filter((id): id is string => Boolean(id))) ?? []);
           if (!discoveredModels.length) discoveredModels.push('doubao-pro-32k', 'doubao-pro-4k', 'doubao-lite-32k');
         } else if (autoVendor === 'Tencent') {
           const base = normalizedBase.replace(/\/+$/, '');
           const json = await fetchFirstAvailable<{ data?: Array<{ id?: string; name?: string }> }>([`${base.replace(/\/v1$/i, '')}/v1/models`, `${base.replace(/\/hunyuan\/v1$/i, '')}/hunyuan/v1/models`], { Authorization: `Bearer ${rawKey}` });
-          discoveredModels.push(...(json?.data?.map((x) => x?.id || x?.name).filter(Boolean)) ?? []);
+          discoveredModels.push(...(json?.data?.map((x) => x?.id || x?.name).filter((id): id is string => Boolean(id))) ?? []);
           if (!discoveredModels.length) discoveredModels.push('hunyuan-pro', 'hunyuan-standard', 'hunyuan-lite');
         }
         const picked = [...new Set(discoveredModels)].slice(0, 20);
@@ -360,7 +363,7 @@ export function useSettingsState(): UseSettingsState {
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       const m = msg.match(/HTTP\s*(\d+)/i);
-      if (m) showHttpError(Number(m[1]), '模型同步失败');
+      if (m) toast.error(`模型同步失败：${showHttpError(Number(m[1]))}`);
       else toast.error('连接测试失败：跨域限制或网络不可达');
     } finally { setTestingConnection(false); }
   }, [apiBaseUrl, apiKey, keyPatternIssue, draftProviders, upsertProvider, fetchFirstAvailable]);
@@ -446,7 +449,7 @@ export function useSettingsState(): UseSettingsState {
     const inferredVendor = vendorToEnvVendor(detectVendor(base));
     const vendor = String(systemConfig.llm_vendor || inferredVendor || 'custom').trim().toLowerCase();
     const modelIssue = validateVendorModel(vendor, model);
-    if (modelIssue) { toast.error(modelIssue); return; }
+    if (!modelIssue.valid) { toast.error(modelIssue.message || '模型配置无效'); return; }
     setSavingSystemConfig(true);
     try {
       await verifySystemChatConfig({ base, model, key, vendor });
@@ -467,7 +470,7 @@ export function useSettingsState(): UseSettingsState {
     if ((p.modelType || 'chat') !== 'chat') { toast.error('系统默认模型必须是 chat 类型，不能使用 image 模型'); return; }
     const vendor = vendorToEnvVendor(p.vendor);
     const modelIssue = validateVendorModel(vendor, p.model);
-    if (modelIssue) { toast.error(modelIssue); return; }
+    if (!modelIssue.valid) { toast.error(modelIssue.message || '模型配置无效'); return; }
     const newConfig = { openai_api_key: p.apiKey, openai_api_base: p.apiBaseUrl, openai_model_name: p.model, llm_vendor: vendor };
     setSavingSystemConfig(true);
     try {
@@ -486,7 +489,6 @@ export function useSettingsState(): UseSettingsState {
   }, []);
 
   const applySystemVendorPreset = useCallback((vendor: VendorName) => {
-    const { VENDOR_DEFAULTS } = require('./settingsHelpers');
     const defaults = VENDOR_DEFAULTS[vendor];
     const suggestedModel = defaults.chatModels[0] || '';
     setSystemConfig((prev) => ({ ...prev, llm_vendor: vendorToEnvVendor(vendor), openai_api_base: defaults.endpoint || prev.openai_api_base || '', openai_model_name: suggestedModel || prev.openai_model_name || '' }));
@@ -496,7 +498,6 @@ export function useSettingsState(): UseSettingsState {
   const updateProviderVendor = useCallback((id: string, vendor: VendorName) => {
     setDraftProviders((prev) => prev.map((p) => {
       if (p.id !== id) return p;
-      const { VENDOR_DEFAULTS } = require('./settingsHelpers');
       const defaults = VENDOR_DEFAULTS[vendor];
       const modelType = p.modelType || 'chat';
       const suggestions = modelSuggestionsForVendor(vendor, modelType);

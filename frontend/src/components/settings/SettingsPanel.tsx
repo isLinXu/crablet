@@ -9,6 +9,7 @@ import { useSettingsState } from './useSettingsState';
 import {
   VENDOR_OPTIONS,
   VENDOR_GUIDE,
+  VENDOR_DEFAULTS,
   KEY_PLACEHOLDER,
   TROUBLESHOOTING_GUIDE,
   modelSuggestionsForVendor,
@@ -33,9 +34,9 @@ export const SettingsPanel: React.FC = () => {
   const s = useSettingsState();
 
   const systemVendorDisplay = normalizeVendorName(
-    s.systemConfig.llm_vendor
-      ? envVendorToRouteVendor(s.systemConfig.llm_vendor)
-      : (detectVendor(s.systemConfig.openai_api_base || '') || 'Custom')
+    String(s.systemConfig.llm_vendor || '')
+      ? envVendorToRouteVendor(String(s.systemConfig.llm_vendor || ''))
+      : (detectVendor(String(s.systemConfig.openai_api_base || '')) || 'Custom')
   );
 
   return (
@@ -224,23 +225,23 @@ export const SettingsPanel: React.FC = () => {
               <label className="text-sm font-medium">LLM Vendor</label>
               <div className="flex gap-2">
                 <select value={systemVendorDisplay} onChange={(e) => s.applySystemVendorPreset(e.target.value as any)} className="h-10 w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-sm">
-                  {VENDOR_OPTIONS.map((v) => <option key={v} value={v}>{v}</option>)}
+                  {VENDOR_OPTIONS.map((v) => <option key={v.value} value={v.value}>{v.label}</option>)}
                 </select>
                 <Button variant="secondary" onClick={() => s.applySystemVendorPreset(systemVendorDisplay)}>应用推荐</Button>
               </div>
             </div>
             <div className="grid gap-2">
               <label className="text-sm font-medium">OpenAI / DashScope API Key</label>
-              <Input type="password" value={s.systemConfig.openai_api_key || ''} onChange={(e) => s.setSystemConfig({ ...s.systemConfig, openai_api_key: e.target.value })} placeholder="sk-..." />
+              <Input type="password" value={String(s.systemConfig.openai_api_key ?? '')} onChange={(e) => s.setSystemConfig({ ...s.systemConfig, openai_api_key: e.target.value })} placeholder="sk-..." />
             </div>
             <div className="grid gap-2">
               <label className="text-sm font-medium">API Base URL</label>
-              <Input value={s.systemConfig.openai_api_base || ''} onChange={(e) => s.setSystemConfig({ ...s.systemConfig, openai_api_base: e.target.value })} placeholder="https://dashscope.aliyuncs.com/compatible-mode/v1" />
+              <Input value={String(s.systemConfig.openai_api_base ?? '')} onChange={(e) => s.setSystemConfig({ ...s.systemConfig, openai_api_base: e.target.value })} placeholder="https://dashscope.aliyuncs.com/compatible-mode/v1" />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2">
                 <label className="text-sm font-medium">Model Name (Cloud)</label>
-                <Input list="system-model-recommendations" value={s.systemConfig.openai_model_name || ''} onChange={(e) => s.setSystemConfig({ ...s.systemConfig, openai_model_name: e.target.value })} placeholder="qwen-plus" />
+                <Input list="system-model-recommendations" value={String(s.systemConfig.openai_model_name ?? '')} onChange={(e) => s.setSystemConfig({ ...s.systemConfig, openai_model_name: e.target.value })} placeholder="qwen-plus" />
                 <datalist id="system-model-recommendations">
                   {modelSuggestionsForVendor(systemVendorDisplay, 'chat').map((m) => <option key={m} value={m} />)}
                 </datalist>
@@ -248,7 +249,7 @@ export const SettingsPanel: React.FC = () => {
               </div>
               <div className="grid gap-2">
                 <label className="text-sm font-medium">Ollama Model (Local)</label>
-                <Input value={s.systemConfig.ollama_model || ''} onChange={(e) => s.setSystemConfig({ ...s.systemConfig, ollama_model: e.target.value })} placeholder="qwen3:4b" />
+                <Input value={String(s.systemConfig.ollama_model ?? '')} onChange={(e) => s.setSystemConfig({ ...s.systemConfig, ollama_model: e.target.value })} placeholder="qwen3:4b" />
               </div>
             </div>
             <div className="flex justify-end pt-2">
@@ -294,14 +295,14 @@ export const SettingsPanel: React.FC = () => {
                   <div className="rounded border border-amber-300/70 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-700 px-3 py-2 text-xs text-amber-800 dark:text-amber-200">
                     <div>厂商模式：{s.currentVendor}</div>
                     <div className="flex items-center justify-between gap-2">
-                      <span className="truncate">建议端点：{VENDOR_GUIDE[s.currentVendor].endpoint}</span>
+                      <span className="truncate">建议端点：{VENDOR_DEFAULTS[s.currentVendor]?.endpoint || VENDOR_GUIDE[s.currentVendor] || '-'}</span>
                       <Button size="sm" variant="secondary" onClick={s.handleCopyEndpoint}>复制端点</Button>
                     </div>
                     <label className="inline-flex items-center gap-2 mt-1">
                       <input type="checkbox" checked={s.autoFillEndpointOnCopy} onChange={(e) => s.handleToggleAutoFillEndpoint(e.target.checked)} />
                       <span>复制后自动填入API Base URL</span>
                     </label>
-                    <div>Key示例：{VENDOR_GUIDE[s.currentVendor].keyHint}</div>
+                    <div>Key示例：{KEY_PLACEHOLDER[s.currentVendor] || VENDOR_DEFAULTS[s.currentVendor]?.keyHint || '-'}</div>
                   </div>
                 )}
                 {!!s.keyPatternIssue && (
@@ -310,10 +311,11 @@ export const SettingsPanel: React.FC = () => {
                 {s.currentVendor && (
                   <div className="rounded border border-sky-300/70 bg-sky-50 dark:bg-sky-900/20 dark:border-sky-700 px-3 py-2 text-xs text-sky-800 dark:text-sky-200 space-y-1">
                     <div className="font-medium">常见排障建议</div>
-                    <div>Key格式错误：{TROUBLESHOOTING_GUIDE[s.currentVendor].keyFormat}</div>
-                    <div>Endpoint错误：{TROUBLESHOOTING_GUIDE[s.currentVendor].endpoint}</div>
-                    <div>权限不足：{TROUBLESHOOTING_GUIDE[s.currentVendor].permission}</div>
-                    <div>跨域限制：{TROUBLESHOOTING_GUIDE[s.currentVendor].cors}</div>
+                    {(TROUBLESHOOTING_GUIDE[s.currentVendor] || []).map((tip, i) => <div key={i}>· {tip}</div>)}
+                    <div>Key格式：{VENDOR_DEFAULTS[s.currentVendor]?.keyFormat?.join(', ') || '-'}</div>
+                    <div>Endpoint：{VENDOR_DEFAULTS[s.currentVendor]?.endpoint || '-'}</div>
+                    <div>权限：{VENDOR_DEFAULTS[s.currentVendor]?.permission || '-'}</div>
+                    <div>跨域：{VENDOR_DEFAULTS[s.currentVendor]?.cors || '-'}</div>
                   </div>
                 )}
               </div>
@@ -366,7 +368,7 @@ export const SettingsPanel: React.FC = () => {
               {s.draftProviders.map((p, idx) => (
                 <div key={p.id} className="rounded border border-slate-200 dark:border-slate-700 p-3 grid grid-cols-1 md:grid-cols-8 gap-2">
                   <select value={normalizeVendorName(p.vendor)} onChange={(e) => s.updateProviderVendor(p.id, e.target.value as any)} className="bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded px-2 py-2 text-sm">
-                    {VENDOR_OPTIONS.map((v) => <option key={v} value={v}>{v}</option>)}
+                    {VENDOR_OPTIONS.map((v) => <option key={v.value} value={v.value}>{v.label}</option>)}
                   </select>
                   <Input list={`provider-model-${idx}`} value={p.model} onChange={(e) => s.setDraftProviders((prev) => prev.map((x) => x.id === p.id ? { ...x, model: e.target.value } : x))} placeholder="模型名" />
                   <datalist id={`provider-model-${idx}`}>{modelSuggestionsForVendor(p.vendor, p.modelType || 'chat').map((m) => <option key={m} value={m} />)}</datalist>
