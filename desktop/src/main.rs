@@ -169,12 +169,16 @@ fn start_log_reader(app: tauri::AppHandle, mut rx: tauri::async_runtime::Receive
     });
 }
 
-/// 启动 crablet sidecar，注入 CRABLET_ALLOW_ANY_ORIGIN=true 环境变量。
-/// 对于本地桌面应用，允许所有跨域请求是安全的（无安全风险）。
+/// 启动 crablet sidecar，注入运行时环境变量。
+/// 对于本地桌面应用：
+/// - CRABLET_ALLOW_ANY_ORIGIN=true：允许所有跨域请求（无公网暴露风险）
+/// - CRABLET_AUTH_MODE=off：禁用 API token 认证（桌面端通过 keyring 管理凭证，无需额外 token）
 fn spawn_sidecar_with_cors(app: &tauri::AppHandle) -> Result<CommandChild, String> {
-    // 通过子进程 env 注入 CORS 放开标志（不使用 std::env::set_var，Rust 1.80+ 多线程下不安全）
-    // 本地桌面应用无公网暴露风险，CORS 限制可安全放开
-    spawn_sidecar_with_env(app, &[("CRABLET_ALLOW_ANY_ORIGIN".to_string(), "true".to_string())])
+    // 通过子进程 env 注入（不使用 std::env::set_var，Rust 1.80+ 多线程下不安全）
+    spawn_sidecar_with_env(app, &[
+        ("CRABLET_ALLOW_ANY_ORIGIN".to_string(), "true".to_string()),
+        ("CRABLET_AUTH_MODE".to_string(), "off".to_string()),
+    ])
 }
 
 /// 带额外环境变量启动 sidecar（用于注入 CORS 等运行时配置）。

@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { useAgentThinking } from '@/hooks/useAgentThinking';
-import type { ExtendedMessage } from '../../store/chatStore';
+import type { ExtendedMessage, TraceStep } from '@/store/chatStore';
 import { inferCognitiveLayer, type CognitiveLayer } from '@/utils/cognitive';
 import type { AgentParadigm } from '../components/chat/EnhancedThinkingVisualization';
 

@@ -45,6 +45,7 @@ echo ""
 echo "📦 Step 0: 构建前端 SPA..."
 FRONTEND_DIR="${PROJECT_ROOT}/frontend"
 FRONTEND_DIST="${PROJECT_ROOT}/frontend/dist"
+DESKTOP_UI="${DESKTOP_DIR}/ui"
 if [ ! -d "${FRONTEND_DIST}" ] || [ ! -f "${FRONTEND_DIST}/index.html" ]; then
     if [ -f "${FRONTEND_DIR}/package.json" ] && command -v npm &>/dev/null; then
         echo "   🔨 前端产物缺失，正在构建..."
@@ -59,6 +60,31 @@ if [ ! -d "${FRONTEND_DIST}" ] || [ ! -f "${FRONTEND_DIST}/index.html" ]; then
 else
     echo "   ✅ 前端产物已就绪 (${FRONTEND_DIST})"
 fi
+
+# 同步前端产物到 desktop/ui/（Tauri frontendDist 源目录）
+echo "📋 同步前端产物到 desktop/ui/..."
+mkdir -p "${DESKTOP_UI}"
+# 先清理旧文件（保留 .DS_Store）
+find "${DESKTOP_UI}" -mindepth 1 ! -name '.DS_Store' -delete 2>/dev/null
+cp -R "${FRONTEND_DIST}/." "${DESKTOP_UI}/"
+# 确保 splash.html 存在（Tauri 窗口初始页）
+if [ ! -f "${DESKTOP_UI}/splash.html" ]; then
+    echo "   ⚠️ splash.html 不在 frontend/dist/ 中，检查 frontend/public/..."
+    if [ -f "${FRONTEND_DIR}/public/splash.html" ]; then
+        cp "${FRONTEND_DIR}/public/splash.html" "${DESKTOP_UI}/"
+        echo "   ✅ splash.html 已从 frontend/public/ 复制"
+    else
+        echo "   ❌ splash.html 缺失！Tauri 窗口将无法加载初始页"
+    fi
+else
+    echo "   ✅ splash.html 已同步"
+fi
+# 确保 pdf.worker.min.mjs 存在
+if [ -f "${DESKTOP_UI}/pdf.worker.min.mjs" ]; then
+    echo "   ✅ pdf.worker.min.mjs 已同步"
+fi
+echo "   ✅ desktop/ui/ 内容:"
+ls -1 "${DESKTOP_UI}/"
 echo ""
 
 # ─── Step 1: 检查 crablet 主二进制 ───

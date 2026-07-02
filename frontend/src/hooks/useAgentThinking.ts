@@ -183,8 +183,8 @@ export function useAgentThinking(options: UseAgentThinkingOptions) {
   const popStack = useCallback((frameId: string, result?: Record<string, unknown>) => {
     updateProcess(prev => ({
       ...prev,
-      callStack: prev.callStack.map(f => 
-        f.id === frameId 
+      callStack: prev.callStack.map((f: StackFrame) =>
+        f.id === frameId
           ? { ...f, endTime: Date.now(), result, status: 'completed' as const }
           : f
       ),

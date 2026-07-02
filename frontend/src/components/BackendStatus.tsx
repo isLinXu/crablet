@@ -14,8 +14,8 @@ export const BackendStatus: React.FC<{ children: React.ReactNode }> = ({ childre
   const checkBackend = useCallback(async () => {
     try {
       const baseUrl = getApiBaseUrl();
-      // health 端点在 /api/v1/health
-      const healthUrl = baseUrl.replace(/\/api$/, '/api/v1/health');
+      // health 端点在根路径 /health，不在 /api 下
+      const healthUrl = baseUrl.replace(/\/api$/, '/health');
       const resp = await fetch(healthUrl, { method: 'GET', cache: 'no-store' });
       if (resp.ok) {
         setReady(true);

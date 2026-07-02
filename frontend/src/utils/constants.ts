@@ -24,8 +24,8 @@ const getDefaultApiFallback = () => {
     return '/api';
   }
 
-  // Tauri production: tauri:// protocol has no port, fallback to sidecar port
-  if (!port || protocol === 'tauri:') {
+  // Tauri production: tauri:// or http://tauri.localhost has no meaningful port, fallback to sidecar port
+  if (!port || protocol === 'tauri:' || hostname === 'tauri.localhost') {
     return 'http://127.0.0.1:18799/api';
   }
 
@@ -170,7 +170,7 @@ const getDefaultWsBase = () => {
   }
 
   // Tauri production: fallback to sidecar port
-  if (window.location.protocol === 'tauri:') {
+  if (window.location.protocol === 'tauri:' || window.location.hostname === 'tauri.localhost') {
     return 'ws://127.0.0.1:18799';
   }
 

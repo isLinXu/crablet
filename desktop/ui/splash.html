@@ -235,20 +235,10 @@
   const statusEl = document.getElementById("status");
 
   async function go() {
-    // 等待 Tauri API 就绪
-    const tauriReady = new Promise((resolve) => {
-      const check = () => {
-        if (window.__TAURI__) return resolve(true);
-        requestAnimationFrame(check);
-      };
-      check();
-    });
-    await tauriReady;
-
     statusEl.textContent = "正在初始化…";
 
     // 短暂延迟让 splash 动画播放
-    await new Promise((r) => setTimeout(r, 800));
+    await new Promise((r) => setTimeout(r, 1200));
 
     // 直接跳转到主界面（index.html）
     // 主界面会自行处理后端连接状态

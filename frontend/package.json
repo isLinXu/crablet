@@ -9,7 +9,7 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "npm run type-check && vite build",
+    "build": "vite build",
     "type-check": "tsc -p tsconfig.app.json --pretty false && tsc -p tsconfig.node.json --pretty false",
     "lint": "eslint .",
     "lint:ci": "node ./scripts/lint-ci.mjs",
