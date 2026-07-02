@@ -485,4 +485,76 @@ mod tests {
         // Risky task should get +30% safety margin
         assert!(risky.as_millis() > safe_role.as_millis() || risky.as_millis() >= 6_500);
     }
+
+    #[tokio::test]
+    async fn test_with_config_uses_custom_config() {
+        // Regression: with_config previously discarded the passed-in config
+        // and returned Self::new() with defaults.
+        let custom = TimeoutConfig {
+            base_timeout_ms: 20_000,
+            max_timeout_ms: 100_000,
+            ..Default::default()
+        };
+        let engine = DynamicTimeoutEngine::with_config(custom);
+
+        // With base 20s, complexity 0 → timeout should be ≥ 20s
+        let timeout = engine.compute_timeout("coder", "coding", 0.0, 128, false).await;
+        let ms = timeout.as_millis() as u64;
+        assert!(
+            ms >= 20_000,
+            "with_config should apply custom base_timeout_ms: got {ms}ms"
+        );
+
+        // And should not exceed the custom ceiling
+        assert!(
+            ms <= 100_000,
+            "with_config should apply custom max_timeout_ms: got {ms}ms"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_with_config_vs_default_diverge() {
+        let default_engine = DynamicTimeoutEngine::new();
+        let custom_engine = DynamicTimeoutEngine::with_config(TimeoutConfig {
+            base_timeout_ms: 60_000,
+            max_timeout_ms: 600_000,
+            ..Default::default()
+        });
+
+        let default_ts = default_engine
+            .compute_timeout("coder", "coding", 0.0, 128, false)
+            .await;
+        let custom_ts = custom_engine
+            .compute_timeout("coder", "coding", 0.0, 128, false)
+            .await;
+
+        assert!(
+            custom_ts.as_millis() > default_ts.as_millis(),
+            "Custom engine with higher base should produce longer timeouts"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_set_config_overrides_at_runtime() {
+        let engine = DynamicTimeoutEngine::new();
+        let original = engine
+            .compute_timeout("coder", "coding", 0.0, 128, false)
+            .await;
+
+        engine
+            .set_config(TimeoutConfig {
+                base_timeout_ms: 40_000,
+                max_timeout_ms: 200_000,
+                ..Default::default()
+            })
+            .await;
+
+        let updated = engine
+            .compute_timeout("coder", "coding", 0.0, 128, false)
+            .await;
+        assert!(
+            updated.as_millis() > original.as_millis(),
+            "set_config should take effect immediately"
+        );
+    }
 }

@@ -482,7 +482,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_system4_creation() {
-        let llm = Arc::new(Arc::new(MockLlmClient::new()) as Arc<dyn LlmClient>);
+        let llm: Arc<dyn LlmClient> = Arc::new(MockLlmClient::new());
         let system4 = System4::new(llm).await;
 
         assert_eq!(system4.name(), "System 4 (Self-Evolving)");
@@ -490,7 +490,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_execution_recording() {
-        let llm = Arc::new(Arc::new(MockLlmClient::new()) as Arc<dyn LlmClient>);
+        let llm: Arc<dyn LlmClient> = Arc::new(MockLlmClient::new());
         let system4 = System4::new(llm).await;
 
         // 记录一些执行

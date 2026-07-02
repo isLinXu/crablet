@@ -545,12 +545,6 @@ mod tests {
             .await;
 
         // 新用户（turn_count=0）触发 onboarding_tip
-        let ctx = ContextSnapshot {
-            session_id: "sess1".to_string(),
-            turn_count: 0,
-            ..Default::default()
-        };
-
         // 通过 update_context 初始化
         system
             .update_context("sess1", |c| {
@@ -613,5 +607,76 @@ mod tests {
         assert!(response.contains("代码审查"));
         let trace = traces.first().unwrap();
         assert!(trace.thought.contains("context_boost"));
+    }
+
+    #[tokio::test]
+    async fn test_unregister_nonexistent_rule() {
+        let system = System1Dynamic::new();
+        system.register_rules(System1Dynamic::builtin_rules()).await;
+
+        let removed = system.unregister_rule("nonexistent_id").await;
+        assert!(!removed, "Removing a non-existent rule should return false");
+        assert_eq!(
+            system.rule_count().await,
+            6,
+            "Rule count should be unchanged"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_set_weight_for_nonexistent_rule() {
+        let system = System1Dynamic::new();
+        system.register_rules(System1Dynamic::builtin_rules()).await;
+
+        let ok = system.set_rule_weight("nonexistent_id", 5.0).await;
+        assert!(!ok, "Setting weight for non-existent rule should fail");
+    }
+
+    #[tokio::test]
+    async fn test_weight_clamping() {
+        let system = System1Dynamic::new();
+        system.register_rules(System1Dynamic::builtin_rules()).await;
+
+        // Weight above max (10.0) should be clamped
+        system.set_rule_weight("greeting", 100.0).await;
+        // Weight below min (0.0) should be clamped
+        system.set_rule_weight("help", -5.0).await;
+
+        // Both rules should still function correctly
+        let (resp, _) = system.process("hello", &[]).await.unwrap();
+        assert!(resp.contains("你好"));
+        let (resp2, _) = system.process("help", &[]).await.unwrap();
+        assert!(resp2.contains("Available commands"));
+    }
+
+    #[tokio::test]
+    async fn test_empty_system_no_rules() {
+        let system = System1Dynamic::new();
+        assert_eq!(system.rule_count().await, 0);
+
+        // Processing with no rules should fail
+        let result = system.process("hello", &[]).await;
+        assert!(result.is_err(), "Empty system should not match anything");
+    }
+
+    #[tokio::test]
+    async fn test_reregister_after_unregister() {
+        let system = System1Dynamic::new();
+        system.register_rules(System1Dynamic::builtin_rules()).await;
+
+        // Remove greeting, then re-add it
+        system.unregister_rule("greeting").await;
+        assert_eq!(system.rule_count().await, 5);
+
+        system
+            .register_rules(vec![System1Dynamic::builtin_rules()
+                .into_iter()
+                .find(|r| r.id == "greeting")
+                .unwrap()])
+            .await;
+        assert_eq!(system.rule_count().await, 6);
+
+        let (resp, _) = system.process("hello", &[]).await.unwrap();
+        assert!(resp.contains("你好"));
     }
 }

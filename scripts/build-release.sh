@@ -179,7 +179,92 @@ if [[ "$BUILD_TAURI" == "true" ]]; then
 fi
 
 # --------------------------------------------------
-# 3) 输出分发物清单
+# 3) macOS 签名与公证（条件式）
+# --------------------------------------------------
+if [[ "$OS" == "Darwin" ]]; then
+    echo -e "${GREEN}🔐 Step 3: macOS 签名与公证${NC}"
+
+    # 环境变量控制：
+    #   APPLE_DEVELOPER_ID  — Developer ID Application 证书名（如 "Developer ID Application: Your Name (TeamID)"）
+    #   APPLE_ID            — Apple ID 邮箱（公证用）
+    #   APPLE_TEAM_ID       — Team ID（公证用）
+    #   APPLE_APP_PASSWORD  — App-specific password（公证用，需在 appleid.apple.com 生成）
+    #
+    # 未设置时自动降级为 ad-hoc 签名（开发/测试用，不可分发）。
+
+    DMG_PATH=$(find "$BUNDLE_DIR/dmg" -name "*.dmg" -type f 2>/dev/null | head -1)
+    APP_PATH="$BUNDLE_DIR/macos/Crablet.app"
+
+    if [[ -n "${APPLE_DEVELOPER_ID:-}" ]]; then
+        echo -e "  ${GREEN}🔏 使用 Developer ID 签名: ${APPLE_DEVELOPER_ID}${NC}"
+
+        # 签名 .app（深度签名所有内部二进制）
+        if [[ -d "$APP_PATH" ]]; then
+            echo -e "  🔨 签名 .app ..."
+            codesign --deep --force --options runtime \
+                --sign "${APPLE_DEVELOPER_ID}" \
+                "$APP_PATH" 2>&1 || {
+                echo -e "  ${RED}❌ .app 签名失败${NC}"
+                exit 1
+            }
+            echo -e "  ${GREEN}✅ .app 签名完成${NC}"
+        fi
+
+        # 签名 .dmg
+        if [[ -n "$DMG_PATH" && -f "$DMG_PATH" ]]; then
+            echo -e "  🔨 签名 .dmg ..."
+            codesign --force --sign "${APPLE_DEVELOPER_ID}" "$DMG_PATH" 2>&1 || {
+                echo -e "  ${RED}❌ .dmg 签名失败${NC}"
+                exit 1
+            }
+            echo -e "  ${GREEN}✅ .dmg 签名完成${NC}"
+        fi
+
+        # 公证（notarytool）
+        if [[ -n "${APPLE_ID:-}" && -n "${APPLE_TEAM_ID:-}" && -n "${APPLE_APP_PASSWORD:-}" ]]; then
+            echo -e "  ${GREEN}📤 提交公证 ...${NC}"
+
+            if [[ -n "$DMG_PATH" && -f "$DMG_PATH" ]]; then
+                SUBMISSION_ID=$(xcrun notarytool submit "$DMG_PATH" \
+                    --apple-id "${APPLE_ID}" \
+                    --team-id "${APPLE_TEAM_ID}" \
+                    --password "${APPLE_APP_PASSWORD}" \
+                    --wait 2>&1 | tee /dev/stderr | grep "id:" | head -1 | awk '{print $2}')
+
+                if [[ -n "$SUBMISSION_ID" ]]; then
+                    echo -e "  ${GREEN}✅ 公证完成 (submission: ${SUBMISSION_ID})${NC}"
+
+                    # Staple 票据
+                    echo -e "  📌 Stapling ..."
+                    xcrun stapler staple "$DMG_PATH" 2>&1 || true
+                    if [[ -d "$APP_PATH" ]]; then
+                        xcrun stapler staple "$APP_PATH" 2>&1 || true
+                    fi
+                    echo -e "  ${GREEN}✅ Stapling 完成${NC}"
+                else
+                    echo -e "  ${RED}❌ 公证失败，请检查凭证${NC}"
+                    exit 1
+                fi
+            fi
+        else
+            echo -e "  ${YELLOW}⚠️ 未设置 APPLE_ID/APPLE_TEAM_ID/APPLE_APP_PASSWORD，跳过公证${NC}"
+            echo -e "  ${YELLOW}   分发前需手动公证${NC}"
+        fi
+    else
+        echo -e "  ${YELLOW}⚠️ 未设置 APPLE_DEVELOPER_ID，使用 ad-hoc 签名（仅供开发/测试）${NC}"
+        if [[ -d "$APP_PATH" ]]; then
+            codesign --deep --force --sign - "$APP_PATH" 2>&1 || true
+        fi
+        if [[ -n "$DMG_PATH" && -f "$DMG_PATH" ]]; then
+            codesign --force --sign - "$DMG_PATH" 2>&1 || true
+        fi
+        echo -e "  ${YELLOW}   ⚠️ ad-hoc 签名的 DMG 无法通过 Gatekeeper，用户需右键打开${NC}"
+    fi
+    echo ""
+fi
+
+# --------------------------------------------------
+# 4) 输出分发物清单
 # --------------------------------------------------
 echo -e "${GREEN}📂 分发物清单${NC}"
 find "$BUNDLE_DIR" -type f 2>/dev/null | while read -r f; do
