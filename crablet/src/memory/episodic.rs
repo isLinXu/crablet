@@ -45,7 +45,7 @@ impl EpisodicMemory {
             .connect(database_url)
             .await?;
 
-        let migrations_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations");
+        let migrations_dir = crate::migrations_resolver::resolve_migrations_dir();
         let migrator = sqlx::migrate::Migrator::new(migrations_dir.as_path())
             .await
             .map_err(|e| crate::error::CrabletError::Other(e.into()))?;

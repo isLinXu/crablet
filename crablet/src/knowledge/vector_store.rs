@@ -96,7 +96,7 @@ pub struct VectorStore {
 impl VectorStore {
     pub async fn new(pool: SqlitePool) -> Result<Self> {
         // Run migrations for metadata tables (document_embeddings)
-        let migrations_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations");
+        let migrations_dir = crate::migrations_resolver::resolve_migrations_dir();
         let migrator = sqlx::migrate::Migrator::new(migrations_dir.as_path()).await?;
         migrator.run(&pool).await?;
 

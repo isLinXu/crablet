@@ -302,8 +302,17 @@ impl Config {
     }
 
     fn load_raw() -> Result<Self> {
-        // Defaults
-        let mut database_url = "sqlite:crablet.db?mode=rwc".to_string();
+        // Defaults — database_url 使用绝对路径解析，确保打包后不会写入不可预知的 CWD
+        // sqlx-sqlite 绝对路径格式: sqlite:///absolute/path?mode=rwc（三斜杠 + 绝对路径）
+        let default_db_path = std::env::current_exe()
+            .ok()
+            .and_then(|exe| exe.parent().map(|d| d.join("crablet.db")))
+            .map(|p| {
+                // p.display() 以 '/' 开头，拼接后得到 sqlite:///abs/path
+                format!("sqlite://{}?mode=rwc", p.display())
+            })
+            .unwrap_or_else(|| "sqlite:crablet.db?mode=rwc".to_string());
+        let mut database_url = default_db_path;
         let mut skills_dir = PathBuf::from("skills");
         let mut model_name = "gpt-4o-mini".to_string();
         let mut llm_vendor = None;

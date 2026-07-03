@@ -39,6 +39,9 @@
       "icons/icon.ico"
     ],
     "externalBin": ["binaries/crablet"],
+    "resources": {
+      "../crablet/migrations/*": "migrations/"
+    },
     "copyright": "© 2026 Crablet",
     "category": "Productivity",
     "shortDescription": "开箱即用的 AI 智能体桌面应用",

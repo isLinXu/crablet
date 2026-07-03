@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Crablet</title>
+<style>
+  :root {
+    --brand: #d2552a;
+    --brand-light: #ff7b54;
+    --brand-dark: #a8411e;
+    --ink: #1a1d24;
+    --sub: #6b7280;
+    --line: #e5e7eb;
+    --bg: #fafafa;
+    --card-bg: rgba(255,255,255,0.72);
+    --card-border: rgba(255,255,255,0.5);
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body { height: 100%; }
+
+  body {
+    font-family: -apple-system, "SF Pro Display", "PingFang SC", "Helvetica Neue", sans-serif;
+    background: linear-gradient(135deg, #fefefe 0%, var(--bg) 50%, #f0ece8 100%);
+    color: var(--ink);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  .orb {
+    position: fixed;
+    border-radius: 50%;
+    filter: blur(80px);
+    opacity: 0.35;
+    pointer-events: none;
+    z-index: 0;
+  }
+  .orb-1 {
+    width: 400px; height: 400px;
+    background: radial-gradient(circle, var(--brand-light), transparent 70%);
+    top: -120px; right: -80px;
+    animation: orbFloat1 8s ease-in-out infinite alternate;
+  }
+  .orb-2 {
+    width: 300px; height: 300px;
+    background: radial-gradient(circle, #fbbf24, transparent 70%);
+    bottom: -80px; left: -60px;
+    animation: orbFloat2 10s ease-in-out infinite alternate;
+  }
+  .orb-3 {
+    width: 200px; height: 200px;
+    background: radial-gradient(circle, #fb923c, transparent 70%);
+    top: 50%; left: 60%;
+    animation: orbFloat3 12s ease-in-out infinite alternate;
+  }
+
+  @keyframes orbFloat1 { to { transform: translate(-40px, 60px) scale(1.1); } }
+  @keyframes orbFloat2 { to { transform: translate(50px, -40px) scale(0.9); } }
+  @keyframes orbFloat3 { to { transform: translate(-30px, -50px) scale(1.15); } }
+
+  .card {
+    position: relative;
+    z-index: 1;
+    width: 440px;
+    padding: 48px 40px;
+    background: var(--card-bg);
+    backdrop-filter: blur(24px) saturate(180%);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    border: 1px solid var(--card-border);
+    border-radius: 24px;
+    box-shadow:
+      0 4px 24px rgba(0,0,0,0.06),
+      0 1px 3px rgba(0,0,0,0.04),
+      inset 0 1px 0 rgba(255,255,255,0.6);
+    text-align: center;
+    animation: cardIn 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  @keyframes cardIn {
+    from { opacity: 0; transform: translateY(20px) scale(0.97); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+
+  .logo-wrap {
+    width: 80px; height: 80px;
+    margin: 0 auto 16px;
+    position: relative;
+  }
+
+  .logo-svg {
+    width: 100%; height: 100%;
+    animation: logoBreath 3s ease-in-out infinite;
+  }
+
+  @keyframes logoBreath {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.06); }
+  }
+
+  .logo-wrap::after {
+    content: '';
+    position: absolute;
+    inset: -12px;
+    border-radius: 50%;
+    background: radial-gradient(circle, var(--brand-light) 0%, transparent 70%);
+    opacity: 0.2;
+    animation: glowPulse 3s ease-in-out infinite;
+  }
+
+  @keyframes glowPulse {
+    0%, 100% { opacity: 0.15; transform: scale(1); }
+    50% { opacity: 0.3; transform: scale(1.08); }
+  }
+
+  h1 {
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+    background: linear-gradient(135deg, var(--ink) 0%, var(--brand-dark) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .tagline {
+    color: var(--sub);
+    font-size: 14px;
+    font-weight: 400;
+    margin-bottom: 32px;
+    letter-spacing: 0.3px;
+  }
+
+  .loader {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    height: 40px;
+    margin-bottom: 8px;
+  }
+
+  .dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--brand);
+    animation: dotBounce 1.4s ease-in-out infinite both;
+  }
+  .dot:nth-child(1) { animation-delay: -0.32s; }
+  .dot:nth-child(2) { animation-delay: -0.16s; }
+  .dot:nth-child(3) { animation-delay: 0s; }
+
+  @keyframes dotBounce {
+    0%, 80%, 100% { transform: scale(0.4); opacity: 0.3; }
+    40% { transform: scale(1); opacity: 1; }
+  }
+
+  .status {
+    color: var(--sub);
+    font-size: 13px;
+    min-height: 20px;
+    transition: color 0.3s;
+  }
+
+  .progress-bar {
+    width: 100%;
+    height: 3px;
+    background: var(--line);
+    border-radius: 2px;
+    margin-top: 16px;
+    overflow: hidden;
+  }
+
+  .progress-bar-inner {
+    height: 100%;
+    width: 30%;
+    background: linear-gradient(90deg, var(--brand), var(--brand-light));
+    border-radius: 2px;
+    animation: progressSlide 2s ease-in-out infinite;
+  }
+
+  @keyframes progressSlide {
+    0% { width: 10%; margin-left: 0; }
+    50% { width: 50%; margin-left: 25%; }
+    100% { width: 10%; margin-left: 90%; }
+  }
+</style>
+</head>
+<body>
+
+<div class="orb orb-1"></div>
+<div class="orb orb-2"></div>
+<div class="orb orb-3"></div>
+
+<div class="card">
+  <div class="logo-wrap">
+    <svg class="logo-svg" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <ellipse cx="40" cy="44" rx="22" ry="18" fill="#d2552a"/>
+      <ellipse cx="40" cy="44" rx="18" ry="14" fill="#e8693b"/>
+      <circle cx="33" cy="38" r="4" fill="#fff"/>
+      <circle cx="47" cy="38" r="4" fill="#fff"/>
+      <circle cx="34" cy="37.5" r="2" fill="#1a1d24"/>
+      <circle cx="48" cy="37.5" r="2" fill="#1a1d24"/>
+      <path d="M34 46 Q40 52 46 46" stroke="#1a1d24" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+      <path d="M18 38 Q8 30 6 22 Q4 16 10 18 Q14 20 16 26 Z" fill="#d2552a"/>
+      <path d="M62 38 Q72 30 74 22 Q76 16 70 18 Q66 20 64 26 Z" fill="#d2552a"/>
+      <line x1="24" y1="56" x2="18" y2="66" stroke="#d2552a" stroke-width="2.5" stroke-linecap="round"/>
+      <line x1="32" y1="58" x2="28" y2="68" stroke="#d2552a" stroke-width="2.5" stroke-linecap="round"/>
+      <line x1="48" y1="58" x2="52" y2="68" stroke="#d2552a" stroke-width="2.5" stroke-linecap="round"/>
+      <line x1="56" y1="56" x2="62" y2="66" stroke="#d2552a" stroke-width="2.5" stroke-linecap="round"/>
+    </svg>
+  </div>
+
+  <h1>Crablet</h1>
+  <div class="tagline">开箱即用的 AI 智能体</div>
+
+  <div class="loader">
+    <div class="dot"></div>
+    <div class="dot"></div>
+    <div class="dot"></div>
+  </div>
+  <div class="progress-bar"><div class="progress-bar-inner"></div></div>
+  <div class="status" id="status">正在加载…</div>
+</div>
+
+<script>
+  // 简化启动流程：短暂展示 splash 后直接进入主界面，
+  // 后端连接状态由主界面自行处理（异步检测 + 友好提示）。
+  const statusEl = document.getElementById("status");
+
+  async function go() {
+    statusEl.textContent = "正在初始化…";
+
+    // 短暂延迟让 splash 动画播放
+    await new Promise((r) => setTimeout(r, 1200));
+
+    // 直接跳转到主界面（index.html）
+    // 主界面会自行处理后端连接状态
+    statusEl.textContent = "正在进入…";
+    window.location.replace("index.html");
+  }
+
+  go();
+</script>
+</body>
+</html>
