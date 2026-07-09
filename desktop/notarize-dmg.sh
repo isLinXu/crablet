@@ -33,7 +33,23 @@ PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 BUNDLE_DIR="${PROJECT_ROOT}/target/release/bundle"
 APP_NAME="Crablet"
 APP_PATH="${BUNDLE_DIR}/macos/${APP_NAME}.app"
-DMG_PATH="${BUNDLE_DIR}/dmg/${APP_NAME}_0.1.0_aarch64.dmg"
+
+# 版本号（单一真相源：crablet/Cargo.toml，与 scripts/pack.sh 保持一致）
+VERSION="${CRABLET_VERSION:-$(grep -m1 '^version' "${PROJECT_ROOT}/crablet/Cargo.toml" | sed 's/.*= "\([^"]*\)".*/\1/')}"
+
+# 架构检测（与 scripts/pack.sh 保持一致）
+ARCH="$(uname -m)"
+if [[ "${ARCH}" == "arm64" ]]; then
+    DMG_ARCH="aarch64"
+    SIDECAR_TARGET="crablet-aarch64-apple-darwin"
+elif [[ "${ARCH}" == "x86_64" ]]; then
+    DMG_ARCH="x64"
+    SIDECAR_TARGET="crablet-x86_64-apple-darwin"
+else
+    echo "❌ 未知 macOS 架构: ${ARCH}"; exit 1
+fi
+
+DMG_PATH="${BUNDLE_DIR}/dmg/${APP_NAME}_${VERSION}_${DMG_ARCH}.dmg"
 
 # 加载环境变量文件
 if [ -f "${HOME}/.crablet-notary.env" ]; then
@@ -59,6 +75,7 @@ echo "🔏 Crablet Apple Notarization"
 echo "   Developer Identity: ${APPLE_DEVELOPER_IDENTITY}"
 echo "   Apple ID:           ${APPLE_ID}"
 echo "   Team ID:            ${APPLE_TEAM_ID}"
+echo "   版本:               ${VERSION} (${DMG_ARCH})"
 echo ""
 
 # ─── Step 1: Developer ID 签名 ───
@@ -67,7 +84,8 @@ echo "📦 Step 1: Developer ID 签名..."
 # 签名 sidecar 二进制（需要单独签名，--deep 在 macOS 14+ 已弃用）
 echo "   签名 sidecar 二进制..."
 SIDECAR_PATHS=(
-    "${APP_PATH}/Contents/MacOS/crablet-aarch64-apple-darwin"
+    "${APP_PATH}/Contents/MacOS/${SIDECAR_TARGET}"
+    "${APP_PATH}/Contents/MacOS/binaries/${SIDECAR_TARGET}"
     "${APP_PATH}/Contents/MacOS/crablet"
 )
 for bin in "${SIDECAR_PATHS[@]}"; do
@@ -89,9 +107,7 @@ echo ""
 
 # ─── Step 2: 重新创建 DMG（使用已签名的 .app） ───
 echo "📦 Step 2: 重新创建 DMG..."
-STAGING="${PROJECT_ROOT}/.session_tmps/dmg-notary-staging"
-rm -rf "${STAGING}" 2>/dev/null
-mkdir -p "${STAGING}"
+STAGING=$(mktemp -d /tmp/crablet-notary-XXXXXX)
 cp -R "${APP_PATH}" "${STAGING}/"
 ln -sf /Applications "${STAGING}/Applications"
 
