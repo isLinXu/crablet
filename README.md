@@ -591,21 +591,23 @@ docker run -d \
 Double-click to launch — no terminal, no Docker, no dev environment needed.
 
 ```bash
-# 1. Clone & build sidecar
+# Clone
 git clone https://github.com/isLinXu/crablet.git
 cd crablet
-just desktop-sidecar        # or: cargo build --release -p crablet --no-default-features --features web
 
-# 2. Copy sidecar binary
-just desktop-sidecar-copy   # copies to desktop/binaries/
+# One-click packaging (frontend build → sidecar → Tauri → sign → DMG)
+just desktop-pack            # full pipeline, current platform
+just desktop-pack-quick      # skip frontend rebuild (reuse existing frontend/dist)
+just desktop-pack-app        # .app only, no DMG
+just desktop-pack-dmg        # DMG only (requires existing .app)
+just desktop-pack-sign       # (re-)sign existing .app only
 
-# 3. Build desktop app
-just desktop-dmg            # macOS: generates .dmg in target/release/bundle/dmg/
-just desktop-build          # macOS: generates .app only
-
-# Or use the shell script directly:
-./desktop/build-desktop.sh
+# Or call the unified script directly (same logic, more flags):
+./scripts/pack.sh                 # macOS: generates .dmg in target/release/bundle/dmg/
+CODE_SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" ./scripts/pack.sh
 ```
+
+> 📝 `desktop/build-desktop.sh` / `build-desktop.ps1` are kept only as thin compatibility wrappers around `scripts/pack.sh` — use `scripts/pack.sh` (or the `just desktop-pack*` recipes) directly for new workflows.
 
 **First launch**: The app opens a splash screen where you can paste your OpenAI / DashScope API key. The key is saved to your system keychain — no env vars needed.
 
