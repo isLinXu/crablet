@@ -232,7 +232,7 @@ export const SettingsPanel: React.FC = () => {
             </div>
             <div className="grid gap-2">
               <label className="text-sm font-medium">OpenAI / DashScope API Key</label>
-              <Input type="password" value={String(s.systemConfig.openai_api_key ?? '')} onChange={(e) => s.setSystemConfig({ ...s.systemConfig, openai_api_key: e.target.value })} placeholder="sk-..." />
+              <Input type="password" value={String(s.systemConfig.openai_api_key ?? '')} onChange={(e) => s.setSystemConfig({ ...s.systemConfig, openai_api_key: e.target.value })} placeholder={s.systemConfig.openai_api_key_masked ? `已设置 (${s.systemConfig.openai_api_key_masked})` : 'sk-...'} />
             </div>
             <div className="grid gap-2">
               <label className="text-sm font-medium">API Base URL</label>

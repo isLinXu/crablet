@@ -245,8 +245,8 @@ export function useSettingsState(): UseSettingsState {
         const confirmed: any = await settingsService.getSystemConfig();
         const confirmedConfig = confirmed?.data || confirmed || {};
         setSystemConfig((prev: SystemConfig) => ({ ...prev, ...confirmedConfig }));
-        const expected = { openai_api_key: newConfig.openai_api_key || '', openai_api_base: newConfig.openai_api_base || '', openai_model_name: newConfig.openai_model_name || '', llm_vendor: newConfig.llm_vendor || '' };
-        const actual = { openai_api_key: confirmedConfig.openai_api_key || '', openai_api_base: confirmedConfig.openai_api_base || '', openai_model_name: confirmedConfig.openai_model_name || '', llm_vendor: confirmedConfig.llm_vendor || '' };
+        const expected = { openai_api_key_masked: apiKeyValue ? 'set' : '', openai_api_base: newConfig.openai_api_base || '', openai_model_name: newConfig.openai_model_name || '', llm_vendor: newConfig.llm_vendor || '' };
+        const actual = { openai_api_key_masked: confirmedConfig.openai_api_key_masked ? 'set' : '', openai_api_base: confirmedConfig.openai_api_base || '', openai_model_name: confirmedConfig.openai_model_name || '', llm_vendor: confirmedConfig.llm_vendor || '' };
         if (JSON.stringify(expected) !== JSON.stringify(actual)) toast.error('后端配置回读校验不一致，请检查 .env 文件权限或路径');
       } catch { toast.error('已保存前端设置，但同步后端 .env 失败'); }
       toast(`已切换到${providerMode}厂商模式，配置已同步到模型路由与后端.env`);
@@ -458,8 +458,8 @@ export function useSettingsState(): UseSettingsState {
       const confirmed: any = await settingsService.getSystemConfig();
       const confirmedConfig = confirmed?.data || confirmed || {};
       setSystemConfig((prev) => ({ ...prev, ...confirmedConfig }));
-      const expected = { openai_api_key: key, openai_api_base: base, openai_model_name: model, llm_vendor: vendor };
-      const actual = { openai_api_key: confirmedConfig.openai_api_key || '', openai_api_base: confirmedConfig.openai_api_base || '', openai_model_name: confirmedConfig.openai_model_name || '', llm_vendor: confirmedConfig.llm_vendor || '' };
+      const expected = { openai_api_key_masked: key ? 'set' : '', openai_api_base: base, openai_model_name: model, llm_vendor: vendor };
+      const actual = { openai_api_key_masked: confirmedConfig.openai_api_key_masked ? 'set' : '', openai_api_base: confirmedConfig.openai_api_base || '', openai_model_name: confirmedConfig.openai_model_name || '', llm_vendor: confirmedConfig.llm_vendor || '' };
       if (JSON.stringify(expected) !== JSON.stringify(actual)) { toast.error('配置保存后回读不一致，请检查后端 .env 写入路径'); return; }
       toast.success('System config verified and synced to local .env.');
     } catch { toast.error('保存失败：模型配置校验未通过或后端写入失败'); } finally { setSavingSystemConfig(false); }

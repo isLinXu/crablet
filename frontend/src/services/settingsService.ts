@@ -3,6 +3,7 @@ import type { ApiKeyInfo, McpOverview, RoutingEvaluationReport, RoutingSettings 
 
 export interface SystemConfig {
   openai_api_key?: string;
+  openai_api_key_masked?: string;
   openai_api_base?: string;
   openai_model_name?: string;
   ollama_model?: string;
