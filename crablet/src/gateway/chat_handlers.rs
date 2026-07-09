@@ -49,6 +49,7 @@ pub struct RouteSelection {
     pub question_type: Option<String>,
     pub api_base_url: Option<String>,
     /// @deprecated API Key should only be provided via environment variables
+    #[serde(skip_serializing)]
     pub api_key: Option<String>,
     pub model_type: Option<String>,
 }

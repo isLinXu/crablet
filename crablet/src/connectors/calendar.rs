@@ -54,9 +54,9 @@ pub struct CalendarConfig {
     pub calendar_id: String,
     #[serde(default)]
     pub credentials_path: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing)]
     pub api_key: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing)]
     pub access_token: Option<String>,
     #[serde(default = "default_look_ahead")]
     pub look_ahead_minutes: i64,

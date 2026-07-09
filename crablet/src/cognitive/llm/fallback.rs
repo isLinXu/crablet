@@ -81,6 +81,7 @@ pub struct ModelConfig {
     /// Model name
     pub model: String,
     /// API key (optional, can use env var)
+    #[serde(skip_serializing)]
     pub api_key: Option<String>,
     /// API base URL
     pub api_base: Option<String>,

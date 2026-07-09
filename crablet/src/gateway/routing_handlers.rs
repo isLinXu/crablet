@@ -171,7 +171,9 @@ pub async fn get_routing_report(
 
 #[derive(Serialize, Deserialize)]
 pub struct SystemConfigPayload {
+    #[serde(skip_serializing)]
     pub openai_api_key: Option<String>,
+    pub openai_api_key_masked: Option<String>,
     pub openai_api_base: Option<String>,
     pub openai_model_name: Option<String>,
     pub ollama_model: Option<String>,
@@ -184,6 +186,7 @@ pub async fn get_system_config(
     let content = fs::read_to_string(resolve_env_file_path()).unwrap_or_default();
     let mut config = SystemConfigPayload {
         openai_api_key: None,
+        openai_api_key_masked: None,
         openai_api_base: None,
         openai_model_name: None,
         ollama_model: None,
@@ -207,6 +210,16 @@ pub async fn get_system_config(
                 _ => {}
             }
         }
+    }
+
+    // Mask the API key before sending to client: show only last 4 chars
+    if let Some(ref key) = config.openai_api_key {
+        let masked = if key.len() > 4 {
+            format!("••••{}", &key[key.len() - 4..])
+        } else {
+            "••••".to_string()
+        };
+        config.openai_api_key_masked = Some(masked);
     }
 
     Ok(Json(config))

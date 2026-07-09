@@ -61,6 +61,7 @@ pub struct EmailConfig {
     #[serde(default)]
     pub smtp_use_tls: bool,
     pub username: String,
+    #[serde(skip_serializing)]
     pub password: String,
     #[serde(default = "default_folder")]
     pub folder: String,

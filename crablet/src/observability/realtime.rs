@@ -262,7 +262,7 @@ impl MetricsCollector {
         let histograms = self.histograms.read().await;
         
         if let Some(hist) = histograms.get(name) {
-            let mut data = hist.lock().unwrap();
+            let mut data = hist.lock().unwrap_or_else(|e| e.into_inner());
             if data.len() >= self.max_histogram_size {
                 data.pop_front();
             }
@@ -271,7 +271,7 @@ impl MetricsCollector {
             drop(histograms);
             let mut histograms = self.histograms.write().await;
             let data = std::sync::Mutex::new(VecDeque::with_capacity(self.max_histogram_size));
-            data.lock().unwrap().push_back(value);
+            data.lock().unwrap_or_else(|e| e.into_inner()).push_back(value);
             histograms.insert(name.to_string(), data);
         }
     }
@@ -293,7 +293,7 @@ impl MetricsCollector {
         let mut histograms_map = HashMap::new();
         let histograms = self.histograms.read().await;
         for (name, data) in histograms.iter() {
-            let data = data.lock().unwrap();
+            let data = data.lock().unwrap_or_else(|e| e.into_inner());
             let values: Vec<f64> = data.iter().cloned().collect();
             
             if !values.is_empty() {

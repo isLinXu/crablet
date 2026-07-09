@@ -12,7 +12,6 @@ mod sqlx_compat;
 pub use sqlx_compat::*;
 
 pub mod migrations_resolver;
-extern crate self as sqlx;
 
 pub mod agent;
 pub mod channels;
