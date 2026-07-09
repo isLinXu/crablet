@@ -181,6 +181,14 @@ desktop-pack-sign:
 desktop-pack-ci:
     bash scripts/pack.sh --ci
 
+# Apple 公证（需先完整打包 + 配置 ~/.crablet-notary.env）
+desktop-notarize:
+    bash desktop/notarize-dmg.sh
+
+# 版本号一致性检查（CI 用，不修改文件）
+desktop-version-check:
+    bash scripts/sync-version.sh --check
+
 # Dev mode: launch Tauri dev server with hot reload
 desktop-dev:
     cd desktop && cargo tauri dev

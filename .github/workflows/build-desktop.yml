@@ -24,6 +24,9 @@ env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
   CRABLET_RUN_REAL_LLM_TESTS: 0
+  # 统一由 scripts/pack.sh 完成前端→sidecar→Tauri→签名→DMG/EXE/AppImage 全流程，
+  # 避免 CI 与本地打包逻辑重复维护（详见 scripts/pack.sh）。
+  CRABLET_VERSION: ${{ github.event.inputs.version || '' }}
 
 jobs:
   # ─── macOS (arm64 + x64) ───
@@ -33,10 +36,8 @@ jobs:
       matrix:
         include:
           - runner: macos-latest       # Apple Silicon
-            target: aarch64-apple-darwin
             dmg_arch: aarch64
           - runner: macos-13           # Intel
-            target: x86_64-apple-darwin
             dmg_arch: x64
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
@@ -66,67 +67,8 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
-      - name: Build frontend
-        run: |
-          cd frontend
-          npm install
-          npm run build
-
-      - name: Sync frontend to desktop/ui
-        run: |
-          rm -rf desktop/ui
-          cp -R frontend/dist desktop/ui
-
-      - name: Build sidecar (release)
-        run: cargo build --release -p crablet --no-default-features --features web
-
-      - name: Copy sidecar binary
-        run: |
-          mkdir -p desktop/binaries
-          cp target/release/crablet desktop/binaries/crablet-${{ matrix.target }}
-          chmod +x desktop/binaries/crablet-${{ matrix.target }}
-
-      - name: Build Tauri app
-        run: cd desktop && cargo tauri build --bundles app
-
-      - name: Fix sidecar paths
-        run: |
-          APP_PATH="target/release/bundle/macos/Crablet.app"
-          SIDECAR="crablet-${{ matrix.target }}"
-          for dir in \
-            "${APP_PATH}/Contents/MacOS/binaries" \
-            "${APP_PATH}/Contents/Resources/binaries" \
-            "${APP_PATH}/Contents/MacOS"; do
-            if [ -d "${dir}" ] && [ ! -f "${dir}/${SIDECAR}" ]; then
-              if [ -f "${dir}/crablet" ] && "${dir}/crablet" --help 2>/dev/null | grep -q "serve-web"; then
-                ln -f "${dir}/crablet" "${dir}/${SIDECAR}" 2>/dev/null || cp "${dir}/crablet" "${dir}/${SIDECAR}"
-              fi
-            fi
-          done
-          # 兜底：从 binaries/ 直接复制
-          mkdir -p "${APP_PATH}/Contents/MacOS/binaries"
-          cp -f "desktop/binaries/${SIDECAR}" "${APP_PATH}/Contents/MacOS/binaries/${SIDECAR}"
-
-      - name: Code sign
-        run: |
-          codesign --force --deep --sign - target/release/bundle/macos/Crablet.app
-
-      - name: Create DMG
-        run: |
-          APP_PATH="target/release/bundle/macos/Crablet.app"
-          DMG_DIR="target/release/bundle/dmg"
-          STAGING=$(mktemp -d)
-          mkdir -p "${DMG_DIR}"
-          cp -R "${APP_PATH}" "${STAGING}/"
-          ln -sf /Applications "${STAGING}/Applications"
-          VERSION="${{ github.event.inputs.version || '0.1.0' }}"
-          hdiutil create \
-            -volname "Crablet" \
-            -srcfolder "${STAGING}" \
-            -ov \
-            -format UDZO \
-            "${DMG_DIR}/Crablet_${VERSION}_${{ matrix.dmg_arch }}.dmg"
-          rm -rf "${STAGING}"
+      - name: "Run unified pack script (--ci: frontend -> sidecar -> tauri -> sign -> dmg)"
+        run: bash scripts/pack.sh --ci
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -175,28 +117,8 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
-      - name: Build frontend
-        run: |
-          cd frontend
-          npm install
-          npm run build
-
-      - name: Sync frontend to desktop/ui
-        run: |
-          rm -rf desktop/ui
-          cp -R frontend/dist desktop/ui
-
-      - name: Build sidecar
-        run: cargo build --release -p crablet --no-default-features --features web
-
-      - name: Copy sidecar binary
-        run: |
-          mkdir -p desktop/binaries
-          cp target/release/crablet desktop/binaries/crablet-x86_64-unknown-linux-gnu
-          chmod +x desktop/binaries/crablet-x86_64-unknown-linux-gnu
-
-      - name: Build Tauri (AppImage + DEB)
-        run: cd desktop && cargo tauri build --bundles "deb,appimage"
+      - name: Run unified pack script (--ci mode: frontend → sidecar → tauri → deb/appimage)
+        run: bash scripts/pack.sh --ci
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -239,31 +161,10 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
-      - name: Build frontend
-        run: |
-          cd frontend
-          npm install
-          npm run build
-
-      - name: Sync frontend to desktop/ui
-        shell: pwsh
-        run: |
-          if (Test-Path desktop/ui) { Remove-Item -Recurse -Force desktop/ui }
-          Copy-Item -Recurse frontend/dist desktop/ui
-
-      - name: Build sidecar
-        run: cargo build --release -p crablet --no-default-features --features web
-        env:
-          RUSTFLAGS: "-C target-feature=+crt-static"
-
-      - name: Copy sidecar binary
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force -Path desktop\binaries
-          Copy-Item target\release\crablet.exe desktop\binaries\crablet-x86_64-pc-windows-msvc.exe
-
-      - name: Build Tauri (NSIS)
-        run: cd desktop && cargo tauri build --bundles nsis
+      # Windows runner 自带 Git Bash，可直接复用统一打包脚本（避免与 macOS/Linux 逻辑分叉）
+      - name: Run unified pack script (--ci mode: frontend → sidecar (crt-static) → tauri NSIS)
+        shell: bash
+        run: bash scripts/pack.sh --ci
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

@@ -16,6 +16,8 @@
 #   CODE_SIGN_IDENTITY  — Apple 证书名（留空则 Ad-hoc 签名）
 #   CRABLET_VERSION     — 版本覆盖（留空则从 Cargo.toml 读取）
 #   SKIP_FRONTEND       — "true" 跳过前端构建
+#   SKIP_VERSION_SYNC   — "true" 跳过版本号自动同步检查
+#   AUTO_NOTARIZE       — "true" 且 macOS + 已设置 Apple 公证凭证时，DMG 创建后自动触发公证
 # ═══════════════════════════════════════════════════════════════════════════
 
 set -euo pipefail
@@ -121,6 +123,23 @@ echo -e "  ║  Sidecar: ${SIDECAR_TARGET}    ║"
 echo "  ╚═══════════════════════════════════════════════╝"
 echo -e "${NC}"
 
+# ─── Step -1: 版本号一致性检查 ──────────────────────────────────────────────
+sync_version() {
+    step "Step -1: 版本号一致性检查"
+
+    if [[ "${SKIP_VERSION_SYNC:-}" == "true" ]]; then
+        warn "跳过版本号同步检查 (SKIP_VERSION_SYNC=true)"
+        return
+    fi
+
+    local sync_script="$PROJECT_ROOT/scripts/sync-version.sh"
+    if [[ -f "$sync_script" ]]; then
+        bash "$sync_script" || {
+            warn "版本号不一致，已自动同步（来源: crablet/Cargo.toml = $VERSION）"
+        }
+    fi
+}
+
 # ─── Step 0: 前端构建 ──────────────────────────────────────────────────────
 build_frontend() {
     step "Step 0: 前端 SPA 构建"
@@ -169,7 +188,13 @@ build_sidecar() {
     else
         info "编译 release 二进制 (cargo build --release -p crablet)..."
         cd "$PROJECT_ROOT"
-        cargo build --release -p crablet --no-default-features --features web
+        if [[ "$PLATFORM" == "windows" ]]; then
+            # 静态链接 CRT，避免目标机缺少 VC++ 运行库
+            RUSTFLAGS="${RUSTFLAGS:-} -C target-feature=+crt-static" \
+                cargo build --release -p crablet --no-default-features --features web
+        else
+            cargo build --release -p crablet --no-default-features --features web
+        fi
         ok "Sidecar 编译完成 ($(du -sh "$binary" | cut -f1))"
     fi
 
@@ -317,11 +342,24 @@ code_sign() {
     if [[ "$identity" == "-" ]]; then
         warn "未设置 CODE_SIGN_IDENTITY，使用 Ad-hoc 签名"
         warn "首次运行需：右键 → 打开 → 确认"
+        codesign --force --deep --sign "$identity" "$APP_PATH" 2>&1
     else
-        info "使用证书: $identity"
+        info "使用证书: $identity（正式签名，含 sidecar 单独签名 + hardened runtime）"
+        # 正式证书时，sidecar 需单独用 --options runtime 签名（--deep 在 macOS 14+ 已弃用，
+        # 且 hardened runtime 要求内部可执行文件必须独立满足签名要求）
+        local sidecar_bins=(
+            "$APP_PATH/Contents/MacOS/$SIDECAR_TARGET"
+            "$APP_PATH/Contents/MacOS/binaries/$SIDECAR_TARGET"
+        )
+        for bin in "${sidecar_bins[@]}"; do
+            if [[ -f "$bin" ]]; then
+                codesign --force --options runtime --sign "$identity" "$bin" 2>&1
+                info "  已签名 sidecar: $(basename "$bin")"
+            fi
+        done
+        codesign --force --options runtime --sign "$identity" "$APP_PATH" 2>&1
     fi
 
-    codesign --force --deep --sign "$identity" "$APP_PATH" 2>&1
     codesign --verify --deep --strict "$APP_PATH" 2>&1
     ok "签名完成 ($identity)"
 }
@@ -372,6 +410,15 @@ create_dmg() {
     local dmg_size
     dmg_size=$(du -sh "$dmg_path" | cut -f1)
     ok "DMG 创建完成: $dmg_path ($dmg_size)"
+
+    # 可选：自动公证（需要 Developer ID 证书 + AUTO_NOTARIZE=true + 完整的 Apple 凭证）
+    if [[ "${AUTO_NOTARIZE:-}" == "true" ]] && [[ "${CODE_SIGN_IDENTITY:--}" != "-" ]]; then
+        local notarize_script="$PROJECT_ROOT/desktop/notarize-dmg.sh"
+        if [[ -f "$notarize_script" ]]; then
+            info "AUTO_NOTARIZE=true，触发 Apple 公证流程..."
+            bash "$notarize_script" || warn "公证失败，DMG 仍为已签名但未公证状态"
+        fi
+    fi
 }
 
 # ─── Step 6: 产物清单 ──────────────────────────────────────────────────────
@@ -430,6 +477,7 @@ if [[ "$MODE" == "--dmg-only" ]]; then
 fi
 
 # 完整 / app-only 模式
+sync_version
 build_frontend
 build_sidecar
 build_tauri

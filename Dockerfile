@@ -1,68 +1,68 @@
 # syntax=docker/dockerfile:1
 
-# Stage: Frontend Builder
-FROM node:24-alpine AS frontend-builder
+# ─── Stage 0: Frontend Builder ───────────────────────────────────────────────
+FROM node:22-alpine AS frontend-builder
 WORKDIR /app/frontend
-# COPY frontend/package.json frontend/package-lock.json ./
 COPY frontend/package*.json ./
-# RUN npm ci
 RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
 COPY frontend/ .
 RUN npm run build
 
-# Stage 1: Chef (Pre-computation)
-FROM lukemathwalker/cargo-chef:latest-rust-1.85 AS chef
+# ─── Stage 1: Cargo-Chef base ────────────────────────────────────────────────
+# Pin to a specific rust version for reproducible builds.
+FROM lukemathwalker/cargo-chef:latest-rust-1.87 AS chef
 WORKDIR /app
 
-# Stage 2: Planner
+# ─── Stage 2: Planner ────────────────────────────────────────────────────────
 FROM chef AS planner
-WORKDIR /app
-# Copy root workspace files for dependency resolution
+# Copy workspace manifest + lock first (cheapest layer)
 COPY Cargo.toml Cargo.lock ./
+# crablet crate manifests only — desktop is NOT built in container
 COPY crablet/Cargo.toml ./crablet/
+# Create a minimal stub for the desktop workspace member so Cargo resolves the
+# workspace without error, but we never compile it here.
+RUN mkdir -p desktop/src && \
+    printf '[package]\nname = "desktop"\nversion = "0.0.0"\nedition = "2021"\n' > desktop/Cargo.toml && \
+    echo 'fn main() {}' > desktop/src/main.rs
 COPY crablet/src/ ./crablet/src/
-COPY desktop/Cargo.toml ./desktop/
 WORKDIR /app/crablet
-# Only copy necessary files for recipe generation
 RUN cargo chef prepare --recipe-path recipe.json
 
-# Stage 3: Builder
+# ─── Stage 3: Builder ────────────────────────────────────────────────────────
 FROM chef AS builder
-WORKDIR /app
-COPY --from=planner /app/crablet/recipe.json ./crablet/recipe.json
-COPY Cargo.toml Cargo.lock ./
-COPY crablet/Cargo.toml ./crablet/
-COPY desktop/Cargo.toml ./desktop/
+COPY Cargo.toml Cargo.lock /app/
+COPY crablet/Cargo.toml /app/crablet/
+# Recreate desktop stub (same as planner — keeps workspace consistent)
+RUN mkdir -p /app/desktop/src && \
+    printf '[package]\nname = "desktop"\nversion = "0.0.0"\nedition = "2021"\n' > /app/desktop/Cargo.toml && \
+    echo 'fn main() {}' > /app/desktop/src/main.rs
+COPY --from=planner /app/crablet/recipe.json /app/crablet/recipe.json
 WORKDIR /app/crablet
-# Build dependencies - this is the caching layer!
-RUN cargo chef cook --release --recipe-path recipe.json
+# Warm dependency cache — must match the final build flags exactly
+RUN cargo chef cook --release --no-default-features --features web --recipe-path recipe.json
 
-# Build application
-COPY crablet/ ./
+# Build the real binary
+COPY crablet/ /app/crablet/
 WORKDIR /app
-RUN cargo build --release -p crablet
+RUN cargo build --release --no-default-features --features web -p crablet
 
-# Stage 4: Runtime
+# ─── Stage 4: Runtime ────────────────────────────────────────────────────────
 FROM debian:bookworm-slim AS runtime
 
 # Create non-root user
 RUN groupadd -r crablet && useradd -r -g crablet crablet
 
-# Install runtime dependencies
-# ffmpeg for audio, ca-certificates for https, curl for healthcheck
+# Install runtime dependencies.
+# Note: backend uses rustls → no libssl3 needed.
+# ffmpeg is kept for audio feature; remove if not needed to shrink image.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
-    libssl3 \
     ffmpeg \
     curl \
-    python3 \
-    python3-pip \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Copy binary from builder
-# COPY --from=builder /app/target/release/crablet /usr/local/bin/
 COPY --from=builder /app/target/release/crablet /usr/local/bin/
 
 # Copy frontend build to static directory
