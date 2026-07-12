@@ -10,7 +10,7 @@ RUN npm run build
 
 # ─── Stage 1: Cargo-Chef base ────────────────────────────────────────────────
 # Pin to a specific rust version for reproducible builds.
-FROM lukemathwalker/cargo-chef:latest-rust-1.87 AS chef
+FROM lukemathwalker/cargo-chef:latest-rust-1.97 AS chef
 WORKDIR /app
 
 # ─── Stage 2: Planner ────────────────────────────────────────────────────────
