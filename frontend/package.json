@@ -31,7 +31,7 @@
     "i18next": "^26.0.1",
     "i18next-browser-languagedetector": "^8.2.1",
     "lucide-react": "^1.7.0",
-    "pdfjs-dist": "^5.5.207",
+    "pdfjs-dist": "^6.1.200",
     "react": "^19.2.0",
     "react-chartjs-2": "^5.3.1",
     "react-dom": "^19.2.0",
