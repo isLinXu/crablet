@@ -23,6 +23,7 @@ qdrant-support = ["dep:qdrant-client"]
 fusion-tests-disabled = []
 
 [dependencies]
+async-recursion = "1.1"
 tokio = { version = "1.40", features = ["full"] }
 axum = { version = "0.7", features = ["ws", "multipart", "macros"], optional = true }
 axum-extra = { version = "0.9", features = ["cookie", "form", "query"], optional = true }

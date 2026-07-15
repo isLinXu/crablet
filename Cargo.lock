@@ -1859,6 +1859,7 @@ dependencies = [
  "anyhow",
  "arboard",
  "argon2",
+ "async-recursion",
  "async-stream",
  "async-trait",
  "axum 0.7.9",
