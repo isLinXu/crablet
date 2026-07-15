@@ -1,7 +1,10 @@
 import { fireEvent, render, screen } from '@testing-library/react';
+import type { ReactElement } from 'react';
 import { ErrorBoundary } from '../ErrorBoundary';
 
-function Broken() { throw new Error('boom'); }
+function Broken(): ReactElement {
+  throw new Error('boom');
+}
 
 describe('ErrorBoundary', () => {
   it('isolates a route failure and retries without reloading the app', () => {

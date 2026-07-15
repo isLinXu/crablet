@@ -64,6 +64,7 @@ export interface UseSettingsState {
   setSystemConfig: React.Dispatch<React.SetStateAction<SystemConfig>>;
   loadingSystemConfig: boolean;
   savingSystemConfig: boolean;
+  modelHealth: { status: string; model_configured: boolean; model_name: string; ollama_reachable?: boolean } | null;
 
   // Derived
   currentVendor: string;
@@ -121,9 +122,15 @@ export function useSettingsState(): UseSettingsState {
   const [routingReport, setRoutingReport] = useState<RoutingEvaluationReport | null>(null);
   const [routingReportWindow, setRoutingReportWindow] = useState(200);
   const [loadingRoutingReport, setLoadingRoutingReport] = useState(false);
-  const [systemConfig, setSystemConfig] = useState<SystemConfig>({});
+  const [systemConfig, setSystemConfig] = useState<SystemConfig>({
+    openai_api_base: '',
+    openai_model_name: '',
+    openai_api_key: '',
+    llm_vendor: 'custom',
+  });
   const [loadingSystemConfig, setLoadingSystemConfig] = useState(false);
   const [savingSystemConfig, setSavingSystemConfig] = useState(false);
+  const [modelHealth, setModelHealth] = useState<{ status: string; model_configured: boolean; model_name: string; ollama_reachable?: boolean } | null>(null);
 
   const currentVendor = detectVendor(apiBaseUrl.trim());
 
@@ -159,6 +166,7 @@ export function useSettingsState(): UseSettingsState {
     settingsService.getRoutingReport(200).then((res) => { if (res) setRoutingReport(res); }).catch(() => {});
     setDraftProviders(providers);
     setLoadingSystemConfig(true);
+    settingsService.getModelHealth().then(setModelHealth).catch(() => setModelHealth(null));
     settingsService.getSystemConfig()
       .then((res) => setSystemConfig((res?.data || res || {}) as SystemConfig))
       .catch((e) => console.error('Failed to load system config', e))
@@ -445,15 +453,17 @@ export function useSettingsState(): UseSettingsState {
   const handleSaveSystemConfig = useCallback(async () => {
     const base = String(systemConfig.openai_api_base || '').trim();
     const model = String(systemConfig.openai_model_name || '').trim();
-    const key = String(systemConfig.openai_api_key || '').trim();
+    const enteredKey = String(systemConfig.openai_api_key || '').trim();
+    const key = enteredKey.startsWith('••••') ? '' : enteredKey;
     const inferredVendor = vendorToEnvVendor(detectVendor(base));
     const vendor = String(systemConfig.llm_vendor || inferredVendor || 'custom').trim().toLowerCase();
     const modelIssue = validateVendorModel(vendor, model);
     if (!modelIssue.valid) { toast.error(modelIssue.message || '模型配置无效'); return; }
     setSavingSystemConfig(true);
     try {
-      await verifySystemChatConfig({ base, model, key, vendor });
-      const payload = { ...systemConfig, openai_api_base: base, openai_model_name: model, openai_api_key: key, llm_vendor: vendor };
+      const verification = await verifySystemChatConfig({ base, model, key, vendor });
+      if (!verification.ok) { toast.error(verification.message); return; }
+      const payload = { ...systemConfig, openai_api_base: base, openai_model_name: model, ...(key ? { openai_api_key: key } : {}), llm_vendor: vendor };
       await settingsService.updateSystemConfig(payload);
       const confirmed: any = await settingsService.getSystemConfig();
       const confirmedConfig = confirmed?.data || confirmed || {};
@@ -474,7 +484,8 @@ export function useSettingsState(): UseSettingsState {
     const newConfig = { openai_api_key: p.apiKey, openai_api_base: p.apiBaseUrl, openai_model_name: p.model, llm_vendor: vendor };
     setSavingSystemConfig(true);
     try {
-      await verifySystemChatConfig({ base: String(p.apiBaseUrl || '').trim(), model: String(p.model || '').trim(), key: String(p.apiKey || '').trim(), vendor: vendor.toLowerCase() });
+      const verification = await verifySystemChatConfig({ base: String(p.apiBaseUrl || '').trim(), model: String(p.model || '').trim(), key: String(p.apiKey || '').trim(), vendor: vendor.toLowerCase() });
+      if (!verification.ok) { toast.error(verification.message); return; }
       await settingsService.updateSystemConfig(newConfig);
       const confirmed: any = await settingsService.getSystemConfig();
       const confirmedConfig = confirmed?.data || confirmed || {};
@@ -520,7 +531,7 @@ export function useSettingsState(): UseSettingsState {
     apiKeys, newKeyName, setNewKeyName, mcpOverview,
     draftProviders, setDraftProviders,
     routingSettings, setRoutingSettings, savingRoutingSettings, routingReport, routingReportWindow, setRoutingReportWindow, loadingRoutingReport,
-    systemConfig, setSystemConfig, loadingSystemConfig, savingSystemConfig,
+    systemConfig, setSystemConfig, loadingSystemConfig, savingSystemConfig, modelHealth,
     currentVendor, keyPatternIssue,
     handlePresetSelect, handleSaveApiSettings, handleCopyEndpoint, handleToggleAutoFillEndpoint,
     handleTestConnection, handleSyncModels, handleSaveProfile, handleCreateKey, handleRevokeKey,

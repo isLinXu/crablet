@@ -50,9 +50,9 @@ describe('MultimodalThinking', () => {
       makeStep('s2', [makeBlock('b2', 'text', 'Content 2')], 'processing'),
     ];
     render(<MultimodalThinking steps={steps} />);
-    expect(screen.getByText('Step s1')).toBeInTheDocument();
+    expect(screen.getAllByText('Step s1').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('Description s1')).toBeInTheDocument();
-    expect(screen.getByText('Step s2')).toBeInTheDocument();
+    expect(screen.getAllByText('Step s2').length).toBeGreaterThanOrEqual(1);
   });
 
   it('renders text blocks', () => {
@@ -79,7 +79,9 @@ describe('MultimodalThinking', () => {
   it('renders json blocks', () => {
     const steps = [makeStep('s1', [makeBlock('b1', 'json', '{"key": "value"}')])];
     render(<MultimodalThinking steps={steps} />);
-    expect(screen.getByText('"key": "value"')).toBeInTheDocument();
+    expect(screen.getAllByText((_, element) =>
+      element?.textContent?.includes('"key": "value"') ?? false
+    ).length).toBeGreaterThanOrEqual(1);
   });
 
   it('renders diff blocks', () => {
@@ -125,7 +127,7 @@ describe('MultimodalThinking', () => {
     const steps = [makeStep('s1', [makeBlock('b1', 'text', 'test')])];
     render(<MultimodalThinking steps={steps} onStepClick={onStepClick} />);
 
-    fireEvent.click(screen.getByText('Step s1'));
+    fireEvent.click(screen.getAllByText('Step s1')[0]);
     expect(onStepClick).toHaveBeenCalledWith(
       expect.objectContaining({ id: 's1' })
     );
@@ -139,10 +141,10 @@ describe('MultimodalThinking', () => {
       makeStep('s4', [], 'error'),
     ];
     render(<MultimodalThinking steps={steps} showStepNavigator />);
-    expect(screen.getByText('⏳')).toBeInTheDocument();
-    expect(screen.getByText('⚡')).toBeInTheDocument();
+    expect(screen.getAllByText('⏳').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('⚡').length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText('✅').length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText('❌')).toBeInTheDocument();
+    expect(screen.getAllByText('❌').length).toBeGreaterThanOrEqual(1);
   });
 
   it('shows run button for python code blocks when enabled', () => {

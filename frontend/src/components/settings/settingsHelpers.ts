@@ -125,8 +125,17 @@ export interface SystemChatConfigParams {
 }
 
 export async function verifySystemChatConfig(params: SystemChatConfigParams | string): Promise<{ ok: boolean; message: string }> {
-  const base = typeof params === 'string' ? params : params.base;
+  const base = (typeof params === 'string' ? params : params.base).trim();
   if (!base) return { ok: false, message: 'API Base URL 为空' };
+  if (!/^https?:\/\//i.test(base) && !/^https?:\/\/localhost/i.test(base)) {
+    return { ok: false, message: 'API Base URL 必须以 http:// 或 https:// 开头' };
+  }
+  try {
+    const parsed = new URL(base);
+    if (!parsed.hostname) return { ok: false, message: 'API Base URL 格式无效' };
+  } catch {
+    return { ok: false, message: 'API Base URL 格式无效' };
+  }
   return { ok: true, message: '配置验证通过' };
 }
 

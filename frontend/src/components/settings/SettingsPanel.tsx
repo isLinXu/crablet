@@ -254,7 +254,10 @@ export const SettingsPanel: React.FC = () => {
               </div>
             </div>
             <div className="flex justify-end pt-2">
-              <Button onClick={s.handleSaveSystemConfig} loading={s.savingSystemConfig}>Save to .env</Button>
+              <div className="flex items-center gap-3">
+                <Button onClick={s.handleSaveSystemConfig} loading={s.savingSystemConfig}>Save to .env</Button>
+                {s.modelHealth && <span className="text-xs text-slate-500">模型：{s.modelHealth.model_name} · {s.modelHealth.ollama_reachable === false ? 'Ollama 不可达' : '已连接'}</span>}
+              </div>
             </div>
           </CardContent>
         </Card>

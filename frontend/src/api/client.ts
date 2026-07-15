@@ -16,7 +16,7 @@ export function getApiErrorMessage(payload: unknown, fallback = '请求失败'):
 
 const client = axios.create({
   baseURL: getApiBaseUrl(),
-  timeout: 60000, // Increased to 60s for local RAG/MCP operations
+  timeout: 120000, // Allow local models time to respond; streaming uses fetch cancellation
   headers: {
     'Content-Type': 'application/json',
   },

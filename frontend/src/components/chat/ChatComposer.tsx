@@ -18,6 +18,7 @@ interface ChatComposerProps {
   isThinking: boolean;
   isDraftMode: boolean;
   onSend: () => void;
+  onCancel?: () => void;
   onPickFiles: (files: FileList | null) => void;
   fileInputRef: React.RefObject<HTMLInputElement | null>;
   attachments: PendingAttachment[];
@@ -50,6 +51,7 @@ export const ChatComposer = ({
   isThinking,
   isDraftMode,
   onSend,
+  onCancel,
   onPickFiles,
   fileInputRef,
   attachments,
@@ -173,8 +175,8 @@ export const ChatComposer = ({
           />
           <div className="absolute bottom-3 right-3">
             <Button
-              onClick={onSend}
-              disabled={isThinking || !input.trim()}
+              onClick={isThinking ? (onCancel ?? onSend) : onSend}
+              disabled={!isThinking && !input.trim()}
               size="icon"
               className={clsx(
                 "h-9 w-9 rounded-xl transition-all duration-200",

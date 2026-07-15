@@ -70,7 +70,10 @@ export const MultimodalThinking: React.FC<MultimodalThinkingProps> = ({
     const completedSteps = steps.filter(s => s.status === 'completed');
     if (completedSteps.length > 0) {
       const latest = completedSteps[completedSteps.length - 1];
-      setExpandedBlocks(prev => new Set([...prev, latest.id]));
+      setExpandedBlocks(prev => new Set([
+        ...prev,
+        ...latest.blocks.filter(block => block.type === 'code').map(block => block.id),
+      ]));
     }
   }, [steps]);
 

@@ -89,7 +89,7 @@ export const ContextWindowViz: React.FC<ContextWindowVizProps> = ({
   useEffect(() => {
     if (!sessionId) return;
     void syncContextMetrics();
-  }, [sessionId]);
+  }, [sessionId, syncContextMetrics]);
 
   // Compression handler
   const handleCompress = async () => {

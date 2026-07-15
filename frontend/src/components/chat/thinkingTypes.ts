@@ -24,7 +24,8 @@ export type DecisionStepType =
   | 'tool-call'
   | 'context'
   | 'state-change'
-  | 'confidence';
+  | 'confidence'
+  | 'intent';
 
 export interface DecisionStepDetails {
   provider?: string;

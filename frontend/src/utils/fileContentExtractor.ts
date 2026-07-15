@@ -3,16 +3,6 @@
  * 支持多种文件格式的文本内容提取
  */
 
-// 动态导入 pdf-parse 以避免服务端渲染问题
-type PdfParseFn = (data: Uint8Array) => Promise<{ text?: string }>;
-
-const loadPdfParser = async () => {
-  const pdfParse = await import('pdf-parse');
-  // pdf-parse 的导出方式比较特殊，需要处理不同的导出格式
-  const maybeDefault = pdfParse as unknown as { default?: PdfParseFn };
-  return maybeDefault.default || (pdfParse as unknown as PdfParseFn);
-};
-
 // 动态导入 tesseract.js 用于OCR
 const loadTesseract = async () => {
   const tesseract = await import('tesseract.js');
@@ -148,24 +138,27 @@ async function extractPdfContent(
   const uint8Array = new Uint8Array(arrayBuffer);
 
   try {
-    // 首先尝试使用 pdf-parse 提取文本
-    const pdfParse = await loadPdfParser();
-    const result = await pdfParse(uint8Array);
-    
-    // 检查提取的文本是否有效（非空且不是乱码）
-    const extractedText = result.text || '';
-    const isValidText = validateExtractedText(extractedText);
-    
-    if (isValidText && extractedText.trim().length > 100) {
+    // 使用 PDF.js 提取文本，避免将 Node.js PDF 解析器打入浏览器 bundle
+    const pdfjs = await loadPdfJs();
+    const pdf = await pdfjs.getDocument({ data: uint8Array }).promise;
+    let extractedText = '';
+    for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+      const page = await pdf.getPage(pageNum);
+      const textContent = await page.getTextContent();
+      extractedText += textContent.items
+        .map((item) => ('str' in item ? item.str : ''))
+        .join(' ') + '\n';
+      page.cleanup();
+    }
+
+    if (validateExtractedText(extractedText) && extractedText.trim().length > 100) {
       return { text: extractedText, isOcr: false };
     }
-    
-    // 如果文本提取不完整或无效，尝试使用 PDF.js + OCR
+
     if (import.meta.env.DEV) console.debug('PDF文本提取不完整，尝试OCR识别...');
     if (onOcrStart) onOcrStart();
     const ocrText = await extractPdfWithOCR(file, onProgress);
     return { text: ocrText, isOcr: true };
-    
   } catch (error) {
     console.warn('PDF 解析失败，尝试OCR:', error);
     // 尝试OCR作为备选方案

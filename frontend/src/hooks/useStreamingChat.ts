@@ -8,7 +8,12 @@ import { useModelStore } from '@/store/modelStore';
 type StreamEvent = {
   type: string;
   content?: string | null;
+  status?: string;
   payload?: {
+    status?: string;
+    total_latency_ms?: number;
+    model?: string;
+    cognitive_layer?: string;
     step?: {
       thought?: unknown;
       action?: unknown;
@@ -79,6 +84,8 @@ const parseSseBlocks = (buffer: string) => {
   return { events, rest };
 };
 
+let activeChatController: AbortController | null = null;
+
 export function useStreamingChat() {
   const {
     addMessage,
@@ -96,6 +103,9 @@ export function useStreamingChat() {
     /(draw|绘图|画图|生成图片|生成图像|海报|插画|text-to-image|image generation)/i.test(prompt);
 
   const sendMessage = useCallback(async (content: string, citations?: CitationItem[]) => {
+    activeChatController?.abort();
+    const controller = new AbortController();
+    activeChatController = controller;
     const activeSessionId = sessionId ?? `session-${Date.now()}`;
     if (!sessionId) setSessionId(activeSessionId);
     addMessage({
@@ -156,6 +166,7 @@ export function useStreamingChat() {
           method: 'POST',
           headers: buildHeaders(),
           body: JSON.stringify(payload),
+          signal: controller.signal,
         });
       } catch (e) {
         console.warn(`[Chat] Request to ${streamUrl} failed with network error`, e);
@@ -193,7 +204,11 @@ export function useStreamingChat() {
           }
           if (!event) continue;
           if (event.session_id) setSessionId(event.session_id);
-          if (event.type === 'delta') {
+          if (event.type === 'status') {
+            updateLastMessage(typeof event.payload?.status === 'string' ? `【${event.payload.status}】` : '模型处理中');
+          } else if (event.type === 'metrics') {
+            if (import.meta.env.DEV) console.debug('[Chat Metrics]', event.payload);
+          } else if (event.type === 'delta') {
             const chunk = typeof event.content === 'string' ? event.content : '';
             full += chunk;
             // 使用节流函数更新，减少渲染频率
@@ -244,11 +259,20 @@ export function useStreamingChat() {
       // 如果从未收到认知层事件，则基于输入内容推断
       // 注意：实际的认知层应该在流处理过程中已经被设置
     } catch (error: unknown) {
-      updateLastMessage(getErrorMessage(error));
+      if (controller.signal.aborted) {
+        updateLastMessage('已取消本次模型请求');
+      } else {
+        updateLastMessage(getErrorMessage(error));
+      }
     } finally {
+      if (activeChatController === controller) activeChatController = null;
       setThinking(false);
     }
   }, [addMessage, appendTrace, providers, resolveForPrompt, sessionId, setCurrentCognitiveLayer, setSessionId, setThinking, updateLastMessage]);
 
-  return { sendMessage };
+  const cancelMessage = useCallback(() => {
+    activeChatController?.abort();
+  }, []);
+
+  return { sendMessage, cancelMessage };
 }

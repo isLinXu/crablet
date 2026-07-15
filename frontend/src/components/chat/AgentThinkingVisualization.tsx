@@ -60,6 +60,7 @@ const stepIcons: Record<DecisionStepType, React.ElementType> = {
   context: Database,
   'state-change': ArrowRightLeft,
   confidence: Gauge,
+  intent: Target,
 };
 
 // 标签映射
@@ -78,6 +79,7 @@ const stepLabels: Record<DecisionStepType, string> = {
   context: '上下文管理',
   'state-change': '状态变更',
   confidence: '置信度评估',
+  intent: '意图识别',
 };
 
 // 颜色映射
@@ -96,6 +98,7 @@ const stepColors: Record<DecisionStepType, string> = {
   context: 'text-sky-400 bg-sky-400/10 border-sky-400/20',
   'state-change': 'text-violet-400 bg-violet-400/10 border-violet-400/20',
   confidence: 'text-yellow-400 bg-yellow-400/10 border-yellow-400/20',
+  intent: 'text-fuchsia-400 bg-fuchsia-400/10 border-fuchsia-400/20',
 };
 
 // 认知层标签

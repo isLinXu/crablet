@@ -35,7 +35,7 @@ export const ChatWindow = () => {
     editMessage,
     setDraftMode,
   } = useChatStore();
-  const { sendMessage } = useStreamingChat();
+  const { sendMessage, cancelMessage } = useStreamingChat();
 
   const [input, setInput] = useState('');
   const [showMobileHistory, setShowMobileHistory] = useState(false);
@@ -241,6 +241,7 @@ export const ChatWindow = () => {
         isThinking={isThinking}
         isDraftMode={isDraftMode}
         onSend={handleSend}
+        onCancel={cancelMessage}
         onPickFiles={handlePickFiles}
         fileInputRef={fileInputRef}
         attachments={attachments}

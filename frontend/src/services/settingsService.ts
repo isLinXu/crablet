@@ -55,6 +55,7 @@ export const settingsService = {
   updateRoutingSettings: (payload: RoutingSettings) => api.put<RoutingSettings>('/v1/settings/routing', payload),
   getRoutingReport: (window = 200) => api.get<RoutingEvaluationReport>(`/v1/settings/routing/report?window=${window}`),
   getSystemConfig: () => api.get<SystemConfig>('/v1/settings/system/config'),
+  getModelHealth: () => api.get<{ status: string; model_configured: boolean; model_name: string; ollama_reachable?: boolean }>('/health/model'),
   updateSystemConfig: (payload: Partial<SystemConfig>) => api.post<SystemConfig>('/v1/settings/system/config', payload),
   getMcpOverview: async () => normalizeMcpOverview(
     await api.get<McpOverviewResponse>('/v1/mcp/overview'),
