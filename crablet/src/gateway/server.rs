@@ -137,6 +137,8 @@ struct GatewayHealthResponse {
     status: &'static str,
     fusion_memory_active: bool,
     legacy_gateway_api_enabled: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    desktop_instance: Option<String>,
 }
 
 async fn health_handler(State(gateway): State<Arc<CrabletGateway>>) -> Json<GatewayHealthResponse> {
@@ -144,6 +146,7 @@ async fn health_handler(State(gateway): State<Arc<CrabletGateway>>) -> Json<Gate
         status: "ok",
         fusion_memory_active: gateway.router.fusion_memory.is_some(),
         legacy_gateway_api_enabled: env_flag_enabled("CRABLET_ENABLE_GATEWAY_LEGACY_API"),
+        desktop_instance: std::env::var("CRABLET_DESKTOP_INSTANCE").ok(),
     })
 }
 
@@ -605,6 +608,9 @@ impl CrabletGateway {
         } else {
             CorsLayer::new()
                 .allow_origin([
+                    HeaderValue::from_static("tauri://localhost"),
+                    HeaderValue::from_static("http://tauri.localhost"),
+                    HeaderValue::from_static("https://tauri.localhost"),
                     HeaderValue::from_static("http://localhost:3000"),
                     HeaderValue::from_static("http://127.0.0.1:3000"),
                     HeaderValue::from_static("http://localhost:3333"),
