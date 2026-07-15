@@ -215,7 +215,7 @@ impl EnhancedReActEngine {
             // Clone dependencies for task
             let skills_clone = self.skills.clone();
             let bus_clone = self.event_bus.clone();
-            let _timeout_duration = self.config.step_timeout;
+            let tool_timeout = std::time::Duration::from_secs(30);
             let sem_clone = semaphore.clone();
             
             tasks.push(tokio::spawn(async move {
@@ -239,12 +239,13 @@ impl EnhancedReActEngine {
                 let registry = skills_clone.read().await;
                 let output = match serde_json::from_str(&args_str) {
                     Ok(parsed_json) => {
-                        match registry.execute(&func_name, parsed_json).await {
-                            Ok(result) => result,
-                            Err(e) => format!("Skill execution failed: {}", e),
+                        match tokio::time::timeout(tool_timeout, registry.execute(&func_name, parsed_json)).await {
+                            Ok(Ok(result)) => result,
+                            Ok(Err(e)) => format!("TOOL_ERROR: {}", e),
+                            Err(_) => format!("TOOL_TIMEOUT: tool '{}' exceeded {} seconds", func_name, tool_timeout.as_secs()),
                         }
                     }
-                    Err(e) => format!("Parameter Error: {}. Please use valid JSON.", e),
+                    Err(e) => format!("TOOL_INVALID_ARGUMENT: {}. Please use valid JSON.", e),
                 };
                 
                 // Publish finish event

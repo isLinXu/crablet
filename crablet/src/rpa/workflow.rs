@@ -2,6 +2,7 @@
 //!
 //! Provides a unified workflow engine that can execute both browser and desktop automation steps.
 
+use async_recursion::async_recursion;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -42,6 +43,7 @@ impl RpaWorkflowEngine {
     }
 
     /// Execute a workflow definition
+    #[async_recursion]
     pub async fn execute(
         &self,
         workflow: &WorkflowDefinition,

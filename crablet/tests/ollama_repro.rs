@@ -15,8 +15,9 @@ async fn test_ollama_tool_call() -> anyhow::Result<()> {
 
     use serde_json::json;
 
-    let model = "qwen3:4b"; // User's model
-                            // Ensure model exists (optional, or pull it)
+    let model =
+        std::env::var("CRABLET_TEST_MODEL").unwrap_or_else(|_| "qwen3.6:latest".to_string());
+    // Ensure model exists (optional, or pull it)
 
     // Construct a request with tools
     // Create a very long description to test truncation/buffer issues
@@ -56,6 +57,7 @@ async fn test_ollama_tool_call() -> anyhow::Result<()> {
 
     let res = client
         .post(format!("{}/api/chat", base_url))
+        .timeout(std::time::Duration::from_secs(120))
         .json(&body)
         .send()
         .await?;

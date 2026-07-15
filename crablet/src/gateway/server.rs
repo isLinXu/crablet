@@ -137,6 +137,9 @@ struct GatewayHealthResponse {
     status: &'static str,
     fusion_memory_active: bool,
     legacy_gateway_api_enabled: bool,
+    model_configured: bool,
+    model_name: String,
+    ollama_reachable: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     desktop_instance: Option<String>,
 }
@@ -146,6 +149,28 @@ async fn health_handler(State(gateway): State<Arc<CrabletGateway>>) -> Json<Gate
         status: "ok",
         fusion_memory_active: gateway.router.fusion_memory.is_some(),
         legacy_gateway_api_enabled: env_flag_enabled("CRABLET_ENABLE_GATEWAY_LEGACY_API"),
+        model_configured: std::env::var("OPENAI_MODEL_NAME")
+            .ok()
+            .filter(|v| !v.trim().is_empty())
+            .is_some()
+            || std::env::var("OLLAMA_MODEL")
+                .ok()
+                .filter(|v| !v.trim().is_empty())
+                .is_some(),
+        model_name: std::env::var("OPENAI_MODEL_NAME")
+            .or_else(|_| std::env::var("OLLAMA_MODEL"))
+            .unwrap_or_else(|_| "qwen3.6:latest".to_string()),
+        ollama_reachable: if std::env::var("LLM_VENDOR").ok().as_deref() == Some("ollama") {
+            Some(
+                reqwest::Client::new()
+                    .get("http://127.0.0.1:11434/api/tags")
+                    .send()
+                    .await
+                    .is_ok(),
+            )
+        } else {
+            None
+        },
         desktop_instance: std::env::var("CRABLET_DESKTOP_INSTANCE").ok(),
     })
 }
@@ -379,7 +404,10 @@ impl CrabletGateway {
 
     fn build_router(gateway: Arc<Self>) -> Router {
         // Separate routes for public and protected endpoints
-        let public_routes = Router::new().route("/health", get(health_handler));
+        let public_routes = Router::new()
+            .route("/health", get(health_handler))
+            .route("/health/ready", get(health_handler))
+            .route("/health/model", get(health_handler));
 
         let api_v1_routes = Router::new()
             .route("/chat", post(chat_handler))

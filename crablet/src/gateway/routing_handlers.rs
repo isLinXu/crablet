@@ -195,10 +195,13 @@ pub async fn get_system_config(
 
     for line in content.lines() {
         if let Some((key, value)) = line.split_once('=') {
-            let val = value.trim().to_string();
+            let val = value
+                .trim()
+                .trim_matches(|c| c == '"' || c == '\'')
+                .to_string();
             match key.trim() {
-                "DASHSCOPE_API_KEY" => config.openai_api_key = Some(val),
-                "OPENAI_API_KEY" => {
+                "DASHSCOPE_API_KEY" | "OPENAI_API_KEY" | "ANTHROPIC_API_KEY" | "GOOGLE_API_KEY"
+                | "HUNYUAN_API_KEY" | "DOUBAO_API_KEY" | "CUSTOM_API_KEY" => {
                     if config.openai_api_key.is_none() {
                         config.openai_api_key = Some(val);
                     }
@@ -248,8 +251,16 @@ pub async fn update_system_config(
     };
 
     if let Some(v) = payload.openai_api_key {
-        upsert("DASHSCOPE_API_KEY", &v);
-        upsert("OPENAI_API_KEY", &v);
+        let key_name = match payload.llm_vendor.as_deref() {
+            Some("ANTHROPIC_API_KEY") => "ANTHROPIC_API_KEY",
+            Some("GOOGLE_API_KEY") => "GOOGLE_API_KEY",
+            Some("HUNYUAN_API_KEY") => "HUNYUAN_API_KEY",
+            Some("DOUBAO_API_KEY") => "DOUBAO_API_KEY",
+            Some("OLLAMA_HOST") => "OLLAMA_HOST",
+            Some("CUSTOM_API_KEY") => "CUSTOM_API_KEY",
+            _ => "OPENAI_API_KEY",
+        };
+        upsert(key_name, &v);
     }
     if let Some(v) = payload.openai_api_base {
         upsert("OPENAI_API_BASE", &v);
@@ -271,14 +282,35 @@ pub async fn update_system_config(
         new_content + "\n"
     };
 
-    fs::write(&path, final_content).map_err(|e| {
-        tracing::error!("Failed to write .env: {}", e);
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|e| {
+            tracing::error!(
+                "Failed to create .env directory {}: {}",
+                parent.display(),
+                e
+            );
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+    }
+    let temp_path = path.with_extension("env.tmp");
+    fs::write(&temp_path, &final_content).map_err(|e| {
+        tracing::error!(
+            "Failed to write temporary .env {}: {}",
+            temp_path.display(),
+            e
+        );
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
+    if let Err(error) = fs::rename(&temp_path, &path) {
+        let _ = fs::remove_file(&temp_path);
+        tracing::error!("Failed to replace .env {}: {}", path.display(), error);
+        return Err(StatusCode::INTERNAL_SERVER_ERROR);
+    }
 
     Ok(Json(serde_json::json!({
         "status": "success",
-        "message": "Configuration saved. Please restart the service to apply changes."
+        "message": "Configuration saved. Please restart the service to apply changes.",
+        "path": path.display().to_string()
     })))
 }
 

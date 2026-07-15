@@ -14,8 +14,8 @@ async fn test_real_llm_integration() {
         return;
     }
 
-    // Set OLLAMA_MODEL to qwen3:4b as requested
-    env::set_var("OLLAMA_MODEL", "qwen3:4b");
+    let model = env::var("CRABLET_TEST_MODEL").unwrap_or_else(|_| "qwen3.6:latest".to_string());
+    env::set_var("OLLAMA_MODEL", &model);
     // Ensure OPENAI_API_KEY is NOT set so it falls back to Ollama
     env::remove_var("OPENAI_API_KEY");
     env::remove_var("DASHSCOPE_API_KEY");
@@ -26,7 +26,7 @@ async fn test_real_llm_integration() {
     // Initialize Router (this will pick up OLLAMA_MODEL and use OllamaClient)
     let router = CognitiveRouter::new(&config, None, event_bus).await;
 
-    println!("Starting real LLM integration test with model: qwen3:4b");
+    println!("Starting real LLM integration test with model: {}", model);
 
     // Simple prompt
     let prompt = "What is the capital of France? Answer in one word.";
@@ -48,7 +48,7 @@ async fn test_real_llm_integration() {
             // If Ollama is not running, this will fail.
             // We should print a helpful message.
             eprintln!(
-                "Integration test failed: {}. Make sure Ollama is running with qwen3:4b.",
+                "Integration test failed: {}. Make sure Ollama is running with the configured CRABLET_TEST_MODEL.",
                 e
             );
             // We fail the test to signal verification failure
@@ -70,7 +70,8 @@ async fn test_real_llm_tool_usage() {
         return;
     }
 
-    env::set_var("OLLAMA_MODEL", "qwen3:4b");
+    let model = env::var("CRABLET_TEST_MODEL").unwrap_or_else(|_| "qwen3.6:latest".to_string());
+    env::set_var("OLLAMA_MODEL", &model);
     env::remove_var("OPENAI_API_KEY");
     env::remove_var("DASHSCOPE_API_KEY");
 
@@ -80,7 +81,7 @@ async fn test_real_llm_tool_usage() {
     // Initialize Router (this will pick up OLLAMA_MODEL and use OllamaClient)
     let router = CognitiveRouter::new(&config, None, event_bus).await;
 
-    println!("Starting real LLM tool usage test with model: qwen3:4b");
+    println!("Starting real LLM tool usage test with model: {}", model);
 
     // Prompt requiring tool (bash)
     // Note: SafetyOracle might block bash if strict. But "echo hello" should be safe?

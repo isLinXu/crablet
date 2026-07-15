@@ -92,7 +92,7 @@ impl Default for MetaConfig {
             max_feedback_history: 1000,
             max_patterns: 1000,
             learning_threshold: 0.6,
-            enable_auto_optimization: true,
+            enable_auto_optimization: false,
             optimization_interval: Duration::from_secs(60),
         }
     }

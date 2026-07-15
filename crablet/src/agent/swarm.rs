@@ -173,6 +173,7 @@ pub struct Swarm {
     topics: Arc<RwLock<HashMap<String, Vec<AgentId>>>>,
     pub blackboard: SharedBlackboard,
     pub event_bus: Option<Arc<EventBus>>,
+    message_timeout: Duration,
 }
 
 impl Default for Swarm {
@@ -188,7 +189,13 @@ impl Swarm {
             topics: Arc::new(RwLock::new(HashMap::new())),
             blackboard: SharedBlackboard::new(),
             event_bus: None,
+            message_timeout: Duration::from_secs(30),
         }
+    }
+
+    pub fn with_message_timeout(mut self, timeout: Duration) -> Self {
+        self.message_timeout = timeout.max(Duration::from_millis(100));
+        self
     }
 
     pub fn with_event_bus(mut self, event_bus: Arc<EventBus>) -> Self {
@@ -216,6 +223,7 @@ impl Swarm {
         let topics_map = self.topics.clone();
         let my_id = id.clone();
         let event_bus = self.event_bus.clone();
+        let message_timeout = self.message_timeout;
 
         tokio::spawn(async move {
             while let Some((msg, sender)) = rx.recv().await {
@@ -223,7 +231,7 @@ impl Swarm {
                 // Default timeout 30s for agent processing
                 let process_future = agent.receive(msg, sender.clone());
 
-                let result = tokio::time::timeout(Duration::from_secs(30), process_future).await;
+                let result = tokio::time::timeout(message_timeout, process_future).await;
 
                 match result {
                     Ok(Some(response)) => {
@@ -346,6 +354,7 @@ impl Swarm {
     pub async fn send(&self, to: &AgentId, message: SwarmMessage, from: &AgentId) -> Result<()> {
         let channels = self.channels.read().await;
         if let Some(tx) = channels.get(to) {
+            let timeout = self.message_timeout;
             // Publish Event
             if let Some(bus) = &self.event_bus {
                 let (task_id, graph_id, msg_type, content) = match &message {
@@ -400,8 +409,9 @@ impl Swarm {
                 });
             }
 
-            tx.send((message, from.clone()))
+            tokio::time::timeout(timeout, tx.send((message, from.clone())))
                 .await
+                .map_err(|_| anyhow::anyhow!("Timed out sending message to {}", to.0))?
                 .map_err(|e| anyhow::anyhow!("Failed to send message: {}", e))?;
             Ok(())
         } else {

@@ -72,6 +72,14 @@ struct StreamRagPreparation {
     prompt_context: String,
 }
 
+fn mode_instruction(priority: Option<&str>) -> Option<&'static str> {
+    match priority.unwrap_or("balanced") {
+        "speed" => Some("回答要简洁直接，优先低延迟；不要展开不必要的推理。"),
+        "quality" => Some("优先完整性和准确性；必要时进行充分分析。"),
+        _ => None,
+    }
+}
+
 fn llm_from_route(route: Option<&RouteSelection>) -> Option<Arc<dyn LlmClient>> {
     let base_url = route
         .and_then(|r| r.api_base_url.as_ref().map(|v| v.trim().to_string()))
@@ -301,19 +309,17 @@ pub async fn chat_stream(
         tracing::info!("[chat_stream] 检测到知识检索上下文");
     }
 
-    // Try CognitiveRouter first (supports System 1 fast response)
-    let router_result = gateway.router.process(&message, &session_id).await;
-
-    // If System 1 succeeded, return fast response
-    if let Ok((response, traces)) = &router_result {
-        let cognitive_layer = infer_cognitive_layer(response, traces);
-        if cognitive_layer == "system1" {
+    // Only invoke the cognitive router for inputs classified as System 1.
+    // Non-trivial requests go directly to the streaming path to avoid a
+    // duplicate full model call before streaming begins.
+    let cognitive_layer =
+        crate::gateway::handlers_shared::infer_cognitive_layer_from_input(&message);
+    if cognitive_layer == "system1" {
+        if let Ok((response, traces)) = gateway.router.process(&message, &session_id).await {
             tracing::info!(
                 "[chat_stream] System 1 快速响应: {}",
                 response.chars().take(50).collect::<String>()
             );
-            let response = response.clone();
-            let traces = traces.clone();
             let session_id_for_stream = session_id_for_event.clone();
             let source_stream = async_stream::stream! {
                 yield StreamChunk {
@@ -351,9 +357,8 @@ pub async fn chat_stream(
         }
     }
 
-    // System 1 not matched or returned error, fallback to LLM streaming
-    let cognitive_layer =
-        crate::gateway::handlers_shared::infer_cognitive_layer_from_input(&message);
+    // System 1 did not match (or failed), so stream directly from the LLM.
+    tracing::info!("[chat_stream] 推断认知层: {}", cognitive_layer);
     tracing::info!("[chat_stream] 推断认知层: {}", cognitive_layer);
 
     let enhanced_input = with_identity_persona_input(&message);
@@ -366,17 +371,26 @@ pub async fn chat_stream(
         Arc::new(FinalizeSummaryMiddleware),
     ]);
     let cognitive_layer_for_stream = cognitive_layer.to_string();
+    let stream_started = std::time::Instant::now();
     let source_stream = async_stream::stream! {
         yield StreamChunk {
             chunk_type: "cognitive_layer".to_string(),
             content: None,
             payload: Some(serde_json::json!({ "layer": cognitive_layer_for_stream })),
         };
+        yield StreamChunk {
+            chunk_type: "status".to_string(),
+            content: None,
+            payload: Some(serde_json::json!({ "status": "正在生成" })),
+        };
 
         let mut messages = Vec::new();
         let system_context = system_prompt_markdown();
         if !system_context.is_empty() {
              messages.push(Message::system(system_context));
+        }
+        if let Some(instruction) = mode_instruction(payload.route.as_ref().and_then(|r| r.priority.as_deref())) {
+            messages.push(Message::system(instruction));
         }
 
         if let Some(rag) = prepare_stream_rag(&gateway_for_stream, &message).await {
@@ -440,6 +454,15 @@ pub async fn chat_stream(
                 }
             }
         }
+        yield StreamChunk {
+            chunk_type: "metrics".to_string(),
+            content: None,
+            payload: Some(serde_json::json!({
+                "total_latency_ms": stream_started.elapsed().as_millis(),
+                "model": llm.model_name(),
+                "cognitive_layer": cognitive_layer_for_stream,
+            })),
+        };
     };
     let stream: BoxStream<'static, Result<Event, axum::Error>> = pipeline
         .process(source_stream)

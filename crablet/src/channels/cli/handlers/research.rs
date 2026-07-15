@@ -26,7 +26,7 @@ pub async fn handle_research(topic: String, depth: usize) -> Result<()> {
         Err(_) => {
             println!("{}", "Warning: OPENAI_API_KEY not found. Using Mock/Ollama for research might yield limited results.".yellow());
             let ollama_model =
-                env::var("OLLAMA_MODEL").unwrap_or_else(|_| "qwen2.5:14b".to_string());
+                env::var("OLLAMA_MODEL").unwrap_or_else(|_| "qwen3.6:latest".to_string());
             Arc::new(crate::cognitive::llm::OllamaClient::new(&ollama_model)) as Arc<dyn LlmClient>
         }
     };

@@ -32,8 +32,8 @@ pub struct ReactGuardConfig {
 impl Default for ReactGuardConfig {
     fn default() -> Self {
         Self {
-            max_steps: 15,
-            step_timeout: Duration::from_secs(10),
+            max_steps: 8,
+            step_timeout: Duration::from_secs(20),
             total_timeout: Duration::from_secs(120),
             confidence_threshold: 0.6,
             confidence_window: 3,

@@ -178,7 +178,7 @@ impl Default for Config {
 }
 
 fn default_ollama_model() -> String {
-    "qwen2.5:14b".to_string()
+    std::env::var("OLLAMA_MODEL").unwrap_or_else(|_| "qwen3.6:latest".to_string())
 }
 
 fn default_semantic_threshold() -> f32 {

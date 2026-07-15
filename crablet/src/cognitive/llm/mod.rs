@@ -422,7 +422,7 @@ impl OllamaClient {
 
         // Auto-detect model if "auto" is passed or if env var is not set
         let model = if model == "auto" || model.is_empty() {
-            env::var("OLLAMA_MODEL").unwrap_or_else(|_| "qwen2.5:14b".to_string())
+            env::var("OLLAMA_MODEL").unwrap_or_else(|_| "qwen3.6:latest".to_string())
         } else {
             model.to_string()
         };
@@ -441,7 +441,15 @@ struct OllamaRequest {
     messages: Vec<OllamaMessage>,
     stream: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
+    options: Option<OllamaOptions>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     tools: Option<Vec<serde_json::Value>>,
+}
+
+#[derive(Serialize)]
+struct OllamaOptions {
+    temperature: f32,
+    num_predict: u32,
 }
 
 #[derive(Serialize)]
@@ -577,6 +585,10 @@ impl LlmClient for OllamaClient {
             model: self.model.clone(),
             messages: ollama_messages,
             stream: false,
+            options: Some(OllamaOptions {
+                temperature: if tools.is_empty() { 0.2 } else { 0.4 },
+                num_predict: if tools.is_empty() { 1024 } else { 2048 },
+            }),
             tools: tools_option,
         };
 
@@ -701,6 +713,10 @@ impl LlmClient for OllamaClient {
             model: self.model.clone(),
             messages: ollama_messages,
             stream: true,
+            options: Some(OllamaOptions {
+                temperature: 0.2,
+                num_predict: 2048,
+            }),
             tools: None,
         };
 

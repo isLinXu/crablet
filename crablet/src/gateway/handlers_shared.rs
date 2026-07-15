@@ -12,7 +12,7 @@ use std::sync::OnceLock;
 pub fn resolve_env_file_path() -> PathBuf {
     if let Ok(v) = std::env::var("CRABLET_ENV_FILE") {
         let p = PathBuf::from(v);
-        if p.exists() {
+        if !p.as_os_str().is_empty() {
             return p;
         }
     }
