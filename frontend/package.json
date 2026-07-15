@@ -27,7 +27,7 @@
     "d3": "^7.9.0",
     "dagre": "^0.8.5",
     "date-fns": "^4.1.0",
-    "dompurify": "^3.3.3",
+    "dompurify": "^3.4.12",
     "i18next": "^26.0.1",
     "i18next-browser-languagedetector": "^8.2.1",
     "lucide-react": "^1.7.0",
