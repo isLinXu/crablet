@@ -186,7 +186,7 @@ jobs:
   # ─── Release ───
   release:
     needs: [build-macos, build-linux, build-windows]
-    if: always() && startsWith(github.ref, 'refs/tags/v')
+    if: !cancelled() && contains(join(needs.*.result, ','), 'success') && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
