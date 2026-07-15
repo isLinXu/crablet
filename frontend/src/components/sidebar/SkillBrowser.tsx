@@ -16,7 +16,7 @@ import { CreateSkillButton } from '../skills/SkillCreator';
 export const SkillBrowser: React.FC = () => {
   const fetchSkillsApi = useCallback(() => skillService.listSkills().then((data) => ({ data })), []);
   const searchRegistryApi = useCallback((q: string) => skillService.searchRegistry(q).then((data) => ({ data })), []);
-  const { data: skills, loading, execute: fetchSkills } = useApi<Skill[]>(fetchSkillsApi);
+  const { data: skills, loading, error: skillsError, execute: fetchSkills } = useApi<Skill[]>(fetchSkillsApi, { initialData: [] });
   const { loading: searching, execute: searchRegistry } = useApi<{ status: string; source?: string; items: RegistrySkillItem[] }, [string]>(
     searchRegistryApi
   );
@@ -446,9 +446,16 @@ export const SkillBrowser: React.FC = () => {
       {/* 已安装技能列表 */}
       {activeTab === 'installed' && (
         <>
-          {loading && !skills ? (
+          {loading && skills?.length === 0 ? (
             <div className="flex justify-center p-10">
               <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+            </div>
+          ) : skillsError ? (
+            <div className="flex flex-col items-center gap-3 p-10 text-center">
+              <XCircle className="w-12 h-12 text-red-300" />
+              <div className="font-medium">技能加载失败</div>
+              <div className="text-sm text-gray-500">无法读取已安装技能。请检查服务状态后重试。</div>
+              <Button onClick={() => fetchSkills().catch(() => {})} variant="secondary">重试</Button>
             </div>
           ) : filteredSkills.length === 0 ? (
             <EmptyState 

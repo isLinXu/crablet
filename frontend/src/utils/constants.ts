@@ -11,6 +11,22 @@ export const LOCAL_STORAGE_KEYS = {
 const GATEWAY_API_PREFIX = '/api';
 
 const CRABLET_DEFAULT_PORT = 18799;
+const DESKTOP_SERVER_URL_KEY = 'crablet-desktop-server-url';
+
+const getInjectedDesktopOrigin = () => {
+  if (typeof window === 'undefined') return null;
+  const value = localStorage.getItem(DESKTOP_SERVER_URL_KEY);
+  if (!value) return null;
+  try {
+    const parsed = new URL(value);
+    if (parsed.protocol !== 'http:' || parsed.hostname !== '127.0.0.1' || !parsed.port || parsed.pathname !== '/') {
+      return null;
+    }
+    return parsed.origin;
+  } catch {
+    return null;
+  }
+};
 
 const getDefaultApiFallback = () => {
   if (typeof window === 'undefined' || !window.location) {
@@ -24,9 +40,10 @@ const getDefaultApiFallback = () => {
     return '/api';
   }
 
-  // Tauri production: tauri:// or http://tauri.localhost has no meaningful port, fallback to sidecar port
+  // Tauri production uses the runtime endpoint injected by the verified splash handshake.
   if (!port || protocol === 'tauri:' || hostname === 'tauri.localhost') {
-    return 'http://127.0.0.1:18799/api';
+    const injected = getInjectedDesktopOrigin();
+    return injected ? `${injected}/api` : 'http://127.0.0.1:18799/api';
   }
 
   const apiProtocol = protocol === 'https:' ? 'https:' : 'http:';
@@ -169,9 +186,10 @@ const getDefaultWsBase = () => {
     return `${protocol}//${window.location.host}`;
   }
 
-  // Tauri production: fallback to sidecar port
+  // Tauri production derives WebSocket origin from the verified runtime endpoint.
   if (window.location.protocol === 'tauri:' || window.location.hostname === 'tauri.localhost') {
-    return 'ws://127.0.0.1:18799';
+    const injected = getInjectedDesktopOrigin();
+    return injected ? injected.replace(/^http:/, 'ws:') : 'ws://127.0.0.1:18799';
   }
 
   try {

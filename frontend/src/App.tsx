@@ -1,6 +1,7 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
-import { useEffect, lazy, Suspense, useCallback, useRef } from 'react';
+import { useEffect, lazy, Suspense, useCallback, useRef, type ReactNode } from 'react';
+import { useLocation } from 'react-router-dom';
 import { useModelStore } from '@/store/modelStore';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Sidebar } from './components/sidebar/Sidebar';
@@ -50,6 +51,11 @@ const TraceViewer = lazy(() =>
   routeLoaders['/observability']().then((m) => ({ default: m.TraceViewer }))
 );
 
+function RouteBoundary({ children }: { children: ReactNode }) {
+  const location = useLocation();
+  return <ErrorBoundary variant="route" resetKey={location.pathname}>{children}</ErrorBoundary>;
+}
+
 function App() {
   const syncModels = useModelStore((s) => s.syncFromBackend);
   const preloadedRoutes = useRef(new Set<string>());
@@ -79,8 +85,9 @@ function App() {
           <Sidebar onRouteIntent={preloadRoute} />
           
           <main className="flex-1 overflow-hidden bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 relative">
-            <Suspense fallback={<div className="h-full w-full bg-white dark:bg-zinc-900" />}>
-              <Routes>
+            <RouteBoundary>
+              <Suspense fallback={<div role="status" aria-label="正在加载页面" className="flex h-full w-full items-center justify-center bg-white text-sm text-zinc-500 dark:bg-zinc-900 dark:text-zinc-400">正在加载…</div>}>
+                <Routes>
                 <Route path="/" element={<Navigate to="/chat" replace />} />
                 <Route path="/chat" element={<ChatLayout />} />
                 <Route path="/dashboard" element={<Dashboard />} />
@@ -92,8 +99,9 @@ function App() {
                 <Route path="/knowledge" element={<KnowledgeBase />} />
                 <Route path="/settings" element={<SettingsPanel />} />
                 <Route path="/observability" element={<TraceViewer />} />
-              </Routes>
-            </Suspense>
+                </Routes>
+              </Suspense>
+            </RouteBoundary>
           </main>
           <Toaster position="top-right" toastOptions={{
             className: 'dark:bg-zinc-800 dark:text-white',

@@ -6,6 +6,7 @@ import clsx from 'clsx';
 import { Input } from '../ui/Input';
 import { Button } from '../ui/Button';
 import { useSettingsState } from './useSettingsState';
+import { CRABLET_VERSION } from '../../version';
 import {
   VENDOR_OPTIONS,
   VENDOR_GUIDE,
@@ -408,7 +409,7 @@ export const SettingsPanel: React.FC = () => {
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1">
                   <span className="text-slate-500 text-xs uppercase tracking-wider">Version</span>
-                  <p className="font-mono text-slate-700 dark:text-slate-200">0.2.0-beta</p>
+                  <p className="font-mono text-slate-700 dark:text-slate-200">{CRABLET_VERSION}</p>
                 </div>
                 <div className="space-y-1">
                   <span className="text-slate-500 text-xs uppercase tracking-wider">Environment</span>

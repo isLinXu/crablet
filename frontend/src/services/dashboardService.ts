@@ -9,8 +9,18 @@ import type {
   SwarmTimelineEntry,
 } from '@/types/domain';
 
+const normalizeDashboardStats = (payload: Partial<DashboardStats> | null | undefined): DashboardStats => ({
+  status: typeof payload?.status === 'string' ? payload.status : 'unknown',
+  skills_count: typeof payload?.skills_count === 'number' ? payload.skills_count : 0,
+  active_tasks: typeof payload?.active_tasks === 'number' ? payload.active_tasks : 0,
+  system_load: typeof payload?.system_load === 'string' ? payload.system_load : 'Unknown',
+  skills: Array.isArray(payload?.skills) ? payload.skills : [],
+});
+
 export const dashboardService = {
-  getDashboardStats: () => api.get<DashboardStats>('/dashboard'),
+  getDashboardStats: async () => normalizeDashboardStats(
+    await api.get<Partial<DashboardStats>>('/dashboard'),
+  ),
   getSwarmGraphs: async (page = 1, limit = 10, status = 'Active', query = '') => {
     const payload = await api.get<SwarmTasksResponse>('/swarm/tasks', { page, limit, status, q: query });
     return {

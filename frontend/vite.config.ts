@@ -1,13 +1,30 @@
 /// <reference types="vitest" />
 import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
+import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const dirname = path.dirname(fileURLToPath(import.meta.url))
+const semverPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/
+
+export function resolveCrabletVersion(env = process.env): string {
+  const override = env.CRABLET_VERSION?.trim().replace(/^v/, '')
+  const cargoToml = fs.readFileSync(path.resolve(dirname, '../crablet/Cargo.toml'), 'utf8')
+  const sourceVersion = cargoToml.match(/^version\s*=\s*"([^"]+)"/m)?.[1]
+  const version = override || sourceVersion
+
+  if (!version || !semverPattern.test(version)) {
+    throw new Error(`Invalid Crablet version: ${version || '<missing>'}`)
+  }
+  return version
+}
 
 // https://vite.dev/config/
 export default defineConfig({
+  define: {
+    __CRABLET_VERSION__: JSON.stringify(resolveCrabletVersion()),
+  },
   plugins: [react()],
   resolve: {
     alias: {

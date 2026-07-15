@@ -3,6 +3,17 @@ import { LOCAL_STORAGE_KEYS, getApiBaseUrl, isGatewayApiBaseUrl } from '../utils
 import { getSecureItem } from '../utils/secureStorage';
 import toast from 'react-hot-toast';
 
+export function getApiErrorMessage(payload: unknown, fallback = '请求失败'): string {
+  if (typeof payload === 'string') return payload.trim() || fallback;
+  if (!payload || typeof payload !== 'object') return fallback;
+  const data = payload as Record<string, unknown>;
+  const nested = data.error && typeof data.error === 'object' ? data.error as Record<string, unknown> : undefined;
+  for (const value of [data.message, data.detail, nested?.message, data.error]) {
+    if (typeof value === 'string' && value.trim()) return value;
+  }
+  return fallback;
+}
+
 const client = axios.create({
   baseURL: getApiBaseUrl(),
   timeout: 60000, // Increased to 60s for local RAG/MCP operations
@@ -53,7 +64,7 @@ client.interceptors.response.use(
       });
       message = `无法连接到服务器 (${error.config?.baseURL})，请检查网络设置或API地址配置。`;
     } else {
-      message = error.response?.data?.message || error.message || 'An error occurred';
+      message = getApiErrorMessage(error.response?.data, error.message || '请求失败');
     }
     
     // Handle 401 Unauthorized

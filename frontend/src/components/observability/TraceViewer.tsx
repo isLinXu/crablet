@@ -53,7 +53,14 @@ export const TraceViewer: React.FC<TraceViewerProps> = ({
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const handleMessage = useCallback((message: MessageEvent) => {
-    const event = JSON.parse(message.data) as TraceEventPayload;
+    let event: TraceEventPayload;
+    try {
+      const parsed: unknown = JSON.parse(message.data);
+      if (!parsed || typeof parsed !== 'object') return;
+      event = parsed as TraceEventPayload;
+    } catch {
+      return;
+    }
 
     switch (event.event_type) {
       case 'session_started':

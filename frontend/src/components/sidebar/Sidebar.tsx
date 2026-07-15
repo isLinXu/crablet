@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { MessageSquare, Database, Terminal, Settings, Workflow, Menu, X, LayoutDashboard, Activity, Plug, Brain, Eye } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
 import clsx from 'clsx';
+import { CRABLET_VERSION_LABEL } from '../../version';
 
 type SidebarProps = {
   onRouteIntent?: (path: string) => void;
@@ -141,7 +142,7 @@ export const Sidebar = ({ onRouteIntent }: SidebarProps) => {
                    metrics.status === 'thinking' ? 'Thinking...' : 'Offline'}
                 </span>
               </div>
-              <span className="text-[10px] text-zinc-600 font-mono">v0.2.0-beta</span>
+              <span className="text-[10px] text-zinc-600 font-mono">{CRABLET_VERSION_LABEL}</span>
             </div>
             
             {/* 指标网格 */}
