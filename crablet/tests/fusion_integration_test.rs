@@ -116,7 +116,7 @@ async fn router_process_creates_and_updates_fusion_session() {
     let event_bus = Arc::new(EventBus::new(100));
     let config = test_config();
     let sys2 = System2::with_client(
-        Box::new(MockLlm {
+        Arc::new(MockLlm {
             response: "fusion-response".to_string(),
         }),
         event_bus.clone(),

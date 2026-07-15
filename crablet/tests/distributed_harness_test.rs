@@ -2,11 +2,12 @@
 //!
 //! Migrated from crablet/src/agent/distributed_harness/mod.rs inline tests.
 
+use async_trait::async_trait;
 use crablet::agent::distributed_harness::{
     create_backend, BackendType, DistributedConfig, DistributedError, DistributedHarnessManager,
     GenericHarnessAgentSpec, GenericHarnessResourceLimits, GenericHarnessResumeRequest,
-    GenericHarnessRunRequest, HarnessBackend, InMemoryBackend, InProcessHarnessControlPlane,
-    HttpHarnessControlPlane, NodeInfo, NodeStatus,
+    GenericHarnessRunRequest, HarnessBackend, HttpHarnessControlPlane, InMemoryBackend,
+    InProcessHarnessControlPlane, NodeInfo, NodeStatus,
 };
 use crablet::agent::harness::{HarnessConfig, HarnessSignal};
 use crablet::agent::harness_agent::{HarnessAgent, HarnessAgentBuilder};
@@ -15,7 +16,6 @@ use crablet::agent::AgentRole;
 use crablet::plugins::Plugin;
 use crablet::skills::SkillRegistry;
 use crablet::types::Message;
-use async_trait::async_trait;
 use serde_json::{json, Value};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
@@ -24,12 +24,12 @@ use uuid::Uuid;
 
 #[cfg(feature = "web")]
 use {
+    axum::{extract::State, routing::post, Json, Router},
     crablet::cognitive::router::CognitiveRouter,
     crablet::config::Config,
     crablet::events::EventBus,
     crablet::gateway::harness_handlers::register_execution_rpc_handlers,
     crablet::gateway::types::{RpcRequest, RpcResponse},
-    axum::{extract::State, routing::post, Json, Router},
     tokio::net::TcpListener,
 };
 
@@ -267,7 +267,10 @@ async fn test_in_memory_backend() {
     let backend = Arc::new(InMemoryBackend::new());
 
     // Test harness operations
-    let info = crablet::agent::harness_manager::HarnessInfo::new("test-1".to_string(), HarnessConfig::default());
+    let info = crablet::agent::harness_manager::HarnessInfo::new(
+        "test-1".to_string(),
+        HarnessConfig::default(),
+    );
 
     backend.create_harness(&info).await.unwrap();
 
@@ -304,7 +307,10 @@ async fn test_create_backend_in_memory() {
     let backend = create_backend(&test_dist_config("node-1", 8080))
         .await
         .unwrap();
-    let info = crablet::agent::harness_manager::HarnessInfo::new("factory-test".to_string(), HarnessConfig::default());
+    let info = crablet::agent::harness_manager::HarnessInfo::new(
+        "factory-test".to_string(),
+        HarnessConfig::default(),
+    );
 
     backend.create_harness(&info).await.unwrap();
     let retrieved = backend.get_harness("factory-test").await.unwrap();
@@ -344,7 +350,10 @@ async fn test_create_backend_redis_when_url_available() {
 
     let backend = create_backend(&config).await.unwrap();
     let harness_id = format!("redis-factory-{}", Uuid::new_v4());
-    let info = crablet::agent::harness_manager::HarnessInfo::new(harness_id.clone(), HarnessConfig::default());
+    let info = crablet::agent::harness_manager::HarnessInfo::new(
+        harness_id.clone(),
+        HarnessConfig::default(),
+    );
 
     backend.create_harness(&info).await.unwrap();
     let retrieved = backend.get_harness(&harness_id).await.unwrap();
@@ -391,8 +400,7 @@ async fn test_distributed_manager() {
 #[tokio::test]
 async fn test_distributed_manager_registers_local_node() {
     let backend: Arc<dyn HarnessBackend> = Arc::new(InMemoryBackend::new());
-    let manager =
-        DistributedHarnessManager::new(backend.clone(), test_dist_config("node-1", 8080));
+    let manager = DistributedHarnessManager::new(backend.clone(), test_dist_config("node-1", 8080));
 
     manager.register_local_node().await.unwrap();
 
@@ -407,8 +415,7 @@ async fn test_distributed_manager_registers_local_node() {
 #[tokio::test]
 async fn test_distributed_manager_run_agent_syncs_backend_state() {
     let backend: Arc<dyn HarnessBackend> = Arc::new(InMemoryBackend::new());
-    let manager =
-        DistributedHarnessManager::new(backend.clone(), test_dist_config("node-1", 8080));
+    let manager = DistributedHarnessManager::new(backend.clone(), test_dist_config("node-1", 8080));
     let builder =
         HarnessAgentBuilder::new(Arc::new(SimpleHarnessAgent)).with_config(HarnessConfig {
             max_steps: 2,
@@ -434,8 +441,7 @@ async fn test_distributed_manager_run_agent_syncs_backend_state() {
 #[tokio::test]
 async fn test_distributed_manager_run_agent_enforces_allowed_tools() {
     let backend: Arc<dyn HarnessBackend> = Arc::new(InMemoryBackend::new());
-    let manager =
-        DistributedHarnessManager::new(backend.clone(), test_dist_config("node-1", 8080));
+    let manager = DistributedHarnessManager::new(backend.clone(), test_dist_config("node-1", 8080));
     let builder = HarnessAgentBuilder::new(Arc::new(ToolCallingHarnessAgent))
         .with_config(HarnessConfig {
             max_steps: 3,
@@ -458,8 +464,7 @@ async fn test_distributed_manager_run_agent_enforces_allowed_tools() {
 #[tokio::test]
 async fn test_distributed_manager_run_agent_rejects_disallowed_tools() {
     let backend: Arc<dyn HarnessBackend> = Arc::new(InMemoryBackend::new());
-    let manager =
-        DistributedHarnessManager::new(backend.clone(), test_dist_config("node-1", 8080));
+    let manager = DistributedHarnessManager::new(backend.clone(), test_dist_config("node-1", 8080));
     let builder = HarnessAgentBuilder::new(Arc::new(ToolCallingHarnessAgent))
         .with_config(HarnessConfig {
             max_steps: 3,
@@ -484,8 +489,7 @@ async fn test_distributed_manager_run_agent_rejects_disallowed_tools() {
 #[tokio::test]
 async fn test_distributed_manager_run_agent_enforces_resource_limits() {
     let backend: Arc<dyn HarnessBackend> = Arc::new(InMemoryBackend::new());
-    let manager =
-        DistributedHarnessManager::new(backend.clone(), test_dist_config("node-1", 8080));
+    let manager = DistributedHarnessManager::new(backend.clone(), test_dist_config("node-1", 8080));
     let builder = HarnessAgentBuilder::new(Arc::new(ToolCallingHarnessAgent))
         .with_config(HarnessConfig {
             max_steps: 3,
@@ -728,7 +732,8 @@ async fn test_distributed_manager_forwards_signal_over_http_rpc() {
         .route(
             "/rpc",
             post(
-                |State(rpc): State<crablet::gateway::rpc::RpcDispatcher>, Json(request): Json<RpcRequest>| async move {
+                |State(rpc): State<crablet::gateway::rpc::RpcDispatcher>,
+                 Json(request): Json<RpcRequest>| async move {
                     Json::<RpcResponse>(rpc.dispatch(request).await)
                 },
             ),
@@ -798,7 +803,8 @@ async fn test_distributed_manager_forwards_run_over_http_rpc() {
         .route(
             "/rpc",
             post(
-                |State(rpc): State<crablet::gateway::rpc::RpcDispatcher>, Json(request): Json<RpcRequest>| async move {
+                |State(rpc): State<crablet::gateway::rpc::RpcDispatcher>,
+                 Json(request): Json<RpcRequest>| async move {
                     Json::<RpcResponse>(rpc.dispatch(request).await)
                 },
             ),
@@ -904,7 +910,8 @@ async fn test_distributed_manager_forwards_resume_over_http_rpc() {
         .route(
             "/rpc",
             post(
-                |State(rpc): State<crablet::gateway::rpc::RpcDispatcher>, Json(request): Json<RpcRequest>| async move {
+                |State(rpc): State<crablet::gateway::rpc::RpcDispatcher>,
+                 Json(request): Json<RpcRequest>| async move {
                     Json::<RpcResponse>(rpc.dispatch(request).await)
                 },
             ),
@@ -944,7 +951,11 @@ async fn test_distributed_manager_forwards_resume_over_http_rpc() {
         .local_manager()
         .set_execution_state(
             &harness_id,
-            crablet::agent::harness_agent::HarnessExecutionState::new("resume over http", &[], None),
+            crablet::agent::harness_agent::HarnessExecutionState::new(
+                "resume over http",
+                &[],
+                None,
+            ),
         )
         .await
         .unwrap();
@@ -1001,8 +1012,7 @@ async fn test_distributed_manager_forwards_resume_over_http_rpc() {
 #[tokio::test]
 async fn test_distributed_manager_claims_dead_remote_harness() {
     let backend = Arc::new(InMemoryBackend::new());
-    let primary =
-        DistributedHarnessManager::new(backend.clone(), test_dist_config("node-1", 8080));
+    let primary = DistributedHarnessManager::new(backend.clone(), test_dist_config("node-1", 8080));
     let failover =
         DistributedHarnessManager::new(backend.clone(), test_dist_config("node-2", 8081));
 
@@ -1040,8 +1050,7 @@ async fn test_distributed_manager_claims_dead_remote_harness() {
 #[tokio::test]
 async fn test_handle_node_failure_claims_only_non_terminal_harnesses() {
     let backend = Arc::new(InMemoryBackend::new());
-    let primary =
-        DistributedHarnessManager::new(backend.clone(), test_dist_config("node-1", 8080));
+    let primary = DistributedHarnessManager::new(backend.clone(), test_dist_config("node-1", 8080));
     let failover =
         DistributedHarnessManager::new(backend.clone(), test_dist_config("node-2", 8081));
 
@@ -1094,8 +1103,7 @@ async fn test_handle_node_failure_claims_only_non_terminal_harnesses() {
 #[tokio::test]
 async fn test_distributed_manager_resumes_claimed_harness_after_failover() {
     let backend = Arc::new(InMemoryBackend::new());
-    let primary =
-        DistributedHarnessManager::new(backend.clone(), test_dist_config("node-1", 8080));
+    let primary = DistributedHarnessManager::new(backend.clone(), test_dist_config("node-1", 8080));
     let failover =
         DistributedHarnessManager::new(backend.clone(), test_dist_config("node-2", 8081));
     let step2_attempts = Arc::new(AtomicU32::new(0));

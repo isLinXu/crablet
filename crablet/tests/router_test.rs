@@ -120,7 +120,7 @@ async fn test_router_system1() {
     let config = test_config();
 
     // We don't need real LLM for System 1 test
-    let llm = Box::new(MockLlm::new("I am System 2"));
+    let llm = Arc::new(MockLlm::new("I am System 2"));
     let sys2 = System2::with_client(llm, event_bus.clone()).await;
 
     let router = CognitiveRouter::with_system2_async(&config, None, sys2, event_bus.clone()).await;
@@ -141,7 +141,7 @@ async fn test_router_system2_force() {
     let mock_llm = MockLlm::new("System 2 Response");
     let calls = mock_llm.calls.clone();
 
-    let sys2 = System2::with_client(Box::new(mock_llm), event_bus.clone()).await;
+    let sys2 = System2::with_client(Arc::new(mock_llm), event_bus.clone()).await;
 
     let router = CognitiveRouter::with_system2_async(&config, None, sys2, event_bus.clone()).await;
 
@@ -167,7 +167,7 @@ async fn router_executes_intent_trigger_before_cognitive_routing() {
 
     let mock_llm = MockLlm::new("System 2 should not run");
     let calls = mock_llm.calls.clone();
-    let sys2 = System2::with_client(Box::new(mock_llm), event_bus.clone()).await;
+    let sys2 = System2::with_client(Arc::new(mock_llm), event_bus.clone()).await;
 
     let router = CognitiveRouter::with_system2_async(&config, None, sys2, event_bus.clone()).await;
 
@@ -215,7 +215,7 @@ async fn router_falls_back_to_cognitive_routing_when_skill_execution_fails() {
 
     let mock_llm = MockLlm::new("fallback:cognitive-route");
     let calls = mock_llm.calls.clone();
-    let sys2 = System2::with_client(Box::new(mock_llm), event_bus.clone()).await;
+    let sys2 = System2::with_client(Arc::new(mock_llm), event_bus.clone()).await;
 
     let router = CognitiveRouter::with_system2_async(&config, None, sys2, event_bus.clone()).await;
 

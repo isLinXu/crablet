@@ -59,7 +59,7 @@ async fn test_deep_research_agent() -> Result<()> {
     // Since WebSearchTool is a struct, not a trait, mocking it is hard without refactoring.
     // However, for this test, we just want to verify the Agent's orchestration logic (LLM calls).
 
-    let llm = Arc::new(Box::new(MockResearchLlm) as Box<dyn LlmClient>);
+    let llm: Arc<dyn LlmClient> = Arc::new(MockResearchLlm);
     let event_bus = Arc::new(EventBus::new(100));
     let agent = ResearchAgent::new(llm, event_bus);
 

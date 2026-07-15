@@ -72,7 +72,7 @@ async fn test_context_retention() {
     let config = test_config();
 
     // 2. Setup System 2 with Spy Client
-    let sys2 = System2::with_client(Box::new(spy_client), event_bus.clone()).await;
+    let sys2 = System2::with_client(Arc::new(spy_client), event_bus.clone()).await;
 
     // 3. Setup Router
     let router = CognitiveRouter::with_system2_async(&config, None, sys2, event_bus.clone()).await;

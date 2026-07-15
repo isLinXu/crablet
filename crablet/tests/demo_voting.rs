@@ -59,7 +59,7 @@ async fn test_voting_flow() -> Result<()> {
     swarm.register_agent(Box::new(v2)).await;
     swarm.register_agent(Box::new(v3)).await;
 
-    let mock_llm = Arc::new(Box::new(MockClient) as Box<dyn LlmClient>);
+    let mock_llm: Arc<dyn LlmClient> = Arc::new(MockClient);
 
     let voting_agent = VotingAgent::new(
         "Chairperson",

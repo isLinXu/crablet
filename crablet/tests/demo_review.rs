@@ -7,7 +7,7 @@ use std::sync::Arc;
 #[tokio::test]
 async fn test_reviewer() -> Result<()> {
     let swarm = Arc::new(Swarm::new());
-    let mock_llm = Arc::new(Box::new(MockClient) as Box<dyn LlmClient>);
+    let mock_llm: Arc<dyn LlmClient> = Arc::new(MockClient);
 
     let reviewer = ReviewerAgent::new("Reviewer", mock_llm);
     let reviewer_id = reviewer.id().clone();

@@ -6,7 +6,7 @@ use std::sync::Arc;
 #[tokio::test]
 async fn test_agent_basic() {
     let mock_client = OllamaClient::new("mock_model");
-    let agent = CoderAgent::new(Arc::new(Box::new(mock_client)));
+    let agent = CoderAgent::new(Arc::new(mock_client));
     assert_eq!(agent.name(), "coder");
     assert_eq!(agent.id().0, "coder");
 }

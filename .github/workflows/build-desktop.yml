@@ -26,7 +26,7 @@ env:
   CRABLET_RUN_REAL_LLM_TESTS: 0
   # 统一由 scripts/pack.sh 完成前端→sidecar→Tauri→签名→DMG/EXE/AppImage 全流程，
   # 避免 CI 与本地打包逻辑重复维护（详见 scripts/pack.sh）。
-  CRABLET_VERSION: ${{ github.event.inputs.version || '' }}
+  CRABLET_VERSION: ${{ github.event.inputs.version || (startsWith(github.ref, 'refs/tags/v') && github.ref_name) || '' }}
 
 jobs:
   # ─── macOS (arm64 + x64) ───
@@ -35,10 +35,12 @@ jobs:
     strategy:
       matrix:
         include:
-          - runner: macos-latest       # Apple Silicon
-            dmg_arch: aarch64
+          - runner: macos-14           # Apple Silicon
+            target: aarch64-apple-darwin
+            asset_arch: arm64
           - runner: macos-13           # Intel
-            dmg_arch: x64
+            target: x86_64-apple-darwin
+            asset_arch: x86_64
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
     steps:
@@ -46,10 +48,13 @@ jobs:
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
+          shared-key: macos-${{ matrix.target }}
           workspaces: |
             ./crablet -> target
             ./desktop -> target
@@ -68,13 +73,19 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
 
       - name: "Run unified pack script (--ci: frontend -> sidecar -> tauri -> sign -> dmg)"
+        env:
+          CRABLET_MACOS_TARGET: ${{ matrix.target }}
         run: bash scripts/pack.sh --ci
+
+      - name: Verify architecture-labelled DMG exists
+        run: test -f "target/${{ matrix.target }}/release/bundle/dmg/Crablet-${CRABLET_VERSION#v}-macos-${{ matrix.asset_arch }}.dmg"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Crablet-macOS-${{ matrix.dmg_arch }}
-          path: target/release/bundle/dmg/*.dmg
+          name: Crablet-macOS-${{ matrix.asset_arch }}
+          path: target/${{ matrix.target }}/release/bundle/dmg/Crablet-*-macos-${{ matrix.asset_arch }}.dmg
+          if-no-files-found: error
 
   # ─── Linux (x64) ───
   build-linux:
@@ -117,7 +128,7 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
-      - name: Run unified pack script (--ci mode: frontend → sidecar → tauri → deb/appimage)
+      - name: "Run unified pack script (--ci mode: frontend → sidecar → tauri → deb/appimage)"
         run: bash scripts/pack.sh --ci
 
       - name: Upload artifacts
@@ -162,7 +173,7 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
 
       # Windows runner 自带 Git Bash，可直接复用统一打包脚本（避免与 macOS/Linux 逻辑分叉）
-      - name: Run unified pack script (--ci mode: frontend → sidecar (crt-static) → tauri NSIS)
+      - name: "Run unified pack script (--ci mode: frontend → sidecar (crt-static) → tauri NSIS)"
         shell: bash
         run: bash scripts/pack.sh --ci
 

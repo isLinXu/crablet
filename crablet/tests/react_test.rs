@@ -84,7 +84,7 @@ impl LlmClient for LocalMockClient {
 #[tokio::test]
 async fn test_react_engine_flow() {
     // 1. Setup
-    let llm = Arc::new(Box::new(LocalMockClient) as Box<dyn LlmClient>);
+    let llm: Arc<dyn LlmClient> = Arc::new(LocalMockClient);
     let skills = Arc::new(RwLock::new(SkillRegistry::new()));
     let event_bus = Arc::new(EventBus::new(100));
 

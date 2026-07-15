@@ -18,6 +18,7 @@
 #   SKIP_FRONTEND       — "true" 跳过前端构建
 #   SKIP_VERSION_SYNC   — "true" 跳过版本号自动同步检查
 #   AUTO_NOTARIZE       — "true" 且 macOS + 已设置 Apple 公证凭证时，DMG 创建后自动触发公证
+#   CRABLET_MACOS_TARGET — macOS 薄包 target：aarch64-apple-darwin 或 x86_64-apple-darwin
 # ═══════════════════════════════════════════════════════════════════════════
 
 set -euo pipefail
@@ -42,13 +43,21 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 DESKTOP_DIR="$PROJECT_ROOT/desktop"
 FRONTEND_DIR="$PROJECT_ROOT/frontend"
 CARGO_TOML="$PROJECT_ROOT/crablet/Cargo.toml"
-TARGET_DIR="$PROJECT_ROOT/target/release"
+TARGET_ROOT="$PROJECT_ROOT/target"
+TARGET_DIR="$TARGET_ROOT/release"
 BUNDLE_DIR="$TARGET_DIR/bundle"
+TAURI_TARGET_ARGS=()
+MACOS_TARGET=""
+EXPECTED_MACHO_ARCH=""
 BINARIES_DIR="$DESKTOP_DIR/binaries"
 UI_DIR="$DESKTOP_DIR/ui"
 
 # ─── 版本号（单一真相源：crablet/Cargo.toml）────────────────────────────────
 VERSION="${CRABLET_VERSION:-$(grep -m1 '^version' "$CARGO_TOML" | sed 's/.*= "\([^"]*\)".*/\1/')}"
+VERSION="${VERSION#v}"
+SEMVER_RE='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'
+[[ "$VERSION" =~ $SEMVER_RE ]] || { err "非法 Crablet 版本: ${VERSION:-<empty>}"; exit 1; }
+export CRABLET_VERSION="$VERSION"
 APP_NAME="Crablet"
 APP_BUNDLE="${APP_NAME}.app"
 APP_PATH="$BUNDLE_DIR/macos/${APP_BUNDLE}"
@@ -63,15 +72,24 @@ DMG_ARCH=""
 case "$OS" in
     Darwin)
         PLATFORM="macos"
-        if [[ "$ARCH" == "arm64" ]]; then
-            SIDECAR_TARGET="crablet-aarch64-apple-darwin"
-            DMG_ARCH="aarch64"
-        elif [[ "$ARCH" == "x86_64" ]]; then
-            SIDECAR_TARGET="crablet-x86_64-apple-darwin"
-            DMG_ARCH="x64"
-        else
-            err "未知 macOS 架构: $ARCH"; exit 1
+        MACOS_TARGET="${CRABLET_MACOS_TARGET:-}"
+        if [[ -z "$MACOS_TARGET" ]]; then
+            [[ "$ARCH" == "arm64" ]] && MACOS_TARGET="aarch64-apple-darwin"
+            [[ "$ARCH" == "x86_64" ]] && MACOS_TARGET="x86_64-apple-darwin"
         fi
+        case "$MACOS_TARGET" in
+            aarch64-apple-darwin)
+                SIDECAR_TARGET="crablet-aarch64-apple-darwin"; DMG_ARCH="arm64"; EXPECTED_MACHO_ARCH="arm64" ;;
+            x86_64-apple-darwin)
+                SIDECAR_TARGET="crablet-x86_64-apple-darwin"; DMG_ARCH="x86_64"; EXPECTED_MACHO_ARCH="x86_64" ;;
+            universal-apple-darwin)
+                err "universal2 尚未启用：当前流程没有经过验证的双 target sidecar 合并与依赖签名链，拒绝伪造 universal2 产物"; exit 1 ;;
+            *)
+                err "不支持的 macOS target: ${MACOS_TARGET:-<empty>}"; exit 1 ;;
+        esac
+        TARGET_DIR="$TARGET_ROOT/$MACOS_TARGET/release"
+        BUNDLE_DIR="$TARGET_DIR/bundle"
+        TAURI_TARGET_ARGS=(--target "$MACOS_TARGET")
         ;;
     Linux)
         PLATFORM="linux"
@@ -134,9 +152,8 @@ sync_version() {
 
     local sync_script="$PROJECT_ROOT/scripts/sync-version.sh"
     if [[ -f "$sync_script" ]]; then
-        bash "$sync_script" || {
-            warn "版本号不一致，已自动同步（来源: crablet/Cargo.toml = $VERSION）"
-        }
+        bash "$sync_script" --version "$VERSION"
+        bash "$sync_script" --check --version "$VERSION"
     fi
 }
 
@@ -192,6 +209,8 @@ build_sidecar() {
             # 静态链接 CRT，避免目标机缺少 VC++ 运行库
             RUSTFLAGS="${RUSTFLAGS:-} -C target-feature=+crt-static" \
                 cargo build --release -p crablet --no-default-features --features web
+        elif [[ "$PLATFORM" == "macos" ]]; then
+            cargo build --release -p crablet --target "$MACOS_TARGET" --no-default-features --features web
         else
             cargo build --release -p crablet --no-default-features --features web
         fi
@@ -235,9 +254,9 @@ build_tauri() {
 
     info "执行 cargo tauri build --bundles $bundle_flag"
     if command -v cargo-tauri &>/dev/null; then
-        cargo tauri build --bundles "$bundle_flag"
+        cargo tauri build --bundles "$bundle_flag" "${TAURI_TARGET_ARGS[@]}"
     elif [[ -f "node_modules/.bin/tauri" ]]; then
-        npx tauri build --bundles "$bundle_flag"
+        npx tauri build --bundles "$bundle_flag" "${TAURI_TARGET_ARGS[@]}"
     else
         err "tauri-cli 未安装。运行: cargo install tauri-cli --version '^2'"
         exit 1
@@ -323,7 +342,28 @@ fix_sidecar_paths() {
     fi
 }
 
-# ─── Step 4: 代码签名 ──────────────────────────────────────────────────────
+# ─── Step 4: 架构门禁 + 代码签名 ──────────────────────────────────────────
+verify_macos_architectures() {
+    [[ "$PLATFORM" != "macos" ]] && return
+    command -v lipo >/dev/null || { err "缺少 lipo，无法执行 macOS 架构门禁"; return 1; }
+
+    local main_bin="$APP_PATH/Contents/MacOS/crablet-desktop"
+    [[ -f "$main_bin" ]] || main_bin="$(find "$APP_PATH/Contents/MacOS" -maxdepth 1 -type f -perm -111 ! -name 'crablet-*' | head -1)"
+    [[ -n "$main_bin" && -f "$main_bin" ]] || { err "无法定位 Tauri 主程序"; return 1; }
+
+    local bins=("$main_bin")
+    while IFS= read -r bin; do bins+=("$bin"); done < <(find "$APP_PATH/Contents" -type f -name 'crablet-*' -perm -111)
+    [[ "${#bins[@]}" -gt 1 ]] || { err "未在应用包内找到 sidecar"; return 1; }
+
+    local bin arches
+    for bin in "${bins[@]}"; do
+        arches="$(lipo -archs "$bin" 2>/dev/null)" || { err "不是有效 Mach-O: $bin"; return 1; }
+        [[ " $arches " == *" $EXPECTED_MACHO_ARCH "* ]] || { err "架构不匹配: $bin ($arches，期望 $EXPECTED_MACHO_ARCH)"; return 1; }
+        [[ "$(wc -w <<<"$arches" | tr -d ' ')" == "1" ]] || { err "薄包混入多架构二进制: $bin ($arches)"; return 1; }
+        info "架构通过: ${bin#$APP_PATH/} ($arches)"
+    done
+}
+
 code_sign() {
     step "Step 4: 代码签名"
 
@@ -379,7 +419,7 @@ create_dmg() {
     fi
 
     local dmg_dir="$BUNDLE_DIR/dmg"
-    local dmg_name="${APP_NAME}_${VERSION}_${DMG_ARCH}.dmg"
+    local dmg_name="${APP_NAME}-${VERSION}-macos-${DMG_ARCH}.dmg"
     local dmg_path="$dmg_dir/$dmg_name"
 
     # 使用系统临时目录，不用项目内 .session_tmps
@@ -449,8 +489,8 @@ print_manifest() {
         echo -e "  2. 将 Crablet 拖入 Applications"
         echo -e "  3. 首次打开：右键 → 打开 → 确认"
         echo ""
-        if [[ -f "$BUNDLE_DIR/dmg/${APP_NAME}_${VERSION}_${DMG_ARCH}.dmg" ]]; then
-            echo -e "  ${BOLD}DMG:${NC} $BUNDLE_DIR/dmg/${APP_NAME}_${VERSION}_${DMG_ARCH}.dmg"
+        if [[ -f "$BUNDLE_DIR/dmg/${APP_NAME}-${VERSION}-macos-${DMG_ARCH}.dmg" ]]; then
+            echo -e "  ${BOLD}DMG:${NC} $BUNDLE_DIR/dmg/${APP_NAME}-${VERSION}-macos-${DMG_ARCH}.dmg"
         fi
         echo -e "  ${BOLD}APP:${NC} $APP_PATH"
     elif [[ "$PLATFORM" == "windows" ]]; then
@@ -482,6 +522,7 @@ build_frontend
 build_sidecar
 build_tauri
 fix_sidecar_paths
+verify_macos_architectures
 code_sign
 
 # --app-only 跳过 DMG

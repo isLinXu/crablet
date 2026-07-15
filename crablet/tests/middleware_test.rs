@@ -32,7 +32,7 @@ impl crablet::cognitive::llm::LlmClient for MockLlm {
 }
 
 fn create_mock_state() -> MiddlewareState {
-    let llm = Arc::new(Box::new(MockLlm) as Box<dyn crablet::cognitive::llm::LlmClient>);
+    let llm: Arc<dyn crablet::cognitive::llm::LlmClient> = Arc::new(MockLlm);
     MiddlewareState {
         llm: llm.clone(),
         skills: Arc::new(RwLock::new(SkillRegistry::new())),

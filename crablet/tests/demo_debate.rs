@@ -51,7 +51,7 @@ async fn test_debate_flow() -> Result<()> {
     swarm.register_agent(Box::new(p2)).await;
 
     // 3. Setup Moderator
-    let mock_llm = Arc::new(Box::new(MockClient) as Box<dyn LlmClient>);
+    let mock_llm: Arc<dyn LlmClient> = Arc::new(MockClient);
 
     let moderator = DebateModerator::new(
         "Moderator",

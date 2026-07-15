@@ -53,7 +53,7 @@ async fn test_system2_async_initialization() -> Result<()> {
 async fn test_system2_with_client_async_initialization() -> Result<()> {
     // Setup
     let event_bus = Arc::new(EventBus::new(10));
-    let mock_llm: Box<dyn LlmClient> = Box::new(MockLlmClient);
+    let mock_llm: Arc<dyn LlmClient> = Arc::new(MockLlmClient);
 
     // Test initialization with custom client
     let sys2 = System2::with_client(mock_llm, event_bus.clone()).await;
