@@ -275,6 +275,16 @@ fn collect_envs(api_key_cache: &Mutex<Option<String>>) -> Vec<(String, String)> 
             "CRABLET_DATA_DIR".to_string(),
             data_root.display().to_string(),
         ));
+        let env_file = data_root.join("config").join(".env");
+        if !env_file.exists() {
+            if let Err(error) = std::fs::write(&env_file, "") {
+                eprintln!("[crablet-desktop] 创建配置文件失败: {error}");
+            }
+        }
+        envs.push((
+            "CRABLET_ENV_FILE".to_string(),
+            env_file.display().to_string(),
+        ));
         if let Some(cache_root) = dirs::cache_dir() {
             let cache_dir = cache_root.join("com.crablet.desktop");
             let _ = std::fs::create_dir_all(&cache_dir);
@@ -656,7 +666,10 @@ mod tests {
     fn selected_port_is_loopback_only() {
         let selected = select_loopback_port(0).unwrap();
         let wildcard = TcpListener::bind((Ipv4Addr::UNSPECIFIED, selected));
-        assert!(wildcard.is_ok(), "selection must not leave a wildcard listener behind");
+        assert!(
+            wildcard.is_ok(),
+            "selection must not leave a wildcard listener behind"
+        );
     }
 
     #[test]
@@ -668,9 +681,18 @@ mod tests {
             let mut request = [0u8; 512];
             let _ = stream.read(&mut request);
             let body = r#"{"status":"ok","desktop_instance":"attacker"}"#;
-            write!(stream, "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", body.len(), body).unwrap();
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            )
+            .unwrap();
         });
-        let endpoint = DesktopEndpoint { port, instance: "expected".into() };
+        let endpoint = DesktopEndpoint {
+            port,
+            instance: "expected".into(),
+        };
         assert!(!endpoint_is_ours(&endpoint));
         server.join().unwrap();
     }
@@ -684,9 +706,18 @@ mod tests {
             let mut request = [0u8; 512];
             let _ = stream.read(&mut request);
             let body = r#"{"status":"ok","desktop_instance":"expected"}"#;
-            write!(stream, "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", body.len(), body).unwrap();
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            )
+            .unwrap();
         });
-        let endpoint = DesktopEndpoint { port, instance: "expected".into() };
+        let endpoint = DesktopEndpoint {
+            port,
+            instance: "expected".into(),
+        };
         assert!(endpoint_is_ours(&endpoint));
         server.join().unwrap();
     }

@@ -5,8 +5,8 @@
   "identifier": "com.crablet.desktop",
   "build": {
     "frontendDist": "./ui",
-    "beforeDevCommand": "",
-    "beforeBuildCommand": ""
+    "beforeDevCommand": "npm run dev --prefix ../frontend",
+    "beforeBuildCommand": "npm run build --prefix ../frontend"
   },
   "app": {
     "withGlobalTauri": true,
