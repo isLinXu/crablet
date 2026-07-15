@@ -200,7 +200,7 @@ build_sidecar() {
         binary="$TARGET_DIR/crablet.exe"
     fi
 
-    if [[ -f "$binary" ]]; then
+    if [[ -f "$binary" ]] && [[ "$CI_MODE" != "true" ]] && [[ "${FORCE_SIDECAR_BUILD:-}" != "true" ]]; then
         ok "Sidecar 已存在 ($(du -sh "$binary" | cut -f1))"
     else
         info "编译 release 二进制 (cargo build --release -p crablet)..."
