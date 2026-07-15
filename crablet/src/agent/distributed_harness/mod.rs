@@ -17,10 +17,10 @@ pub use distributed_control_plane::{
     HarnessControlPlane, HttpHarnessControlPlane, InProcessHarnessControlPlane,
 };
 pub use distributed_types::{
-    create_backend, BackendType, DistributedConfig, DistributedError,
-    GenericHarnessAgentSpec, GenericHarnessResourceLimits, GenericHarnessResumeRequest,
-    GenericHarnessResumeResponse, GenericHarnessRunRequest, GenericHarnessRunResponse,
-    HarnessBackend, HarnessWatchEvent, NodeId, NodeInfo, NodeStatus,
+    create_backend, BackendType, DistributedConfig, DistributedError, GenericHarnessAgentSpec,
+    GenericHarnessResourceLimits, GenericHarnessResumeRequest, GenericHarnessResumeResponse,
+    GenericHarnessRunRequest, GenericHarnessRunResponse, HarnessBackend, HarnessWatchEvent, NodeId,
+    NodeInfo, NodeStatus,
 };
 
 // Internal re-exports used by control plane and tests

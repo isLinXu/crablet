@@ -133,9 +133,7 @@ impl LogicalExpression {
                 let right = r.evaluate(context)?;
                 Ok(!left || right)
             }
-            LogicalExpression::Equivalent(l, r) => {
-                Ok(l.evaluate(context)? == r.evaluate(context)?)
-            }
+            LogicalExpression::Equivalent(l, r) => Ok(l.evaluate(context)? == r.evaluate(context)?),
             LogicalExpression::ForAll(_, _) => {
                 // Simplified: assume true for now
                 // Full implementation would require domain specification
@@ -372,12 +370,12 @@ impl ProofStep {
             antecedents,
             justification: rule.description.clone(),
             timestamp: {
-            use std::time::{SystemTime, UNIX_EPOCH};
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .map(|d| d.as_millis() as u64)
-                .unwrap_or(0)
-        },
+                use std::time::{SystemTime, UNIX_EPOCH};
+                SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .map(|d| d.as_millis() as u64)
+                    .unwrap_or(0)
+            },
         }
     }
 }

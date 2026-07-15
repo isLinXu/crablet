@@ -24,20 +24,20 @@
 //! │   └────────────────────────────────────────────────────────────┘   │
 //! └─────────────────────────────────────────────────────────────────────┘
 
-use std::sync::Arc;
+use chrono::{DateTime, Datelike, Timelike, Utc};
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
-use tracing::{warn, debug};
-use chrono::{DateTime, Utc, Timelike, Datelike};
-use serde::{Deserialize, Serialize};
+use tracing::{debug, warn};
 
-use crate::events::EventBus;
-use crate::memory::manager::MemoryManager;
-use crate::knowledge::vector_store::VectorStore;
 use crate::cognitive::llm::LlmClient;
-use crate::types::Message;
 use crate::error::Result;
+use crate::events::EventBus;
+use crate::knowledge::vector_store::VectorStore;
+use crate::memory::manager::MemoryManager;
+use crate::types::Message;
 
 /// Configuration for Predictive Memory
 #[derive(Debug, Clone)]
@@ -192,7 +192,7 @@ impl PredictiveMemory {
         // Add to pattern history
         let mut history = self.pattern_history.write().await;
         history.push_back(input.to_string());
-        
+
         // Trim to max size
         while history.len() > self.config.pattern_history_size {
             history.pop_front();
@@ -215,7 +215,7 @@ impl PredictiveMemory {
     /// Learn patterns from history
     async fn learn_patterns(&self) {
         let history = self.pattern_history.read().await;
-        
+
         if history.len() < 3 {
             return;
         }
@@ -225,11 +225,11 @@ impl PredictiveMemory {
 
         // Look for repeating sequences
         let mut patterns = self.patterns.write().await;
-        
+
         for window_size in 2..=5 {
             for i in 0..=history_vec.len().saturating_sub(window_size * 2) {
                 let sequence: Vec<_> = history_vec[i..i + window_size].to_vec();
-                
+
                 // Check if this sequence repeats
                 let mut count = 1;
                 for j in (i + window_size)..=history_vec.len().saturating_sub(window_size) {
@@ -237,14 +237,13 @@ impl PredictiveMemory {
                         count += 1;
                     }
                 }
-                
+
                 // If sequence repeats frequently, add as pattern
                 if count >= 3 {
                     let pattern_exists = patterns.iter().any(|p| {
-                        p.pattern_type == PatternType::QuerySequence &&
-                        p.sequence == sequence
+                        p.pattern_type == PatternType::QuerySequence && p.sequence == sequence
                     });
-                    
+
                     if !pattern_exists {
                         let pattern = BehaviorPattern {
                             id: uuid::Uuid::new_v4().to_string(),
@@ -254,12 +253,12 @@ impl PredictiveMemory {
                             last_observed: Utc::now(),
                             confidence: (count as f32 / 10.0).min(1.0),
                         };
-                        
+
                         patterns.push(pattern);
-                        
+
                         // Update stats
                         self.stats.write().await.patterns_learned += 1;
-                        
+
                         debug!("Learned new pattern: {:?}", sequence);
                     }
                 }
@@ -270,7 +269,7 @@ impl PredictiveMemory {
     /// Generate prediction and preload memories
     async fn predict_and_preload(&self, current_input: &str, context: &str) -> Result<()> {
         let start = std::time::Instant::now();
-        
+
         // Check cache first
         let cache_key = format!("{}:{}", current_input, context);
         {
@@ -284,17 +283,17 @@ impl PredictiveMemory {
                 }
             }
         }
-        
+
         self.stats.write().await.cache_misses += 1;
 
         // Generate new prediction
         let prediction = self.generate_prediction(current_input, context).await?;
-        
+
         // Cache prediction
         {
             let mut cache = self.prediction_cache.write().await;
             cache.insert(cache_key, prediction.clone());
-            
+
             // Clean expired entries
             let now = Utc::now();
             cache.retain(|_, v| v.expires_at > now);
@@ -302,20 +301,22 @@ impl PredictiveMemory {
 
         // Preload predicted memories
         if prediction.confidence >= self.config.prediction_confidence_threshold {
-            self.preload_memories(&prediction.predicted_memories).await?;
-            
+            self.preload_memories(&prediction.predicted_memories)
+                .await?;
+
             // Update stats
             let mut stats = self.stats.write().await;
             stats.total_predictions += 1;
             stats.memories_preloaded += prediction.predicted_memories.len() as u64;
             stats.last_prediction = Some(Utc::now());
-            
+
             // Update average confidence
             if stats.total_predictions == 1 {
                 stats.avg_prediction_confidence = prediction.confidence;
             } else {
-                stats.avg_prediction_confidence = 
-                    (stats.avg_prediction_confidence * (stats.total_predictions - 1) as f32 + prediction.confidence)
+                stats.avg_prediction_confidence = (stats.avg_prediction_confidence
+                    * (stats.total_predictions - 1) as f32
+                    + prediction.confidence)
                     / stats.total_predictions as f32;
             }
         }
@@ -378,7 +379,10 @@ impl PredictiveMemory {
         let confidence = if predicted_memories.is_empty() {
             0.0
         } else {
-            predicted_memories.iter().map(|m| m.relevance_score).sum::<f32>() 
+            predicted_memories
+                .iter()
+                .map(|m| m.relevance_score)
+                .sum::<f32>()
                 / predicted_memories.len() as f32
         };
 
@@ -389,7 +393,9 @@ impl PredictiveMemory {
             predicted_memories,
             context_signals,
             created_at: Utc::now(),
-            expires_at: Utc::now() + chrono::Duration::from_std(self.config.prediction_cache_ttl).unwrap_or(chrono::Duration::minutes(5)),
+            expires_at: Utc::now()
+                + chrono::Duration::from_std(self.config.prediction_cache_ttl)
+                    .unwrap_or(chrono::Duration::minutes(5)),
         };
 
         Ok(prediction)
@@ -460,15 +466,18 @@ impl PredictiveMemory {
     /// Preload memories into working memory
     async fn preload_memories(&self, memories: &[PredictedMemory]) -> Result<()> {
         let mut preloaded = self.preloaded_memories.write().await;
-        
+
         for memory in memories.iter().take(self.config.max_preload_memories) {
             // In a real implementation, this would:
             // 1. Retrieve the actual memory content
             // 2. Load it into appropriate memory tier
             // 3. Mark as preloaded
-            
+
             preloaded.push(memory.clone());
-            debug!("Preloaded memory: {} (score: {})", memory.memory_id, memory.relevance_score);
+            debug!(
+                "Preloaded memory: {} (score: {})",
+                memory.memory_id, memory.relevance_score
+            );
         }
 
         // Trim preloaded list
@@ -482,7 +491,7 @@ impl PredictiveMemory {
     /// Get preloaded memories relevant to current context
     pub async fn get_relevant_preloaded(&self, context: &str) -> Vec<PredictedMemory> {
         let preloaded = self.preloaded_memories.read().await;
-        
+
         // Filter by relevance score
         preloaded
             .iter()

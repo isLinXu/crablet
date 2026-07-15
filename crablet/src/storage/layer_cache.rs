@@ -85,8 +85,7 @@ where
         redis: Option<Arc<RedisClient>>,
         redis_key_prefix: &str,
     ) -> Self {
-        let capacity = NonZeroUsize::new(l1_config.capacity.max(1))
-            .unwrap_or(NonZeroUsize::MIN);
+        let capacity = NonZeroUsize::new(l1_config.capacity.max(1)).unwrap_or(NonZeroUsize::MIN);
         let cache = LruCache::new(capacity);
 
         Self {

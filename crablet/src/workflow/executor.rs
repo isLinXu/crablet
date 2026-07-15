@@ -17,10 +17,7 @@ impl NodeExecutorRegistry {
         node: &WorkflowNode,
         inputs: &HashMap<String, Value>,
     ) -> Result<HashMap<String, Value>, String> {
-        debug!(
-            "Executing node '{}' of type '{}'",
-            node.id, node.node_type
-        );
+        debug!("Executing node '{}' of type '{}'", node.id, node.node_type);
         match node.node_type.as_str() {
             "start" => execute_start(node, inputs),
             "end" => execute_end(node, inputs),
@@ -85,9 +82,15 @@ fn execute_condition(
 
     let mut outputs = HashMap::new();
     if condition_result {
-        outputs.insert("true".to_string(), inputs.get("input").cloned().unwrap_or(Value::Null));
+        outputs.insert(
+            "true".to_string(),
+            inputs.get("input").cloned().unwrap_or(Value::Null),
+        );
     } else {
-        outputs.insert("false".to_string(), inputs.get("input").cloned().unwrap_or(Value::Null));
+        outputs.insert(
+            "false".to_string(),
+            inputs.get("input").cloned().unwrap_or(Value::Null),
+        );
     }
     outputs.insert("result".to_string(), Value::Bool(condition_result));
     Ok(outputs)
@@ -104,8 +107,7 @@ fn evaluate_condition_expr(expr: &str, inputs: &HashMap<String, Value>) -> bool 
                 // Treat as literal string / number
                 serde_json::from_str(lhs).unwrap_or(Value::String(lhs.to_string()))
             });
-            let rval: Value =
-                serde_json::from_str(rhs).unwrap_or(Value::String(rhs.to_string()));
+            let rval: Value = serde_json::from_str(rhs).unwrap_or(Value::String(rhs.to_string()));
             return match *op {
                 "==" => lval == rval,
                 "!=" => lval != rval,
@@ -142,9 +144,12 @@ fn execute_loop(
         outputs.insert("item".to_string(), Value::Null);
     }
     outputs.insert("items".to_string(), Value::Array(items));
-    outputs.insert("count".to_string(), Value::Number(
-        serde_json::Number::from(outputs["items"].as_array().map_or(0, |a| a.len())),
-    ));
+    outputs.insert(
+        "count".to_string(),
+        Value::Number(serde_json::Number::from(
+            outputs["items"].as_array().map_or(0, |a| a.len()),
+        )),
+    );
     Ok(outputs)
 }
 
@@ -163,7 +168,12 @@ async fn execute_llm(
         .to_string();
     let system_prompt = inputs
         .get("system_prompt")
-        .or_else(|| node.data.config.as_ref().and_then(|c| c.get("system_prompt")))
+        .or_else(|| {
+            node.data
+                .config
+                .as_ref()
+                .and_then(|c| c.get("system_prompt"))
+        })
         .and_then(|v| v.as_str())
         .unwrap_or("You are a helpful assistant.")
         .to_string();
@@ -176,13 +186,16 @@ async fn execute_llm(
         .unwrap_or("default")
         .to_string();
 
-    debug!("LLM node '{}': model={}, prompt_len={}", node.id, model, prompt.len());
+    debug!(
+        "LLM node '{}': model={}, prompt_len={}",
+        node.id,
+        model,
+        prompt.len()
+    );
 
     // Runtime LLM call goes here when integrated with CognitiveRouter.
     // For now produce a structured placeholder that clearly communicates intent.
-    let text = format!(
-        "[LLM:{model}] system={system_prompt} | prompt={prompt}"
-    );
+    let text = format!("[LLM:{model}] system={system_prompt} | prompt={prompt}");
 
     let mut outputs = HashMap::new();
     outputs.insert("text".to_string(), Value::String(text));
@@ -209,7 +222,12 @@ async fn execute_agent(
         .unwrap_or("default")
         .to_string();
 
-    debug!("Agent node '{}': agent={}, task_len={}", node.id, agent_name, task.len());
+    debug!(
+        "Agent node '{}': agent={}, task_len={}",
+        node.id,
+        agent_name,
+        task.len()
+    );
 
     let mut outputs = HashMap::new();
     outputs.insert(
@@ -237,7 +255,10 @@ async fn execute_knowledge(
         .and_then(|v| v.as_u64())
         .unwrap_or(5) as usize;
 
-    debug!("Knowledge node '{}': query='{}', top_k={}", node.id, query, top_k);
+    debug!(
+        "Knowledge node '{}': query='{}', top_k={}",
+        node.id, query, top_k
+    );
 
     // Placeholder result set; real implementation will call vector store
     let results = Value::Array(vec![serde_json::json!({
@@ -249,7 +270,10 @@ async fn execute_knowledge(
     let mut outputs = HashMap::new();
     outputs.insert("results".to_string(), results);
     outputs.insert("query".to_string(), Value::String(query));
-    outputs.insert("count".to_string(), Value::Number(serde_json::Number::from(1u64)));
+    outputs.insert(
+        "count".to_string(),
+        Value::Number(serde_json::Number::from(1u64)),
+    );
     Ok(outputs)
 }
 
@@ -272,7 +296,10 @@ fn execute_code(
 
     if code.is_empty() {
         let mut outputs = HashMap::new();
-        outputs.insert("result".to_string(), inputs.get("input").cloned().unwrap_or(Value::Null));
+        outputs.insert(
+            "result".to_string(),
+            inputs.get("input").cloned().unwrap_or(Value::Null),
+        );
         return Ok(outputs);
     }
 
@@ -434,17 +461,16 @@ async fn execute_http(
         .map_err(|e| format!("HTTP request failed: {e}"))?;
 
     let status = response.status().as_u16();
-    let body_text = response
-        .text()
-        .await
-        .unwrap_or_else(|_| String::new());
+    let body_text = response.text().await.unwrap_or_else(|_| String::new());
 
     // Try to parse body as JSON
-    let body_value: Value = serde_json::from_str(&body_text)
-        .unwrap_or(Value::String(body_text));
+    let body_value: Value = serde_json::from_str(&body_text).unwrap_or(Value::String(body_text));
 
     let mut outputs = HashMap::new();
-    outputs.insert("status".to_string(), Value::Number(serde_json::Number::from(status)));
+    outputs.insert(
+        "status".to_string(),
+        Value::Number(serde_json::Number::from(status)),
+    );
     outputs.insert("body".to_string(), body_value);
     Ok(outputs)
 }
@@ -506,9 +532,9 @@ mod tests {
             data: WorkflowNodeData {
                 label: id.to_string(),
                 description: None,
-                config: config.and_then(|v| v.as_object().cloned()).map(|o| {
-                    o.into_iter().collect()
-                }),
+                config: config
+                    .and_then(|v| v.as_object().cloned())
+                    .map(|o| o.into_iter().collect()),
                 inputs: None,
                 outputs: None,
             },
@@ -528,9 +554,13 @@ mod tests {
     #[tokio::test]
     async fn test_condition_node_true() {
         let reg = NodeExecutorRegistry::new();
-        let node = make_node("cond", "condition", Some(serde_json::json!({
-            "condition": "score > 5"
-        })));
+        let node = make_node(
+            "cond",
+            "condition",
+            Some(serde_json::json!({
+                "condition": "score > 5"
+            })),
+        );
         let mut inputs = HashMap::new();
         inputs.insert("score".to_string(), serde_json::json!(10));
         inputs.insert("input".to_string(), Value::String("data".to_string()));
@@ -542,9 +572,13 @@ mod tests {
     #[tokio::test]
     async fn test_condition_node_false() {
         let reg = NodeExecutorRegistry::new();
-        let node = make_node("cond", "condition", Some(serde_json::json!({
-            "condition": "score > 5"
-        })));
+        let node = make_node(
+            "cond",
+            "condition",
+            Some(serde_json::json!({
+                "condition": "score > 5"
+            })),
+        );
         let mut inputs = HashMap::new();
         inputs.insert("score".to_string(), serde_json::json!(3));
         inputs.insert("input".to_string(), Value::String("data".to_string()));
@@ -556,9 +590,13 @@ mod tests {
     #[tokio::test]
     async fn test_template_node() {
         let reg = NodeExecutorRegistry::new();
-        let node = make_node("tmpl", "template", Some(serde_json::json!({
-            "template": "Hello {{name}}, you are {{age}} years old."
-        })));
+        let node = make_node(
+            "tmpl",
+            "template",
+            Some(serde_json::json!({
+                "template": "Hello {{name}}, you are {{age}} years old."
+            })),
+        );
         let mut inputs = HashMap::new();
         inputs.insert("name".to_string(), Value::String("Alice".to_string()));
         inputs.insert("age".to_string(), serde_json::json!(30));
@@ -572,9 +610,13 @@ mod tests {
     #[tokio::test]
     async fn test_code_node_arithmetic() {
         let reg = NodeExecutorRegistry::new();
-        let node = make_node("code", "code", Some(serde_json::json!({
-            "code": "a + b"
-        })));
+        let node = make_node(
+            "code",
+            "code",
+            Some(serde_json::json!({
+                "code": "a + b"
+            })),
+        );
         let mut inputs = HashMap::new();
         inputs.insert("a".to_string(), serde_json::json!(3));
         inputs.insert("b".to_string(), serde_json::json!(4));
@@ -585,10 +627,14 @@ mod tests {
     #[tokio::test]
     async fn test_variable_node_get() {
         let reg = NodeExecutorRegistry::new();
-        let node = make_node("var", "variable", Some(serde_json::json!({
-            "operation": "get",
-            "name": "my_var"
-        })));
+        let node = make_node(
+            "var",
+            "variable",
+            Some(serde_json::json!({
+                "operation": "get",
+                "name": "my_var"
+            })),
+        );
         let mut inputs = HashMap::new();
         inputs.insert("my_var".to_string(), Value::String("test_val".to_string()));
         let outputs = reg.execute(&node, &inputs).await.unwrap();

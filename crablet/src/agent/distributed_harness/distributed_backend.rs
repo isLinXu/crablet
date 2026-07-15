@@ -12,7 +12,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
 
-use super::distributed_types::{DistributedError, HarnessBackend, HarnessWatchEvent, NodeId, NodeInfo};
+use super::distributed_types::{
+    DistributedError, HarnessBackend, HarnessWatchEvent, NodeId, NodeInfo,
+};
 use crate::agent::harness_manager::HarnessInfo;
 
 // ============================================

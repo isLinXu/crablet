@@ -25,16 +25,16 @@
 //! │   └────────────────────────────────────────────────────────────┘   │
 //! └─────────────────────────────────────────────────────────────────────┘
 
-use std::sync::Arc;
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
 use tracing::{info, warn};
-use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
 
-use crate::events::{AgentEvent, EventBus};
 use crate::error::Result;
+use crate::events::{AgentEvent, EventBus};
 
 /// Configuration for Self-Improvement Loop
 #[derive(Debug, Clone)]
@@ -180,10 +180,7 @@ pub struct SelfImprovementLoop {
 }
 
 impl SelfImprovementLoop {
-    pub fn new(
-        config: SelfImprovementConfig,
-        event_bus: Arc<EventBus>,
-    ) -> Self {
+    pub fn new(config: SelfImprovementConfig, event_bus: Arc<EventBus>) -> Self {
         Self {
             config,
             event_bus,
@@ -197,14 +194,17 @@ impl SelfImprovementLoop {
     /// Register an optimizable component
     pub async fn register_component(&self, component: OptimizableComponent) {
         let component_name = component.name.clone();
-        self.components.write().await.insert(component_name.clone(), component);
+        self.components
+            .write()
+            .await
+            .insert(component_name.clone(), component);
         info!("Registered optimizable component: {}", component_name);
     }
 
     /// Record a performance metric
     pub async fn record_metric(&self, metric: PerformanceMetric) {
         self.metrics.write().await.push(metric);
-        
+
         // Trim old metrics
         let max_size = self.config.performance_window_size * 10;
         let mut metrics = self.metrics.write().await;
@@ -249,20 +249,22 @@ impl SelfImprovementLoop {
         info!("Starting self-improvement analysis");
 
         let components = self.components.read().await;
-        
+
         for (name, component) in components.iter() {
             // Analyze component performance
             let analysis = self.analyze_component(component).await?;
-            
+
             // Generate recommendations
             let recommendations = self.generate_recommendations(component, &analysis).await?;
-            
+
             // Apply adaptations if enabled
             if self.config.enable_auto_tuning {
                 for rec in recommendations {
-                    if rec.confidence >= 0.7 && rec.expected_impact >= self.config.adaptation_threshold {
+                    if rec.confidence >= 0.7
+                        && rec.expected_impact >= self.config.adaptation_threshold
+                    {
                         self.apply_recommendation(name, &rec).await?;
-                        
+
                         self.stats.write().await.adaptations_made += 1;
                     }
                 }
@@ -286,8 +288,9 @@ impl SelfImprovementLoop {
             if stats.total_analysis_runs == 1 {
                 stats.avg_analysis_duration_ms = duration_ms;
             } else {
-                stats.avg_analysis_duration_ms =
-                    (stats.avg_analysis_duration_ms * (stats.total_analysis_runs - 1) + duration_ms)
+                stats.avg_analysis_duration_ms = (stats.avg_analysis_duration_ms
+                    * (stats.total_analysis_runs - 1)
+                    + duration_ms)
                     / stats.total_analysis_runs;
             }
         }
@@ -298,9 +301,12 @@ impl SelfImprovementLoop {
     }
 
     /// Analyze a component's performance
-    async fn analyze_component(&self, component: &OptimizableComponent) -> Result<PerformanceAnalysis> {
+    async fn analyze_component(
+        &self,
+        component: &OptimizableComponent,
+    ) -> Result<PerformanceAnalysis> {
         let history: Vec<_> = component.performance_history.iter().cloned().collect();
-        
+
         if history.len() < self.config.min_samples_for_adaptation {
             return Ok(PerformanceAnalysis {
                 timestamp: Utc::now(),
@@ -316,26 +322,25 @@ impl SelfImprovementLoop {
         }
 
         let values: Vec<f64> = history.iter().map(|m| m.value).collect();
-        
+
         // Calculate statistics
         let current = *values.last().unwrap_or(&0.0);
         let average = values.iter().sum::<f64>() / values.len() as f64;
         let min = values.iter().fold(f64::INFINITY, |a, &b| a.min(b));
         let max = values.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b));
-        
+
         // Calculate standard deviation
-        let variance = values.iter()
-            .map(|v| (v - average).powi(2))
-            .sum::<f64>() / values.len() as f64;
+        let variance =
+            values.iter().map(|v| (v - average).powi(2)).sum::<f64>() / values.len() as f64;
         let std_dev = variance.sqrt();
 
         // Determine trend
         let trend = if values.len() >= 10 {
             let recent: f64 = values.iter().rev().take(5).sum::<f64>() / 5.0;
             let older: f64 = values.iter().rev().skip(5).take(5).sum::<f64>() / 5.0;
-            
+
             let change = (recent - older) / older.abs().max(1.0);
-            
+
             if change > 0.1 {
                 Trend::Improving
             } else if change < -0.1 {
@@ -374,13 +379,12 @@ impl SelfImprovementLoop {
         for param in &component.parameters {
             let current = param.current_value;
             let optimal = param.optimal_value.unwrap_or(current);
-            
+
             // If performance is degrading, suggest parameter adjustment
             if analysis.trend == Trend::Degrading {
                 let adjustment = (optimal - current) * self.config.learning_rate as f64;
-                let new_value = (current + adjustment)
-                    .clamp(param.min_value, param.max_value);
-                
+                let new_value = (current + adjustment).clamp(param.min_value, param.max_value);
+
                 if (new_value - current).abs() > 0.01 {
                     recommendations.push(Recommendation {
                         category: "parameter_tuning".to_string(),
@@ -402,16 +406,21 @@ impl SelfImprovementLoop {
         // Strategy recommendations
         if self.config.enable_strategy_adaptation {
             // Find best performing strategy
-            let best_strategy = component.strategies.iter()
-                .max_by(|a, b| a.success_rate.partial_cmp(&b.success_rate).unwrap_or(std::cmp::Ordering::Equal));
-            
+            let best_strategy = component.strategies.iter().max_by(|a, b| {
+                a.success_rate
+                    .partial_cmp(&b.success_rate)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+
             if let Some(best) = best_strategy {
                 if best.name != component.active_strategy && best.success_rate > 0.7 {
                     recommendations.push(Recommendation {
                         category: "strategy_change".to_string(),
                         description: format!(
                             "Switch from {} to {} strategy (success rate: {:.1}%)",
-                            component.active_strategy, best.name, best.success_rate * 100.0
+                            component.active_strategy,
+                            best.name,
+                            best.success_rate * 100.0
                         ),
                         expected_impact: best.success_rate - 0.5,
                         confidence: best.success_rate,
@@ -442,21 +451,32 @@ impl SelfImprovementLoop {
     }
 
     /// Apply a recommendation
-    async fn apply_recommendation(&self, component_name: &str, recommendation: &Recommendation) -> Result<()> {
+    async fn apply_recommendation(
+        &self,
+        component_name: &str,
+        recommendation: &Recommendation,
+    ) -> Result<()> {
         info!(
             "Applying recommendation for {}: {:?}",
             component_name, recommendation.action
         );
 
         let mut components = self.components.write().await;
-        
+
         if let Some(component) = components.get_mut(component_name) {
             match &recommendation.action {
-                RecommendedAction::AdjustParameter { parameter, new_value } => {
-                    if let Some(param) = component.parameters.iter_mut().find(|p| p.name == *parameter) {
+                RecommendedAction::AdjustParameter {
+                    parameter,
+                    new_value,
+                } => {
+                    if let Some(param) = component
+                        .parameters
+                        .iter_mut()
+                        .find(|p| p.name == *parameter)
+                    {
                         param.current_value = *new_value;
                         self.stats.write().await.parameters_tuned += 1;
-                        
+
                         info!(
                             "Tuned parameter {} to {:.2} for component {}",
                             parameter, new_value, component_name
@@ -466,7 +486,7 @@ impl SelfImprovementLoop {
                 RecommendedAction::ChangeStrategy { from, to } => {
                     component.active_strategy = to.clone();
                     self.stats.write().await.strategies_changed += 1;
-                    
+
                     info!(
                         "Changed strategy from {} to {} for component {}",
                         from, to, component_name
@@ -475,20 +495,30 @@ impl SelfImprovementLoop {
                 RecommendedAction::IncreaseResource { resource, amount } => {
                     info!(
                         "Increasing resource {} by {:.0}% for component {}",
-                        resource, amount * 100.0, component_name
+                        resource,
+                        amount * 100.0,
+                        component_name
                     );
                 }
                 RecommendedAction::DecreaseResource { resource, amount } => {
                     info!(
                         "Decreasing resource {} by {:.0}% for component {}",
-                        resource, amount * 100.0, component_name
+                        resource,
+                        amount * 100.0,
+                        component_name
                     );
                 }
                 RecommendedAction::EnableFeature { feature } => {
-                    info!("Enabling feature {} for component {}", feature, component_name);
+                    info!(
+                        "Enabling feature {} for component {}",
+                        feature, component_name
+                    );
                 }
                 RecommendedAction::DisableFeature { feature } => {
-                    info!("Disabling feature {} for component {}", feature, component_name);
+                    info!(
+                        "Disabling feature {} for component {}",
+                        feature, component_name
+                    );
                 }
             }
 

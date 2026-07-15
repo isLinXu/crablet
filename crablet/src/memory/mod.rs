@@ -21,13 +21,13 @@ pub mod knowledge_weaver;
 #[cfg(feature = "knowledge")]
 pub mod background_thinker;
 #[cfg(feature = "knowledge")]
-pub mod memory_gardener;
+pub mod cross_session;
 #[cfg(feature = "knowledge")]
 pub mod event_driven;
 #[cfg(feature = "knowledge")]
-pub mod predictive;
+pub mod memory_gardener;
 #[cfg(feature = "knowledge")]
-pub mod cross_session;
+pub mod predictive;
 #[cfg(feature = "knowledge")]
 pub mod self_improvement;
 

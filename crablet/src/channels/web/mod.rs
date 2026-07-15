@@ -31,15 +31,14 @@ use tracing::{error, info};
 
 // Re-export handlers used by the router
 use swarm_handlers::{
-    swarm_add_task_handler, swarm_agents_handler, swarm_batch_action_handler,
-    swarm_cancel_handler, swarm_create_template_handler, swarm_decide_review_handler,
-    swarm_instantiate_template_handler, swarm_list_reviews_handler,
-    swarm_list_templates_handler, swarm_pause_handler, swarm_recover_node_handler,
-    swarm_resume_handler, swarm_retry_node_handler, swarm_update_node_handler,
+    swarm_add_task_handler, swarm_agents_handler, swarm_batch_action_handler, swarm_cancel_handler,
+    swarm_create_template_handler, swarm_decide_review_handler, swarm_instantiate_template_handler,
+    swarm_list_reviews_handler, swarm_list_templates_handler, swarm_pause_handler,
+    swarm_recover_node_handler, swarm_resume_handler, swarm_retry_node_handler,
+    swarm_update_node_handler,
 };
 use swarm_timeline::{
-    swarm_replay_handler, swarm_stats_handler, swarm_tasks_handler,
-    swarm_timeline_handler,
+    swarm_replay_handler, swarm_stats_handler, swarm_tasks_handler, swarm_timeline_handler,
 };
 
 const MAX_LEGACY_UPLOAD_BYTES: usize = 10 * 1024 * 1024;
@@ -116,8 +115,8 @@ pub async fn run(
     port: u16,
     auth_config: Option<(String, String, String, String)>,
 ) -> anyhow::Result<()> {
-    // Create uploads directory if it doesn't exist
-    fs::create_dir_all("uploads").await?;
+    // Desktop injects an absolute writable root; CLI retains the legacy relative default.
+    fs::create_dir_all(upload_dir()).await?;
     let static_dir = resolve_static_dir_web();
     let index_file = static_dir.join("index.html");
 
@@ -326,13 +325,20 @@ fn is_allowed_upload_filename(file_name: &str) -> bool {
     )
 }
 
+fn upload_dir() -> PathBuf {
+    std::env::var_os("CRABLET_DATA_DIR")
+        .map(PathBuf::from)
+        .map(|root| root.join("uploads"))
+        .unwrap_or_else(|| PathBuf::from("uploads"))
+}
+
 fn legacy_upload_path(file_name: &str) -> Option<PathBuf> {
     let safe_name = sanitize_upload_filename(file_name)?;
     if !is_allowed_upload_filename(&safe_name) {
         return None;
     }
 
-    Some(PathBuf::from("uploads").join(format!("{}-{}", uuid::Uuid::new_v4(), safe_name)))
+    Some(upload_dir().join(format!("{}-{}", uuid::Uuid::new_v4(), safe_name)))
 }
 
 async fn upload_handler(
@@ -617,14 +623,11 @@ async fn dashboard_handler(State(router): State<Arc<CognitiveRouter>>) -> impl I
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        sanitize_upload_filename, is_allowed_upload_filename, legacy_upload_path,
-    };
     use super::swarm_timeline::{
-        build_swarm_replay_snapshot, swarm_timeline_entry_from_event,
-        swarm_timeline_entry_matches, SwarmGraphResponse, SwarmTimelineEntry,
-        SwarmTimelineQuery,
+        build_swarm_replay_snapshot, swarm_timeline_entry_from_event, swarm_timeline_entry_matches,
+        SwarmGraphResponse, SwarmTimelineEntry, SwarmTimelineQuery,
     };
+    use super::{is_allowed_upload_filename, legacy_upload_path, sanitize_upload_filename};
     use crate::agent::swarm::{GraphStatus, TaskGraph, TaskStatus};
     use crate::events::AgentEvent;
 

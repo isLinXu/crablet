@@ -30,19 +30,19 @@
 //! └─────────────────────────────────────────────────────────────────────┘
 //! ```
 
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
-use tracing::{info, warn, debug};
-use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
+use tracing::{debug, info, warn};
 
-use crate::events::{AgentEvent, EventBus};
-use crate::memory::manager::MemoryManager;
-use crate::memory::core::{CoreMemoryBlock};
 use crate::cognitive::llm::LlmClient;
-use crate::types::Message;
 use crate::error::Result;
+use crate::events::{AgentEvent, EventBus};
+use crate::memory::core::CoreMemoryBlock;
+use crate::memory::manager::MemoryManager;
+use crate::types::Message;
 
 /// Configuration for Background Thinker
 #[derive(Debug, Clone)]
@@ -195,8 +195,7 @@ impl BackgroundThinker {
         tokio::spawn(async move {
             info!(
                 "Background Thinker started (deep_threshold: {:?}, light_threshold: {:?})",
-                self.config.deep_thinking_threshold,
-                self.config.light_thinking_threshold
+                self.config.deep_thinking_threshold, self.config.light_thinking_threshold
             );
 
             let mut interval = tokio::time::interval(Duration::from_secs(60));
@@ -235,12 +234,13 @@ impl BackgroundThinker {
         };
 
         let session_start = Utc::now();
-        
+
         // Publish event
-        self.event_bus.publish(AgentEvent::BackgroundThinkingTriggered {
-            reason: format!("User idle for {:?}", idle_duration),
-            context_summary: format!("{:?} thinking session", thinking_level),
-        });
+        self.event_bus
+            .publish(AgentEvent::BackgroundThinkingTriggered {
+                reason: format!("User idle for {:?}", idle_duration),
+                context_summary: format!("{:?} thinking session", thinking_level),
+            });
 
         // Execute thinking
         let insights = match thinking_level {
@@ -258,17 +258,17 @@ impl BackgroundThinker {
             }
             stats.insights_generated += insights.len() as u64;
             stats.last_session = Some(session_start);
-            
+
             let duration = Utc::now().signed_duration_since(session_start);
             let duration_ms = duration.num_milliseconds().max(0) as u64;
-            
+
             // Update average
             if stats.total_sessions == 1 {
                 stats.avg_session_duration_ms = duration_ms;
             } else {
-                stats.avg_session_duration_ms = 
-                    (stats.avg_session_duration_ms * (stats.total_sessions - 1) + duration_ms) 
-                    / stats.total_sessions;
+                stats.avg_session_duration_ms =
+                    (stats.avg_session_duration_ms * (stats.total_sessions - 1) + duration_ms)
+                        / stats.total_sessions;
             }
         }
 
@@ -302,11 +302,12 @@ impl BackgroundThinker {
         }
 
         // Publish completion event
-        self.event_bus.publish(AgentEvent::BackgroundThinkingResult {
-            insights: format!("Generated {} insights", insights_count),
-            suggested_actions: vec![],
-            memories_updated: vec![],
-        });
+        self.event_bus
+            .publish(AgentEvent::BackgroundThinkingResult {
+                insights: format!("Generated {} insights", insights_count),
+                suggested_actions: vec![],
+                memories_updated: vec![],
+            });
 
         Ok(())
     }
@@ -381,18 +382,18 @@ Respond with a JSON object:
 If no clear preferences are found, return {"preferences": []}"#;
 
         let messages = vec![Message::system(prompt)];
-        
+
         match self.llm.chat_complete(&messages).await {
             Ok(response) => {
                 let parsed: serde_json::Value = serde_json::from_str(&response)
                     .unwrap_or_else(|_| serde_json::json!({"preferences": []}));
-                
+
                 let mut insights = Vec::new();
                 if let Some(prefs) = parsed.get("preferences").and_then(|p| p.as_array()) {
                     for pref in prefs {
                         if let (Some(confidence), Some(description)) = (
                             pref.get("confidence").and_then(|c| c.as_f64()),
-                            pref.get("description").and_then(|d| d.as_str())
+                            pref.get("description").and_then(|d| d.as_str()),
                         ) {
                             if confidence >= self.config.min_insight_confidence as f64 {
                                 insights.push(Insight::new(
@@ -451,19 +452,19 @@ Respond with a JSON object:
 }"#;
 
         let messages = vec![Message::system(prompt)];
-        
+
         match self.llm.chat_complete(&messages).await {
             Ok(response) => {
                 let parsed: serde_json::Value = serde_json::from_str(&response)
                     .unwrap_or_else(|_| serde_json::json!({"insights": []}));
-                
+
                 let mut insights = Vec::new();
                 if let Some(insight_list) = parsed.get("insights").and_then(|i| i.as_array()) {
                     for insight_data in insight_list {
                         if let (Some(confidence), Some(content), Some(type_str)) = (
                             insight_data.get("confidence").and_then(|c| c.as_f64()),
                             insight_data.get("content").and_then(|d| d.as_str()),
-                            insight_data.get("type").and_then(|t| t.as_str())
+                            insight_data.get("type").and_then(|t| t.as_str()),
                         ) {
                             let insight_type = match type_str {
                                 "BehaviorPattern" => InsightType::BehaviorPattern,
@@ -471,7 +472,7 @@ Respond with a JSON object:
                                 "EmotionalPattern" => InsightType::EmotionalPattern,
                                 _ => InsightType::BehaviorPattern,
                             };
-                            
+
                             if confidence >= self.config.min_insight_confidence as f64 {
                                 insights.push(Insight::new(
                                     insight_type,
@@ -515,18 +516,18 @@ Respond with a JSON object:
 }"#;
 
         let messages = vec![Message::system(prompt)];
-        
+
         match self.llm.chat_complete(&messages).await {
             Ok(response) => {
                 let parsed: serde_json::Value = serde_json::from_str(&response)
                     .unwrap_or_else(|_| serde_json::json!({"knowledge_gaps": []}));
-                
+
                 let mut insights = Vec::new();
                 if let Some(gaps) = parsed.get("knowledge_gaps").and_then(|g| g.as_array()) {
                     for gap in gaps {
                         if let (Some(confidence), Some(description)) = (
                             gap.get("confidence").and_then(|c| c.as_f64()),
-                            gap.get("description").and_then(|d| d.as_str())
+                            gap.get("description").and_then(|d| d.as_str()),
                         ) {
                             if confidence >= self.config.min_insight_confidence as f64 {
                                 insights.push(Insight::new(
@@ -571,18 +572,18 @@ Respond with a JSON object:
 }"#;
 
         let messages = vec![Message::system(prompt)];
-        
+
         match self.llm.chat_complete(&messages).await {
             Ok(response) => {
                 let parsed: serde_json::Value = serde_json::from_str(&response)
                     .unwrap_or_else(|_| serde_json::json!({"suggestions": []}));
-                
+
                 let mut insights = Vec::new();
                 if let Some(suggestions) = parsed.get("suggestions").and_then(|s| s.as_array()) {
                     for suggestion in suggestions {
                         if let (Some(confidence), Some(content)) = (
                             suggestion.get("confidence").and_then(|c| c.as_f64()),
-                            suggestion.get("content").and_then(|d| d.as_str())
+                            suggestion.get("content").and_then(|d| d.as_str()),
                         ) {
                             if confidence >= self.config.min_insight_confidence as f64 {
                                 insights.push(Insight::new(
@@ -611,13 +612,17 @@ Respond with a JSON object:
         for insight in insights {
             // Only apply high-confidence user preferences
             if insight.insight_type == InsightType::UserPreference && insight.confidence >= 0.8 {
-                match self.memory_manager.core_memory_append(
-                    CoreMemoryBlock::Human,
-                    &format!("[Learned Preference] {}", insight.content)
-                ).await {
+                match self
+                    .memory_manager
+                    .core_memory_append(
+                        CoreMemoryBlock::Human,
+                        &format!("[Learned Preference] {}", insight.content),
+                    )
+                    .await
+                {
                     Ok(_) => {
                         applied_count += 1;
-                        
+
                         // Publish event
                         self.event_bus.publish(AgentEvent::CoreMemoryUpdated {
                             block: "human".to_string(),
@@ -648,7 +653,9 @@ Respond with a JSON object:
 
     /// Get insights by type
     pub async fn get_insights_by_type(&self, insight_type: InsightType) -> Vec<Insight> {
-        self.insights.read().await
+        self.insights
+            .read()
+            .await
             .iter()
             .filter(|i| i.insight_type == insight_type && i.is_valid())
             .cloned()
@@ -694,16 +701,12 @@ mod tests {
 
     #[test]
     fn test_insight_expiration() {
-        let mut insight = Insight::new(
-            InsightType::UserPreference,
-            "Test".to_string(),
-            0.9,
-            vec![],
-        );
-        
+        let mut insight =
+            Insight::new(InsightType::UserPreference, "Test".to_string(), 0.9, vec![]);
+
         // Set expiration in the past
         insight.expires_at = Some(Utc::now() - chrono::Duration::hours(1));
-        
+
         assert!(!insight.is_valid());
     }
 

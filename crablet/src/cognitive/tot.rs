@@ -241,7 +241,12 @@ impl TreeOfThoughts {
         // Extract float robustly: find the first substring that looks like a float
         let score = response
             .split_whitespace()
-            .find_map(|token| token.trim_end_matches(|c: char| !c.is_ascii_digit() && c != '.').parse::<f32>().ok())
+            .find_map(|token| {
+                token
+                    .trim_end_matches(|c: char| !c.is_ascii_digit() && c != '.')
+                    .parse::<f32>()
+                    .ok()
+            })
             .unwrap_or(0.5);
 
         Ok(score.clamp(0.0, 1.0))

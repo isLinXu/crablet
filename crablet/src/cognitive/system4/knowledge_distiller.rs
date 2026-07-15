@@ -548,7 +548,9 @@ mod tests {
 
     #[test]
     fn test_knowledge_confidence_calculation() {
-        let distiller = KnowledgeDistiller::new(Arc::new(MockLlmClient::new()) as Arc<dyn crate::cognitive::llm::LlmClient>);
+        let distiller = KnowledgeDistiller::new(
+            Arc::new(MockLlmClient::new()) as Arc<dyn crate::cognitive::llm::LlmClient>
+        );
 
         let relationships = vec![
             Relationship {

@@ -9,11 +9,11 @@
 //! 3. Dynamic Responder - Template-based dynamic response generation
 //! 4. Command Registry - Extensible command library with 20+ categories
 
-use crate::cognitive::CognitiveSystem;
 use crate::cognitive::context_handler::ContextHandler;
 use crate::cognitive::pattern_matcher::{
     MatchConfidence, MatchResult, MatchType, Pattern, PatternMatcher,
 };
+use crate::cognitive::CognitiveSystem;
 use crate::error::{CrabletError, Result};
 use crate::types::{Message, TraceStep};
 use async_trait::async_trait;
@@ -114,8 +114,12 @@ pub enum CommandCategory {
 }
 
 // Re-export from sub-modules for backward compatibility
-pub use super::context_handler::{ContextHandler as System1ContextHandler, ContextInfo as System1ContextInfo};
-pub use super::pattern_matcher::{Pattern as System1Pattern, PatternMatcher as System1PatternMatcher};
+pub use super::context_handler::{
+    ContextHandler as System1ContextHandler, ContextInfo as System1ContextInfo,
+};
+pub use super::pattern_matcher::{
+    Pattern as System1Pattern, PatternMatcher as System1PatternMatcher,
+};
 
 // ============================================================================
 // Enhanced System 1

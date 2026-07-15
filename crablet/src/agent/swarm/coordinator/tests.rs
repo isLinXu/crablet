@@ -100,9 +100,8 @@ async fn init_resumes_active_graphs_from_persistence() {
         .await
         .unwrap();
 
-    let llm = Arc::new(
-        MockLlmClient::new().with_response("resumed result")
-    ) as Arc<dyn crate::cognitive::llm::LlmClient>;
+    let llm = Arc::new(MockLlmClient::new().with_response("resumed result"))
+        as Arc<dyn crate::cognitive::llm::LlmClient>;
     let event_bus = Arc::new(EventBus::new(100));
     let factory = Arc::new(AgentFactory::new(llm.clone(), event_bus));
     let persister = Arc::new(SwarmPersister::new(Some(pool)));
@@ -384,12 +383,11 @@ async fn resume_graph_requeues_cancelled_tasks_and_respawns() {
         sleep(Duration::from_millis(20)).await;
     }
 
-    let stored_status: String =
-        sqlx::query_scalar("SELECT status FROM swarm_tasks WHERE id = ?")
-            .bind("task-1")
-            .fetch_one(&pool)
-            .await
-            .unwrap();
+    let stored_status: String = sqlx::query_scalar("SELECT status FROM swarm_tasks WHERE id = ?")
+        .bind("task-1")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
     assert!(stored_status.contains("\"Completed\""));
 }
 
@@ -768,12 +766,11 @@ async fn update_node_persists_when_graph_is_paused() {
     assert_eq!(task.prompt, "new prompt");
     assert_eq!(task.dependencies, vec!["task-1".to_string()]);
 
-    let stored_prompt: String =
-        sqlx::query_scalar("SELECT prompt FROM swarm_tasks WHERE id = ?")
-            .bind("task-2")
-            .fetch_one(&pool)
-            .await
-            .unwrap();
+    let stored_prompt: String = sqlx::query_scalar("SELECT prompt FROM swarm_tasks WHERE id = ?")
+        .bind("task-2")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
     assert_eq!(stored_prompt, "new prompt");
 }
 
@@ -818,12 +815,11 @@ async fn delete_graph_removes_memory_and_persistence() {
         .fetch_one(&pool)
         .await
         .unwrap();
-    let task_count: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM swarm_tasks WHERE graph_id = ?")
-            .bind("graph-delete")
-            .fetch_one(&pool)
-            .await
-            .unwrap();
+    let task_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM swarm_tasks WHERE graph_id = ?")
+        .bind("graph-delete")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
 
     assert_eq!(graph_count, 0);
     assert_eq!(task_count, 0);

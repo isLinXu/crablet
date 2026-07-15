@@ -6,11 +6,11 @@ use std::sync::Arc;
 
 pub async fn handle_serve_web(
     router: Arc<CognitiveRouter>,
+    host: &str,
     port: u16,
     config: &Config,
 ) -> Result<()> {
-    let gateway_host =
-        std::env::var("CRABLET_GATEWAY_HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
+    let gateway_host = host.to_string();
     let gateway_auth_mode =
         std::env::var("CRABLET_AUTH_MODE").unwrap_or_else(|_| "token".to_string());
 

@@ -252,7 +252,10 @@ impl MetaCognitiveController {
             } else {
                 let optimizer = self.optimizer.write().await;
                 let optimization = optimizer.apply_improvements(&learned).await?;
-                info!("Applied {} optimizations (v1)", optimization.improvements_count);
+                info!(
+                    "Applied {} optimizations (v1)",
+                    optimization.improvements_count
+                );
             }
         }
 
@@ -267,17 +270,17 @@ impl MetaCognitiveController {
         let metrics = monitor.get_global_metrics().await;
         let patterns = learner.get_all_patterns().await;
 
-        let (improvements_applied, last_optimization) =
-            if let Some(ref opt_v2) = self.optimizer_v2 {
-                let improvements = opt_v2.total_improvements_async().await;
-                let last = opt_v2.last_optimization_async().await;
-                (improvements, last)
-            } else {
-                let optimizer = self.optimizer.read().await;
-                let improvements = optimizer.get_applied_improvements().await.len();
-                let last = optimizer.last_optimization_async().await;
-                (improvements, last)
-            };
+        let (improvements_applied, last_optimization) = if let Some(ref opt_v2) = self.optimizer_v2
+        {
+            let improvements = opt_v2.total_improvements_async().await;
+            let last = opt_v2.last_optimization_async().await;
+            (improvements, last)
+        } else {
+            let optimizer = self.optimizer.read().await;
+            let improvements = optimizer.get_applied_improvements().await.len();
+            let last = optimizer.last_optimization_async().await;
+            (improvements, last)
+        };
 
         MetaStatistics {
             total_tasks: metrics.total_executions,

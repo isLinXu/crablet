@@ -39,7 +39,7 @@ pub struct DynamicCommandRule {
     pub primary_command: String,
     pub aliases: Vec<String>,
     pub description: String,
-    pub weight: f32, // 默认 1.0，可动态调整
+    pub weight: f32,               // 默认 1.0，可动态调整
     pub context_tags: Vec<String>, // 如 ["coding", "onboarding"]
     pub condition: Option<ConditionFn>,
     pub handler: HandlerFn,
@@ -527,9 +527,7 @@ mod tests {
         let system = System1Dynamic::new();
 
         // 注册内置规则
-        system
-            .register_rules(System1Dynamic::builtin_rules())
-            .await;
+        system.register_rules(System1Dynamic::builtin_rules()).await;
 
         assert_eq!(system.rule_count().await, 6);
 
@@ -540,9 +538,7 @@ mod tests {
     #[tokio::test]
     async fn test_context_aware_condition() {
         let system = System1Dynamic::new();
-        system
-            .register_rules(System1Dynamic::builtin_rules())
-            .await;
+        system.register_rules(System1Dynamic::builtin_rules()).await;
 
         // 新用户（turn_count=0）触发 onboarding_tip
         // 通过 update_context 初始化
@@ -572,9 +568,7 @@ mod tests {
     #[tokio::test]
     async fn test_unregister_and_fuzzy_match() {
         let system = System1Dynamic::new();
-        system
-            .register_rules(System1Dynamic::builtin_rules())
-            .await;
+        system.register_rules(System1Dynamic::builtin_rules()).await;
 
         // 注销 greeting
         let removed = system.unregister_rule("greeting").await;
@@ -589,9 +583,7 @@ mod tests {
     #[tokio::test]
     async fn test_weighted_scoring() {
         let system = System1Dynamic::new();
-        system
-            .register_rules(System1Dynamic::builtin_rules())
-            .await;
+        system.register_rules(System1Dynamic::builtin_rules()).await;
 
         // 提升 code_review 权重
         system.set_rule_weight("code_review", 2.0).await;

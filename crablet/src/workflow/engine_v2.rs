@@ -1,7 +1,7 @@
 use super::executor::NodeExecutorRegistry;
 use super::types::{
-    next_id, now_rfc3339, ExecuteWorkflowRequest, ExecutionEvent, NodeExecution, WorkflowExecution,
-    Workflow, WorkflowNode, WorkflowEdge,
+    next_id, now_rfc3339, ExecuteWorkflowRequest, ExecutionEvent, NodeExecution, Workflow,
+    WorkflowEdge, WorkflowExecution, WorkflowNode,
 };
 use futures::future::join_all;
 use serde_json::Value;
@@ -33,10 +33,7 @@ impl WorkflowEngine {
     /// Use this when the caller wants to manage workflows via `WorkflowRegistry`
     /// separately and inject the shared store later via `with_workflows`.
     pub fn with_registry(executor_registry: Arc<NodeExecutorRegistry>) -> Self {
-        Self::new(
-            executor_registry,
-            Arc::new(RwLock::new(HashMap::new())),
-        )
+        Self::new(executor_registry, Arc::new(RwLock::new(HashMap::new())))
     }
 
     /// Replace the shared workflows store (e.g. to link with `WorkflowRegistry`).
@@ -93,7 +90,10 @@ impl WorkflowEngine {
         };
 
         // Execute DAG
-        match self.execute_dag(&dag, &workflow, &req.inputs, &execution_id).await {
+        match self
+            .execute_dag(&dag, &workflow, &req.inputs, &execution_id)
+            .await
+        {
             Ok(outputs) => {
                 execution.status = "completed".to_string();
                 execution.outputs = Some(outputs);
@@ -169,9 +169,7 @@ impl WorkflowEngine {
                 }
 
                 // Deadlock or cycle detected
-                return Err(WorkflowEngineError::DeadlockDetected(
-                    remaining.join(", "),
-                ));
+                return Err(WorkflowEngineError::DeadlockDetected(remaining.join(", ")));
             }
 
             // Execute ready batch (parallel execution of independent nodes)
@@ -227,9 +225,12 @@ impl WorkflowEngine {
                         let node_exec = NodeExecution {
                             node_id: node_id.clone(),
                             status: "completed".to_string(),
-                            inputs: Some(
-                                self.resolve_node_inputs(&node_id, node, &node_outputs, dag)?,
-                            ),
+                            inputs: Some(self.resolve_node_inputs(
+                                &node_id,
+                                node,
+                                &node_outputs,
+                                dag,
+                            )?),
                             outputs: Some(outputs),
                             started_at: Some(started_at),
                             completed_at: Some(completed_at),
@@ -255,9 +256,12 @@ impl WorkflowEngine {
                         let node_exec = NodeExecution {
                             node_id: node_id.clone(),
                             status: "failed".to_string(),
-                            inputs: Some(
-                                self.resolve_node_inputs(&node_id, node, &node_outputs, dag)?,
-                            ),
+                            inputs: Some(self.resolve_node_inputs(
+                                &node_id,
+                                node,
+                                &node_outputs,
+                                dag,
+                            )?),
                             outputs: None,
                             started_at: Some(started_at),
                             completed_at: Some(completed_at),
@@ -420,10 +424,7 @@ impl WorkflowEngine {
                 error: node_exec.error.clone(),
                 variable: None,
                 value: None,
-                timestamp: node_exec
-                    .started_at
-                    .clone()
-                    .unwrap_or_else(now_rfc3339),
+                timestamp: node_exec.started_at.clone().unwrap_or_else(now_rfc3339),
             });
         }
 
@@ -619,7 +620,11 @@ mod tests {
                 make_test_node("b", "llm"),
                 make_test_node("c", "end"),
             ],
-            edges: vec![make_edge("a", "b"), make_edge("b", "c"), make_edge("c", "a")],
+            edges: vec![
+                make_edge("a", "b"),
+                make_edge("b", "c"),
+                make_edge("c", "a"),
+            ],
             variables: HashMap::new(),
             created_at: now_rfc3339(),
             updated_at: now_rfc3339(),

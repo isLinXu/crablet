@@ -5,7 +5,7 @@ use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tracing::{info, warn};
 
@@ -248,6 +248,33 @@ fn parse_bool_flag(value: &str) -> bool {
     )
 }
 
+fn sqlite_url(path: &Path) -> String {
+    format!("sqlite://{}?mode=rwc", path.display())
+}
+
+fn migrate_if_absent(source: &Path, destination: &Path) -> Result<bool> {
+    if !source.is_file() || destination.exists() {
+        return Ok(false);
+    }
+    if let Some(parent) = destination.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    match std::fs::rename(source, destination) {
+        Ok(()) => Ok(true),
+        Err(_) => {
+            std::fs::copy(source, destination)?;
+            let copied = std::fs::metadata(destination)?.len();
+            let original = std::fs::metadata(source)?.len();
+            if copied != original {
+                let _ = std::fs::remove_file(destination);
+                anyhow::bail!("legacy database copy verification failed");
+            }
+            std::fs::remove_file(source)?;
+            Ok(true)
+        }
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct McpServerConfig {
     pub command: String,
@@ -302,18 +329,17 @@ impl Config {
     }
 
     fn load_raw() -> Result<Self> {
-        // Defaults — database_url 使用绝对路径解析，确保打包后不会写入不可预知的 CWD
-        // sqlx-sqlite 绝对路径格式: sqlite:///absolute/path?mode=rwc（三斜杠 + 绝对路径）
-        let default_db_path = std::env::current_exe()
-            .ok()
-            .and_then(|exe| exe.parent().map(|d| d.join("crablet.db")))
-            .map(|p| {
-                // p.display() 以 '/' 开头，拼接后得到 sqlite:///abs/path
-                format!("sqlite://{}?mode=rwc", p.display())
-            })
+        // 桌面包装器显式注入 CRABLET_DATA_DIR；CLI/服务模式保留相对路径默认值。
+        // 这避免 sidecar 将持久数据写入只读 .app、DMG 卷或不确定 CWD。
+        let desktop_data_dir = std::env::var_os("CRABLET_DATA_DIR").map(PathBuf::from);
+        let mut database_url = desktop_data_dir
+            .as_ref()
+            .map(|root| sqlite_url(&root.join("db/crablet.db")))
             .unwrap_or_else(|| "sqlite:crablet.db?mode=rwc".to_string());
-        let mut database_url = default_db_path;
-        let mut skills_dir = PathBuf::from("skills");
+        let mut skills_dir = desktop_data_dir
+            .as_ref()
+            .map(|root| root.join("skills"))
+            .unwrap_or_else(|| PathBuf::from("skills"));
         let mut model_name = "gpt-4o-mini".to_string();
         let mut llm_vendor = None;
         let mut ollama_model = default_ollama_model();
@@ -447,8 +473,11 @@ impl Config {
             }
         }
 
-        // 1.5. Try to load from local config (overrides XDG)
-        let local_config_path = PathBuf::from("config/config.toml");
+        // 1.5. Desktop config lives under the injected data root; CLI keeps local compatibility.
+        let local_config_path = desktop_data_dir
+            .as_ref()
+            .map(|root| root.join("config/config.toml"))
+            .unwrap_or_else(|| PathBuf::from("config/config.toml"));
         if let Some(toml_config) = load_toml(&local_config_path)? {
             info!("Loading local config from {:?}", local_config_path);
             apply_config_file!(toml_config);
@@ -625,8 +654,22 @@ impl Config {
             }
         }
 
-        // 4. Fallback for skills: if local "skills" dir doesn't exist, check XDG data dir
-        if !skills_dir.exists() {
+        if let Some(root) = desktop_data_dir.as_ref() {
+            for subdir in ["db", "config", "skills", "uploads", "logs"] {
+                std::fs::create_dir_all(root.join(subdir))?;
+            }
+            if std::env::var_os("DATABASE_URL").is_none() {
+                let destination = root.join("db/crablet.db");
+                for source in [PathBuf::from("crablet.db"), root.join("crablet.db")] {
+                    if migrate_if_absent(&source, &destination)? {
+                        info!("Migrated legacy database {:?} to {:?}", source, destination);
+                        break;
+                    }
+                }
+                database_url = sqlite_url(&destination);
+            }
+        } else if !skills_dir.exists() {
+            // CLI compatibility: retain the existing XDG fallback.
             if let Some(proj_dirs) = ProjectDirs::from("com", "crablet", "crablet") {
                 let data_dir = proj_dirs.data_dir().join("skills");
                 if data_dir.exists() {
@@ -750,5 +793,42 @@ impl ConfigManager {
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod path_tests {
+    use super::{migrate_if_absent, sqlite_url};
+    use std::fs;
+
+    #[test]
+    fn sqlite_url_uses_absolute_path() {
+        assert_eq!(
+            sqlite_url(std::path::Path::new("/Users/alice/data/db/crablet.db")),
+            "sqlite:///Users/alice/data/db/crablet.db?mode=rwc"
+        );
+    }
+
+    #[test]
+    fn legacy_database_migration_is_idempotent_and_never_overwrites() {
+        let temp = std::env::temp_dir().join(format!(
+            "crablet-path-test-{}-{}",
+            std::process::id(),
+            std::thread::current().name().unwrap_or("migration")
+        ));
+        let source = temp.join("legacy/crablet.db");
+        let destination = temp.join("db/crablet.db");
+        fs::create_dir_all(source.parent().unwrap()).unwrap();
+        fs::write(&source, b"legacy-data").unwrap();
+
+        assert!(migrate_if_absent(&source, &destination).unwrap());
+        assert_eq!(fs::read(&destination).unwrap(), b"legacy-data");
+        assert!(!source.exists());
+        assert!(!migrate_if_absent(&source, &destination).unwrap());
+
+        fs::write(&source, b"must-not-overwrite").unwrap();
+        assert!(!migrate_if_absent(&source, &destination).unwrap());
+        assert_eq!(fs::read(&destination).unwrap(), b"legacy-data");
+        fs::remove_dir_all(temp).unwrap();
     }
 }

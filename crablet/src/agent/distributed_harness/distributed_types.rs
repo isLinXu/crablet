@@ -343,9 +343,7 @@ pub async fn create_backend(
     config: &DistributedConfig,
 ) -> Result<Arc<dyn HarnessBackend>, DistributedError> {
     match config.backend_type {
-        BackendType::InMemory => Ok(Arc::new(
-            super::distributed_backend::InMemoryBackend::new(),
-        )),
+        BackendType::InMemory => Ok(Arc::new(super::distributed_backend::InMemoryBackend::new())),
         BackendType::Redis => Ok(Arc::new(
             super::distributed_backend::RedisHarnessBackend::new(&config.backend_uri).await?,
         )),

@@ -23,26 +23,26 @@
 //! │   └─────────────┘    └─────────────┘    └──────────────────────┘   │
 //! └─────────────────────────────────────────────────────────────────────┘
 
-use std::sync::Arc;
-use std::collections::HashMap;
-use tokio::sync::{RwLock, mpsc};
-use tracing::{info, warn, debug};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::Arc;
+use tokio::sync::{mpsc, RwLock};
+use tracing::{debug, info, warn};
 
-use crate::events::{AgentEvent, EventBus, Event};
-use crate::memory::manager::MemoryManager;
-use crate::memory::consolidator::MemoryConsolidator;
-use crate::knowledge::vector_store::VectorStore;
 use crate::error::Result;
+use crate::events::{AgentEvent, Event, EventBus};
+use crate::knowledge::vector_store::VectorStore;
+use crate::memory::consolidator::MemoryConsolidator;
+use crate::memory::manager::MemoryManager;
 
 /// Priority level for event processing
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum EventPriority {
-    Critical,   // Immediate processing
-    High,       // Process within 1 second
-    Normal,     // Process within 5 seconds
-    Low,        // Process when idle
+    Critical, // Immediate processing
+    High,     // Process within 1 second
+    Normal,   // Process within 5 seconds
+    Low,      // Process when idle
 }
 
 /// Configuration for event-driven memory system
@@ -80,10 +80,10 @@ impl Default for EventDrivenConfig {
 pub trait EventHandler: Send + Sync {
     /// Check if this handler can process the event
     fn can_handle(&self, event: &AgentEvent) -> bool;
-    
+
     /// Process the event
     async fn handle(&self, event: &AgentEvent, context: &EventContext) -> Result<()>;
-    
+
     /// Get handler priority
     fn priority(&self) -> EventPriority {
         EventPriority::Normal
@@ -136,9 +136,12 @@ impl EventDrivenMemory {
         memory_manager: Arc<MemoryManager>,
         vector_store: Option<Arc<VectorStore>>,
         consolidator: Option<Arc<MemoryConsolidator>>,
-    ) -> (Self, mpsc::Receiver<(AgentEvent, EventContext, EventPriority)>) {
+    ) -> (
+        Self,
+        mpsc::Receiver<(AgentEvent, EventContext, EventPriority)>,
+    ) {
         let (sender, receiver) = mpsc::channel(config.channel_buffer_size);
-        
+
         let system = Self {
             config,
             event_bus,
@@ -155,7 +158,10 @@ impl EventDrivenMemory {
     }
 
     /// Start the event-driven system
-    pub fn start(self: Arc<Self>, receiver: mpsc::Receiver<(AgentEvent, EventContext, EventPriority)>) {
+    pub fn start(
+        self: Arc<Self>,
+        receiver: mpsc::Receiver<(AgentEvent, EventContext, EventPriority)>,
+    ) {
         // Start event listener
         let self_clone = self.clone();
         tokio::spawn(async move {
@@ -216,14 +222,24 @@ impl EventDrivenMemory {
         {
             let mut stats = self.stats.write().await;
             stats.total_events_received += 1;
-            *stats.events_by_priority.entry(format!("{:?}", priority)).or_insert(0) += 1;
-            *stats.events_by_type.entry(self.event_type_name(&event.payload)).or_insert(0) += 1;
+            *stats
+                .events_by_priority
+                .entry(format!("{:?}", priority))
+                .or_insert(0) += 1;
+            *stats
+                .events_by_type
+                .entry(self.event_type_name(&event.payload))
+                .or_insert(0) += 1;
         }
 
         // Send to processing queue
-        if let Err(e) = self.event_sender.send((event.payload, context, priority)).await {
+        if let Err(e) = self
+            .event_sender
+            .send((event.payload, context, priority))
+            .await
+        {
             warn!("Failed to queue event: {}", e);
-            
+
             // Update failed count
             self.stats.write().await.failed_events += 1;
         }
@@ -232,7 +248,13 @@ impl EventDrivenMemory {
     }
 
     /// Worker loop for processing events
-    async fn worker_loop(&self, worker_id: usize, receiver: Arc<tokio::sync::Mutex<mpsc::Receiver<(AgentEvent, EventContext, EventPriority)>>>) {
+    async fn worker_loop(
+        &self,
+        worker_id: usize,
+        receiver: Arc<
+            tokio::sync::Mutex<mpsc::Receiver<(AgentEvent, EventContext, EventPriority)>>,
+        >,
+    ) {
         info!("Event worker {} started", worker_id);
 
         loop {
@@ -248,23 +270,24 @@ impl EventDrivenMemory {
             match next {
                 Some((event, context, priority)) => {
                     let start = std::time::Instant::now();
-                    
+
                     if let Err(e) = self.handle_event(&event, &context, priority).await {
                         warn!("Worker {} failed to handle event: {}", worker_id, e);
                         self.stats.write().await.failed_events += 1;
                     } else {
                         let duration_ms = start.elapsed().as_millis() as f64;
-                        
+
                         // Update stats
                         let mut stats = self.stats.write().await;
                         stats.events_processed += 1;
-                        
+
                         // Update average processing time
                         if stats.events_processed == 1 {
                             stats.avg_processing_time_ms = duration_ms;
                         } else {
-                            stats.avg_processing_time_ms = 
-                                (stats.avg_processing_time_ms * (stats.events_processed - 1) as f64 + duration_ms)
+                            stats.avg_processing_time_ms = (stats.avg_processing_time_ms
+                                * (stats.events_processed - 1) as f64
+                                + duration_ms)
                                 / stats.events_processed as f64;
                         }
                     }
@@ -280,7 +303,12 @@ impl EventDrivenMemory {
     }
 
     /// Handle a specific event
-    async fn handle_event(&self, event: &AgentEvent, context: &EventContext, priority: EventPriority) -> Result<()> {
+    async fn handle_event(
+        &self,
+        event: &AgentEvent,
+        context: &EventContext,
+        priority: EventPriority,
+    ) -> Result<()> {
         debug!("Handling event: {:?} with priority {:?}", event, priority);
 
         // Run custom handlers first
@@ -302,8 +330,11 @@ impl EventDrivenMemory {
             AgentEvent::ToolExecutionFinished { tool, output } => {
                 self.handle_tool_execution(tool, output, context).await?;
             }
-            AgentEvent::CoreMemoryUpdated { block, operation, .. } => {
-                self.handle_core_memory_update(block, operation, context).await?;
+            AgentEvent::CoreMemoryUpdated {
+                block, operation, ..
+            } => {
+                self.handle_core_memory_update(block, operation, context)
+                    .await?;
             }
             AgentEvent::BackgroundThinkingResult { insights, .. } => {
                 self.handle_background_thinking(insights, context).await?;
@@ -325,7 +356,7 @@ impl EventDrivenMemory {
         if let Some(session_id) = &context.session_id {
             if self.config.enable_working_memory_sync {
                 self.memory_manager.touch_activity();
-                
+
                 // Could trigger immediate context analysis here
                 debug!("Updated activity for session: {}", session_id);
             }
@@ -340,7 +371,12 @@ impl EventDrivenMemory {
     }
 
     /// Handle tool execution events
-    async fn handle_tool_execution(&self, tool: &str, output: &str, context: &EventContext) -> Result<()> {
+    async fn handle_tool_execution(
+        &self,
+        tool: &str,
+        output: &str,
+        context: &EventContext,
+    ) -> Result<()> {
         // Store tool execution results in knowledge base
         if self.config.enable_knowledge_updates {
             if let Some(vs) = &self.vector_store {
@@ -351,9 +387,9 @@ impl EventDrivenMemory {
                     "session_id": context.session_id,
                     "timestamp": context.timestamp,
                 });
-                
+
                 // vs.add_document(&document, Some(metadata)).await?;
-                
+
                 // Update stats
                 self.stats.write().await.knowledge_updates += 1;
             }
@@ -363,10 +399,15 @@ impl EventDrivenMemory {
     }
 
     /// Handle core memory update events
-    async fn handle_core_memory_update(&self, block: &str, operation: &str, context: &EventContext) -> Result<()> {
+    async fn handle_core_memory_update(
+        &self,
+        block: &str,
+        operation: &str,
+        context: &EventContext,
+    ) -> Result<()> {
         // Trigger immediate persistence
         self.memory_manager.save_core_memory().await?;
-        
+
         // Update stats
         self.stats.write().await.core_memory_updates += 1;
 
@@ -380,7 +421,11 @@ impl EventDrivenMemory {
     }
 
     /// Handle background thinking results
-    async fn handle_background_thinking(&self, insights: &str, context: &EventContext) -> Result<()> {
+    async fn handle_background_thinking(
+        &self,
+        insights: &str,
+        context: &EventContext,
+    ) -> Result<()> {
         // Trigger consolidation if significant insights were found
         if !insights.is_empty() {
             if let Some(consolidator) = &self.consolidator {
@@ -408,11 +453,14 @@ impl EventDrivenMemory {
     async fn analyze_for_preferences(&self, content: &str, context: &EventContext) -> Result<()> {
         // Quick heuristic analysis for critical preferences
         // This is a lightweight check - full analysis happens in background thinker
-        
+
         let lower_content = content.to_lowercase();
-        
+
         // Check for explicit preference statements
-        if lower_content.contains("i prefer") || lower_content.contains("i like") || lower_content.contains("i want") {
+        if lower_content.contains("i prefer")
+            || lower_content.contains("i like")
+            || lower_content.contains("i want")
+        {
             // Could trigger immediate core memory update for high-confidence preferences
             debug!("Detected potential preference in user input");
         }
@@ -452,7 +500,9 @@ impl EventDrivenMemory {
             AgentEvent::CognitiveLayerChanged { .. } => "CognitiveLayerChanged".to_string(),
             AgentEvent::Error(_) => "Error".to_string(),
             AgentEvent::Heartbeat { .. } => "Heartbeat".to_string(),
-            AgentEvent::BackgroundThinkingTriggered { .. } => "BackgroundThinkingTriggered".to_string(),
+            AgentEvent::BackgroundThinkingTriggered { .. } => {
+                "BackgroundThinkingTriggered".to_string()
+            }
             AgentEvent::BackgroundThinkingResult { .. } => "BackgroundThinkingResult".to_string(),
             AgentEvent::CoreMemoryUpdated { .. } => "CoreMemoryUpdated".to_string(),
             AgentEvent::InsightLearningSignal { .. } => "InsightLearningSignal".to_string(),

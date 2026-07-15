@@ -115,10 +115,7 @@ impl CognitiveRouter {
     }
 
     // ... existing create_llm_client methods ...
-    async fn create_llm_client(
-        config: &Config,
-        model_hint: Option<&str>,
-    ) -> Arc<dyn LlmClient> {
+    async fn create_llm_client(config: &Config, model_hint: Option<&str>) -> Arc<dyn LlmClient> {
         let mut temp_config = config.clone();
         if let Some(model) = model_hint {
             temp_config.model_name = model.to_string();
@@ -132,10 +129,9 @@ impl CognitiveRouter {
                      (LLM features unavailable until API Key is configured).",
                     e
                 );
-                let llm_inner: Arc<dyn LlmClient> = Arc::new(
-                    crate::cognitive::llm::MockClient,
-                );
-                let cached: Arc<dyn LlmClient> = Arc::new(CachedLlmClient::new(llm_inner, 100)) as Arc<dyn LlmClient>;
+                let llm_inner: Arc<dyn LlmClient> = Arc::new(crate::cognitive::llm::MockClient);
+                let cached: Arc<dyn LlmClient> =
+                    Arc::new(CachedLlmClient::new(llm_inner, 100)) as Arc<dyn LlmClient>;
                 cached
             }
         }
@@ -173,9 +169,9 @@ impl CognitiveRouter {
             Err(_) => {
                 let ollama_model = config.ollama_model.clone();
                 let local_llm_inner: Arc<dyn LlmClient> =
-                Arc::new(OllamaClient::new(&ollama_model));
+                    Arc::new(OllamaClient::new(&ollama_model));
                 let boxed: Arc<dyn LlmClient> =
-                Arc::new(CachedLlmClient::new(local_llm_inner, 100));
+                    Arc::new(CachedLlmClient::new(local_llm_inner, 100));
                 boxed
             }
         }

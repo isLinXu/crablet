@@ -106,8 +106,7 @@ impl PatternMatcher {
                 if !self.compiled_regexes.contains_key(pattern_str) {
                     match Regex::new(pattern_str) {
                         Ok(re) => {
-                            self.compiled_regexes
-                                .insert(pattern_str.to_string(), re);
+                            self.compiled_regexes.insert(pattern_str.to_string(), re);
                         }
                         Err(e) => {
                             tracing::warn!(
@@ -214,7 +213,8 @@ mod tests {
     #[test]
     fn test_contains_match() {
         let mut matcher = PatternMatcher::new();
-        let result = matcher.match_pattern("say hello world", &Pattern::Contains("hello".to_string()));
+        let result =
+            matcher.match_pattern("say hello world", &Pattern::Contains("hello".to_string()));
         assert!(result.is_some());
         assert_eq!(result.map(|r| r.0), Some(MatchConfidence::Medium));
     }
@@ -222,7 +222,8 @@ mod tests {
     #[test]
     fn test_regex_match() {
         let mut matcher = PatternMatcher::new();
-        let result = matcher.match_pattern("hello!", &Pattern::Regex(r"^(?i)hello[!?.]*$".to_string()));
+        let result =
+            matcher.match_pattern("hello!", &Pattern::Regex(r"^(?i)hello[!?.]*$".to_string()));
         assert!(result.is_some());
         assert_eq!(result.map(|r| r.0), Some(MatchConfidence::High));
     }

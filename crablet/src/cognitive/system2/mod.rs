@@ -133,7 +133,8 @@ impl System2 {
         };
 
         // Wrap with Cache (Optimization 1)
-        let llm: Arc<dyn LlmClient> = Arc::new(CachedLlmClient::new(llm_inner, 100)) as Arc<dyn LlmClient>;
+        let llm: Arc<dyn LlmClient> =
+            Arc::new(CachedLlmClient::new(llm_inner, 100)) as Arc<dyn LlmClient>;
         let llm_arc = llm;
 
         // Initialize Safety Oracle (Default to Strict for MVP)
@@ -385,7 +386,8 @@ impl System2 {
 
     pub async fn with_client(llm_inner: Arc<dyn LlmClient>, event_bus: Arc<EventBus>) -> Self {
         // Wrap with Cache
-        let llm: Arc<dyn LlmClient> = Arc::new(CachedLlmClient::new(llm_inner, 100)) as Arc<dyn LlmClient>;
+        let llm: Arc<dyn LlmClient> =
+            Arc::new(CachedLlmClient::new(llm_inner, 100)) as Arc<dyn LlmClient>;
         let llm_arc = llm;
 
         let skills = Arc::new(RwLock::new(SkillRegistry::new()));

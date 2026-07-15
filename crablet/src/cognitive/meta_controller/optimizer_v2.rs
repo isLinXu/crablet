@@ -268,7 +268,10 @@ impl OptimizerV2 {
         let best_strategy = self.select_best_strategy_for_category(&category).await;
 
         if let Some(strategy) = best_strategy {
-            debug!("Selected strategy '{}' for category '{}'", strategy, category);
+            debug!(
+                "Selected strategy '{}' for category '{}'",
+                strategy, category
+            );
 
             // 实际下发策略到执行系统
             let boost = (knowledge.confidence * 0.5).clamp(0.1, 1.0);
@@ -290,22 +293,12 @@ impl OptimizerV2 {
                 }
                 "analysis" => {
                     self.strategy_executor
-                        .apply_role_profile(
-                            "analyst",
-                            Some(120_000),
-                            Some(5),
-                            Some(true),
-                        )
+                        .apply_role_profile("analyst", Some(120_000), Some(5), Some(true))
                         .await?;
                 }
                 "explanation" | "general" => {
                     self.strategy_executor
-                        .apply_role_profile(
-                            "drafter",
-                            Some(30_000),
-                            Some(4),
-                            Some(false),
-                        )
+                        .apply_role_profile("drafter", Some(30_000), Some(4), Some(false))
                         .await?;
                 }
                 _ => {}
@@ -348,7 +341,10 @@ impl OptimizerV2 {
                     key: "swarm.default_timeout_ms".to_string(),
                     old_value: Some(old_timeout.clone()),
                     new_value: new_timeout.clone(),
-                    reason: format!("Timeout error prevention: {} -> {}", old_timeout, new_timeout),
+                    reason: format!(
+                        "Timeout error prevention: {} -> {}",
+                        old_timeout, new_timeout
+                    ),
                 });
 
                 // 临时限流高频出错的工具
@@ -381,7 +377,10 @@ impl OptimizerV2 {
                 // 启用更严格的验证层
                 changes.push(ConfigChange {
                     key: "cognitive.validation_strictness".to_string(),
-                    old_value: self.config_manager.get("cognitive.validation_strictness").await,
+                    old_value: self
+                        .config_manager
+                        .get("cognitive.validation_strictness")
+                        .await,
                     new_value: "high".to_string(),
                     reason: "Hallucination prevention: strict validation".to_string(),
                 });
@@ -401,10 +400,7 @@ impl OptimizerV2 {
     }
 
     /// 强化成功策略 — 不仅记录评分，还提升策略权重和资源配置
-    async fn reinforce_strategy(
-        &self,
-        knowledge: &LearnedKnowledge,
-    ) -> Result<Option<String>> {
+    async fn reinforce_strategy(&self, knowledge: &LearnedKnowledge) -> Result<Option<String>> {
         let strategy = self.extract_strategy(&knowledge.content)?;
 
         // 更新内部评分
@@ -457,7 +453,9 @@ impl OptimizerV2 {
                 .get("tools.batch_size")
                 .await
                 .unwrap_or_else(|| "1".to_string());
-            let new_batch = (old_batch.parse::<usize>().unwrap_or(1) * 2).max(5).to_string();
+            let new_batch = (old_batch.parse::<usize>().unwrap_or(1) * 2)
+                .max(5)
+                .to_string();
             changes.push(ConfigChange {
                 key: "tools.batch_size".to_string(),
                 old_value: Some(old_batch),
@@ -554,7 +552,12 @@ impl OptimizerV2 {
     }
 
     pub async fn get_strategy_stats(&self) -> Vec<StrategyStats> {
-        self.strategy_scores.read().await.values().cloned().collect()
+        self.strategy_scores
+            .read()
+            .await
+            .values()
+            .cloned()
+            .collect()
     }
 
     pub async fn get_best_strategy(&self) -> Option<String> {

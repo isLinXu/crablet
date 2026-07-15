@@ -43,8 +43,8 @@ pub async fn run(config: Config) -> Result<()> {
         #[cfg(feature = "scripting")]
         Some(Commands::RunScript { path }) => handlers::script::handle_run_script(path).await,
         #[cfg(feature = "web")]
-        Some(Commands::ServeWeb { port }) => {
-            handlers::web::handle_serve_web(router, *port, &config).await
+        Some(Commands::ServeWeb { host, port }) => {
+            handlers::web::handle_serve_web(router, host, *port, &config).await
         }
         Some(Commands::Skill { subcmd }) => {
             handlers::skill::handle_skill(subcmd, &config, &router).await

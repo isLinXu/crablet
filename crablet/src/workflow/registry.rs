@@ -65,7 +65,11 @@ impl WorkflowRegistry {
                 if let Err(e) = tokio::fs::write(&path, json).await {
                     warn!("WorkflowRegistry: failed to persist to {:?}: {}", path, e);
                 } else {
-                    debug!("WorkflowRegistry: persisted {} workflows to {:?}", list.len(), path);
+                    debug!(
+                        "WorkflowRegistry: persisted {} workflows to {:?}",
+                        list.len(),
+                        path
+                    );
                 }
             }
             Err(e) => warn!("WorkflowRegistry: serialization error: {}", e),

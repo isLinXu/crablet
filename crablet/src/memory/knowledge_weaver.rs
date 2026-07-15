@@ -30,19 +30,19 @@
 //! │   └────────────────────────────────────────────────────────────┘   │
 //! └─────────────────────────────────────────────────────────────────────┘
 
-use std::sync::Arc;
-use std::collections::{HashMap, HashSet};
-use std::time::Duration;
-use tokio::sync::RwLock;
-use tracing::{info, warn, debug};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
+use std::time::Duration;
+use tokio::sync::RwLock;
+use tracing::{debug, info, warn};
 
+use crate::cognitive::llm::LlmClient;
+use crate::error::Result;
 use crate::events::{AgentEvent, EventBus};
 use crate::knowledge::graph::KnowledgeGraph;
 use crate::knowledge::vector_store::VectorStore;
-use crate::cognitive::llm::LlmClient;
-use crate::error::Result;
 
 /// Configuration for Knowledge Weaver
 #[derive(Debug, Clone)]
@@ -357,7 +357,7 @@ impl KnowledgeWeaver {
             } else {
                 stats.avg_weave_duration_ms =
                     (stats.avg_weave_duration_ms * (stats.total_weave_cycles - 1) + duration_ms)
-                    / stats.total_weave_cycles;
+                        / stats.total_weave_cycles;
             }
         }
 
@@ -422,7 +422,9 @@ impl KnowledgeWeaver {
                 {
                     let cache = self.verification_cache.read().await;
                     if let Some(cached) = cache.get(&cache_key) {
-                        if !cached.is_expired(Duration::from_secs(self.config.verification_cache_ttl_secs)) {
+                        if !cached.is_expired(Duration::from_secs(
+                            self.config.verification_cache_ttl_secs,
+                        )) {
                             // Cache hit — skip LLM call
                             let mut stats = self.stats.write().await;
                             stats.cache_hits += 1;
@@ -479,7 +481,11 @@ impl KnowledgeWeaver {
             pairs_text
         );
 
-        match self.llm.chat_complete(&[crate::types::Message::system(&prompt)]).await {
+        match self
+            .llm
+            .chat_complete(&[crate::types::Message::system(&prompt)])
+            .await
+        {
             Ok(response) => {
                 let mut verified_count = 0;
                 let _ttl = Duration::from_secs(self.config.verification_cache_ttl_secs);
@@ -653,10 +659,8 @@ impl KnowledgeWeaver {
             .take(self.config.max_bridge_comparisons);
 
         // Build cluster ID → index lookup
-        let cluster_map: HashMap<&str, &ConceptCluster> = clusters
-            .iter()
-            .map(|c| (c.id.as_str(), c))
-            .collect();
+        let cluster_map: HashMap<&str, &ConceptCluster> =
+            clusters.iter().map(|c| (c.id.as_str(), c)).collect();
 
         for (id_a, id_b) in comparisons {
             let cluster_a = match cluster_map.get(id_a.as_str()) {
@@ -719,10 +723,11 @@ impl KnowledgeWeaver {
         // source_entity → [(target_entity, relationship_type, confidence)]
         let mut adjacency: HashMap<&str, Vec<(&str, &RelationshipType, f32)>> = HashMap::new();
         for rel in relationships.iter() {
-            adjacency
-                .entry(&rel.source_entity)
-                .or_default()
-                .push((&rel.target_entity, &rel.relationship_type, rel.confidence));
+            adjacency.entry(&rel.source_entity).or_default().push((
+                &rel.target_entity,
+                &rel.relationship_type,
+                rel.confidence,
+            ));
         }
 
         let mut rules_found = 0;
@@ -757,21 +762,22 @@ impl KnowledgeWeaver {
 
         // Pattern 2: Symmetric — A→Similar→B implies B→Similar→A
         for rel in relationships.iter() {
-            if matches!(rel.relationship_type, RelationshipType::Similar | RelationshipType::Analogous)
-                && rel.confidence >= self.config.min_relationship_confidence
+            if matches!(
+                rel.relationship_type,
+                RelationshipType::Similar | RelationshipType::Analogous
+            ) && rel.confidence >= self.config.min_relationship_confidence
             {
-                let reverse_exists = relationships
-                    .iter()
-                    .any(|r| r.source_entity == rel.target_entity
+                let reverse_exists = relationships.iter().any(|r| {
+                    r.source_entity == rel.target_entity
                         && r.target_entity == rel.source_entity
-                        && r.relationship_type == rel.relationship_type);
+                        && r.relationship_type == rel.relationship_type
+                });
 
                 if !reverse_exists {
                     rules_found += 1;
                     debug!(
                         "Symmetric rule: {} → {} implies {} → {}",
-                        rel.source_entity, rel.target_entity,
-                        rel.target_entity, rel.source_entity
+                        rel.source_entity, rel.target_entity, rel.target_entity, rel.source_entity
                     );
                 }
             }
@@ -792,7 +798,11 @@ impl KnowledgeWeaver {
     }
 
     /// Calculate similarity between two concepts
-    async fn calculate_concept_similarity(&self, _concept_a: &str, _concept_b: &str) -> Result<f32> {
+    async fn calculate_concept_similarity(
+        &self,
+        _concept_a: &str,
+        _concept_b: &str,
+    ) -> Result<f32> {
         if let Some(_vs) = &self.vector_store {
             // TODO: Use vector store embedding similarity when API is available
             // vs.calculate_similarity(concept_a, concept_b).await
@@ -803,12 +813,18 @@ impl KnowledgeWeaver {
     }
 
     /// Find bridges between two clusters
-    async fn find_cluster_bridges(&self, cluster_a: &ConceptCluster, cluster_b: &ConceptCluster) -> Result<Vec<(String, String)>> {
+    async fn find_cluster_bridges(
+        &self,
+        cluster_a: &ConceptCluster,
+        cluster_b: &ConceptCluster,
+    ) -> Result<Vec<(String, String)>> {
         let mut bridges = Vec::new();
 
         for concept_a in &cluster_a.concepts {
             for concept_b in &cluster_b.concepts {
-                let similarity = self.calculate_concept_similarity(concept_a, concept_b).await?;
+                let similarity = self
+                    .calculate_concept_similarity(concept_a, concept_b)
+                    .await?;
 
                 if similarity >= self.config.clustering_similarity_threshold {
                     bridges.push((concept_a.clone(), concept_b.clone()));
@@ -855,12 +871,14 @@ impl KnowledgeWeaver {
             Target: {}\n\
             Relationship Type: {:?}\n\n\
             Respond with only 'true' if valid, 'false' if not.",
-            relationship.source_entity,
-            relationship.target_entity,
-            relationship.relationship_type
+            relationship.source_entity, relationship.target_entity, relationship.relationship_type
         );
 
-        let verified = match self.llm.chat_complete(&[crate::types::Message::system(&prompt)]).await {
+        let verified = match self
+            .llm
+            .chat_complete(&[crate::types::Message::system(&prompt)])
+            .await
+        {
             Ok(response) => response.trim().to_lowercase().contains("true"),
             Err(e) => {
                 warn!("Failed to verify relationship: {}", e);
@@ -885,7 +903,11 @@ impl KnowledgeWeaver {
         cache.retain(|_, v| !v.is_expired(ttl));
         let evicted = before - cache.len();
         if evicted > 0 {
-            debug!("Evicted {} expired cache entries ({} remaining)", evicted, cache.len());
+            debug!(
+                "Evicted {} expired cache entries ({} remaining)",
+                evicted,
+                cache.len()
+            );
         }
     }
 
@@ -896,7 +918,9 @@ impl KnowledgeWeaver {
 
     /// Get relationships for a specific entity
     pub async fn get_entity_relationships(&self, entity: &str) -> Vec<DiscoveredRelationship> {
-        self.relationships.read().await
+        self.relationships
+            .read()
+            .await
             .iter()
             .filter(|r| r.source_entity == entity || r.target_entity == entity)
             .cloned()

@@ -28,19 +28,19 @@
 //! │   └────────────────────────────────────────────────────────────┘   │
 //! └─────────────────────────────────────────────────────────────────────┘
 
-use std::sync::Arc;
-use std::time::Duration;
-use std::collections::HashMap;
-use tokio::sync::RwLock;
-use tokio::time::Instant;
-use tracing::{info, warn, debug};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::Arc;
+use std::time::Duration;
+use tokio::sync::RwLock;
+use tokio::time::Instant;
+use tracing::{debug, info, warn};
 
-use crate::events::{AgentEvent, EventBus};
-use crate::memory::manager::MemoryManager;
-use crate::knowledge::vector_store::VectorStore;
 use crate::error::Result;
+use crate::events::{AgentEvent, EventBus};
+use crate::knowledge::vector_store::VectorStore;
+use crate::memory::manager::MemoryManager;
 
 /// Configuration for Memory Gardener
 #[derive(Debug, Clone)]
@@ -91,12 +91,12 @@ impl Default for MemoryGardenerConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MemoryQuality {
     pub memory_id: String,
-    pub relevance_score: f32,      // 0.0-1.0
-    pub access_frequency: u32,     // Number of times accessed
+    pub relevance_score: f32,  // 0.0-1.0
+    pub access_frequency: u32, // Number of times accessed
     pub last_accessed: DateTime<Utc>,
     pub created_at: DateTime<Utc>,
-    pub importance_score: f32,     // 0.0-1.0
-    pub quality_score: f32,        // Combined score
+    pub importance_score: f32, // 0.0-1.0
+    pub quality_score: f32,    // Combined score
     pub metadata: serde_json::Value,
 }
 
@@ -105,31 +105,31 @@ impl MemoryQuality {
     pub fn calculate_score(&self, now: DateTime<Utc>) -> f32 {
         let age_days = (now - self.created_at).num_days() as f32;
         let days_since_access = (now - self.last_accessed).num_days() as f32;
-        
+
         // Factors:
         // - Importance (weight: 0.4)
         // - Relevance (weight: 0.3)
         // - Recency of access (weight: 0.2)
         // - Age (weight: 0.1, inverse)
-        
+
         let recency_factor = if days_since_access < 1.0 {
             1.0
         } else {
             (1.0 / days_since_access.sqrt()).min(1.0)
         };
-        
+
         let age_factor = if age_days < 7.0 {
             1.0
         } else {
             (7.0 / age_days).min(1.0)
         };
-        
+
         let access_factor = (self.access_frequency as f32 / 10.0).min(1.0);
-        
-        self.importance_score * 0.4 +
-        self.relevance_score * 0.3 +
-        recency_factor * 0.2 * access_factor +
-        age_factor * 0.1
+
+        self.importance_score * 0.4
+            + self.relevance_score * 0.3
+            + recency_factor * 0.2 * access_factor
+            + age_factor * 0.1
     }
 }
 
@@ -243,7 +243,7 @@ impl MemoryGardener {
     pub async fn run_maintenance(&self) -> Result<MaintenanceResult> {
         let start_time = Instant::now();
         let now = Utc::now();
-        
+
         info!("Starting memory maintenance cycle");
 
         let mut result = MaintenanceResult {
@@ -264,7 +264,7 @@ impl MemoryGardener {
         if self.config.enable_duplicate_detection {
             let duplicates = self.detect_duplicates(&memories_to_evaluate).await?;
             result.duplicates_found = duplicates.len();
-            
+
             for (keep_id, remove_ids) in duplicates {
                 for remove_id in remove_ids {
                     if let Err(e) = self.remove_memory(&remove_id).await {
@@ -280,7 +280,7 @@ impl MemoryGardener {
         // 3. Evaluate quality and take actions
         for memory_quality in memories_to_evaluate {
             let action = self.evaluate_action(&memory_quality, now).await?;
-            
+
             match &action {
                 GardenerAction::Prune => {
                     if self.config.enable_pruning {
@@ -288,27 +288,39 @@ impl MemoryGardener {
                             warn!("Failed to prune memory {}: {}", memory_quality.memory_id, e);
                         } else {
                             result.memories_pruned += 1;
-                            result.actions.push((memory_quality.memory_id.clone(), action));
+                            result
+                                .actions
+                                .push((memory_quality.memory_id.clone(), action));
                         }
                     }
                 }
                 GardenerAction::Archive => {
                     if self.config.enable_archiving {
                         if let Err(e) = self.archive_memory(&memory_quality.memory_id).await {
-                            warn!("Failed to archive memory {}: {}", memory_quality.memory_id, e);
+                            warn!(
+                                "Failed to archive memory {}: {}",
+                                memory_quality.memory_id, e
+                            );
                         } else {
                             result.memories_archived += 1;
-                            result.actions.push((memory_quality.memory_id.clone(), action));
+                            result
+                                .actions
+                                .push((memory_quality.memory_id.clone(), action));
                         }
                     }
                 }
                 GardenerAction::Consolidate { target_id } => {
                     if self.config.enable_consolidation {
-                        if let Err(e) = self.consolidate_memories(&memory_quality.memory_id, target_id).await {
+                        if let Err(e) = self
+                            .consolidate_memories(&memory_quality.memory_id, target_id)
+                            .await
+                        {
                             warn!("Failed to consolidate memories: {}", e);
                         } else {
                             result.memories_consolidated += 1;
-                            result.actions.push((memory_quality.memory_id.clone(), action));
+                            result
+                                .actions
+                                .push((memory_quality.memory_id.clone(), action));
                         }
                     }
                 }
@@ -316,7 +328,9 @@ impl MemoryGardener {
                     if let Err(e) = self.boost_memory_priority(&memory_quality.memory_id).await {
                         warn!("Failed to boost memory priority: {}", e);
                     }
-                    result.actions.push((memory_quality.memory_id.clone(), action));
+                    result
+                        .actions
+                        .push((memory_quality.memory_id.clone(), action));
                 }
                 GardenerAction::Keep => {
                     // No action needed
@@ -335,13 +349,14 @@ impl MemoryGardener {
             stats.total_duplicates_removed += result.duplicates_found as u64;
             stats.last_run = Some(now);
             stats.last_result = Some(result.clone());
-            
+
             // Update average processing time
             if stats.total_maintenance_runs == 1 {
                 stats.average_processing_time_ms = duration_ms;
             } else {
-                stats.average_processing_time_ms = 
-                    (stats.average_processing_time_ms * (stats.total_maintenance_runs - 1) + duration_ms)
+                stats.average_processing_time_ms = (stats.average_processing_time_ms
+                    * (stats.total_maintenance_runs - 1)
+                    + duration_ms)
                     / stats.total_maintenance_runs;
             }
         }
@@ -386,14 +401,17 @@ impl MemoryGardener {
     }
 
     /// Detect duplicate memories
-    async fn detect_duplicates(&self, memories: &[MemoryQuality]) -> Result<Vec<(String, Vec<String>)>> {
+    async fn detect_duplicates(
+        &self,
+        memories: &[MemoryQuality],
+    ) -> Result<Vec<(String, Vec<String>)>> {
         let mut duplicates = Vec::new();
         let threshold = self.config.duplicate_similarity_threshold;
 
         // Simple O(n²) similarity check - could be optimized with LSH or similar
         for (i, mem1) in memories.iter().enumerate() {
             let mut dups_for_mem1 = Vec::new();
-            
+
             for (j, mem2) in memories.iter().enumerate() {
                 if i >= j {
                     continue; // Avoid checking same pair twice
@@ -401,7 +419,7 @@ impl MemoryGardener {
 
                 // Calculate similarity (simplified - would use actual embedding similarity)
                 let similarity = self.calculate_similarity(mem1, mem2).await?;
-                
+
                 if similarity >= threshold {
                     dups_for_mem1.push(mem2.memory_id.clone());
                 }
@@ -416,28 +434,31 @@ impl MemoryGardener {
     }
 
     /// Calculate similarity between two memories
-    async fn calculate_similarity(&self, mem1: &MemoryQuality, mem2: &MemoryQuality) -> Result<f32> {
+    async fn calculate_similarity(
+        &self,
+        mem1: &MemoryQuality,
+        mem2: &MemoryQuality,
+    ) -> Result<f32> {
         // This would use vector embeddings in a real implementation
         // For now, return a placeholder based on metadata similarity
-        
-        if let (Some(meta1), Some(meta2)) = (
-            mem1.metadata.as_object(),
-            mem2.metadata.as_object()
-        ) {
-            let common_keys: Vec<_> = meta1.keys()
-                .filter(|k| meta2.contains_key(*k))
-                .collect();
-            
+
+        if let (Some(meta1), Some(meta2)) = (mem1.metadata.as_object(), mem2.metadata.as_object()) {
+            let common_keys: Vec<_> = meta1.keys().filter(|k| meta2.contains_key(*k)).collect();
+
             if !common_keys.is_empty() {
                 return Ok(0.5 + (common_keys.len() as f32 * 0.1).min(0.5));
             }
         }
-        
+
         Ok(0.0)
     }
 
     /// Evaluate what action to take on a memory
-    async fn evaluate_action(&self, quality: &MemoryQuality, now: DateTime<Utc>) -> Result<GardenerAction> {
+    async fn evaluate_action(
+        &self,
+        quality: &MemoryQuality,
+        now: DateTime<Utc>,
+    ) -> Result<GardenerAction> {
         let age = now - quality.created_at;
         let days_since_access = (now - quality.last_accessed).num_days();
 
@@ -453,8 +474,11 @@ impl MemoryGardener {
         }
 
         // Check if should archive (old and rarely accessed)
-        if age > chrono::Duration::from_std(self.config.archive_threshold).unwrap_or(chrono::Duration::days(30))
-            && days_since_access > 30 {
+        if age
+            > chrono::Duration::from_std(self.config.archive_threshold)
+                .unwrap_or(chrono::Duration::days(30))
+            && days_since_access > 30
+        {
             return Ok(GardenerAction::Archive);
         }
 
@@ -495,7 +519,7 @@ impl MemoryGardener {
             // 1. Retrieving the memory from vector store
             // 2. Writing to archive storage
             // 3. Removing from active storage
-            
+
             debug!("Archived memory {} to {:?}", memory_id, archive_path);
         }
 
@@ -509,7 +533,7 @@ impl MemoryGardener {
         // 2. Merge their content
         // 3. Update the target memory
         // 4. Remove the source memory
-        
+
         debug!("Consolidated memory {} into {}", source_id, target_id);
         Ok(())
     }
@@ -528,7 +552,7 @@ impl MemoryGardener {
     /// Update memory quality metrics (called when memory is accessed)
     pub async fn record_access(&self, memory_id: &str) {
         let mut cache = self.quality_cache.write().await;
-        
+
         if let Some(quality) = cache.get_mut(memory_id) {
             quality.access_frequency += 1;
             quality.last_accessed = Utc::now();
@@ -536,7 +560,12 @@ impl MemoryGardener {
     }
 
     /// Register a new memory with quality tracking
-    pub async fn register_memory(&self, memory_id: String, importance: f32, metadata: serde_json::Value) {
+    pub async fn register_memory(
+        &self,
+        memory_id: String,
+        importance: f32,
+        metadata: serde_json::Value,
+    ) {
         let now = Utc::now();
         let quality = MemoryQuality {
             memory_id: memory_id.clone(),
@@ -600,7 +629,9 @@ mod tests {
 
     #[test]
     fn test_gardener_action_serialization() {
-        let action = GardenerAction::Consolidate { target_id: "target".to_string() };
+        let action = GardenerAction::Consolidate {
+            target_id: "target".to_string(),
+        };
         let json = serde_json::to_string(&action).unwrap();
         assert!(json.contains("Consolidate"));
     }

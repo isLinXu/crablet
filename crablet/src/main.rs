@@ -56,7 +56,8 @@ async fn main() -> anyhow::Result<()> {
                  Starting with MockClient — LLM features will be unavailable until API Key is set.",
                 e
             );
-            Arc::new(crablet::cognitive::llm::MockClient) as Arc<dyn crablet::cognitive::llm::LlmClient>
+            Arc::new(crablet::cognitive::llm::MockClient)
+                as Arc<dyn crablet::cognitive::llm::LlmClient>
         }
     };
 

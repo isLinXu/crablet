@@ -29,12 +29,7 @@ struct ExtractedTriple {
 
 impl KnowledgeGraph {
     #[cfg(feature = "knowledge")]
-    pub async fn new(
-        uri: &str,
-        user: &str,
-        pass: &str,
-        llm: Arc<dyn LlmClient>,
-    ) -> Result<Self> {
+    pub async fn new(uri: &str, user: &str, pass: &str, llm: Arc<dyn LlmClient>) -> Result<Self> {
         let graph = Graph::new(uri, user, pass)
             .await
             .map_err(|e| anyhow!("Failed to connect to Neo4j: {}", e))?;

@@ -170,7 +170,10 @@ impl SwarmExecutor {
     }
 
     /// Inject a dynamic timeout engine to enable adaptive timeout calculation
-    pub fn with_dynamic_timeout(mut self, engine: Arc<super::dynamic_timeout::DynamicTimeoutEngine>) -> Self {
+    pub fn with_dynamic_timeout(
+        mut self,
+        engine: Arc<super::dynamic_timeout::DynamicTimeoutEngine>,
+    ) -> Self {
         self.dynamic_timeout = Some(engine);
         self
     }
@@ -345,7 +348,9 @@ impl SwarmExecutor {
                 let timeout_ms = if let Some(ref engine) = self.dynamic_timeout {
                     // Infer task type from the prompt content
                     let prompt_lower = task_node.prompt.to_lowercase();
-                    let task_type = if prompt_lower.contains("code") || prompt_lower.contains("implement") {
+                    let task_type = if prompt_lower.contains("code")
+                        || prompt_lower.contains("implement")
+                    {
                         "coding"
                     } else if prompt_lower.contains("research") || prompt_lower.contains("search") {
                         "research"
@@ -358,13 +363,16 @@ impl SwarmExecutor {
                     };
                     // Estimate complexity from prompt length (0.1 - 1.0)
                     let complexity = (task_node.prompt.len() as f32 / 500.0).clamp(0.1, 1.0);
-                    engine.compute_timeout(
-                        &selected_role,
-                        task_type,
-                        complexity,
-                        task_node.priority,
-                        false, // is_burst
-                    ).await.as_millis() as u64
+                    engine
+                        .compute_timeout(
+                            &selected_role,
+                            task_type,
+                            complexity,
+                            task_node.priority,
+                            false, // is_burst
+                        )
+                        .await
+                        .as_millis() as u64
                 } else {
                     task_node.timeout_ms
                 };
@@ -459,7 +467,9 @@ impl SwarmExecutor {
                 // Record to dynamic timeout engine for future predictions
                 if let Some(ref engine) = self.dynamic_timeout {
                     let prompt_lower = task_node.prompt.to_lowercase();
-                    let task_type = if prompt_lower.contains("code") || prompt_lower.contains("implement") {
+                    let task_type = if prompt_lower.contains("code")
+                        || prompt_lower.contains("implement")
+                    {
                         "coding".to_string()
                     } else if prompt_lower.contains("research") || prompt_lower.contains("search") {
                         "research".to_string()
@@ -470,14 +480,16 @@ impl SwarmExecutor {
                     } else {
                         "general".to_string()
                     };
-                    engine.record_execution(super::dynamic_timeout::ExecutionRecord {
-                        role: selected_role.clone(),
-                        task_type,
-                        duration_ms: elapsed,
-                        success: agent_succeeded,
-                        token_count: None,
-                        timestamp: chrono::Utc::now(),
-                    }).await;
+                    engine
+                        .record_execution(super::dynamic_timeout::ExecutionRecord {
+                            role: selected_role.clone(),
+                            task_type,
+                            duration_ms: elapsed,
+                            success: agent_succeeded,
+                            token_count: None,
+                            timestamp: chrono::Utc::now(),
+                        })
+                        .await;
                 }
 
                 let mut latest_execution_state = execution_state.clone();
@@ -1277,8 +1289,7 @@ mod tests {
     #[tokio::test]
     async fn test_swarm_executor_retry_logic() {
         // Setup Mocks
-        let llm =
-            Arc::new(MockLlmClient::new()) as Arc<dyn crate::cognitive::llm::LlmClient>;
+        let llm = Arc::new(MockLlmClient::new()) as Arc<dyn crate::cognitive::llm::LlmClient>;
         let event_bus = Arc::new(crate::events::EventBus::new(100));
         let factory = Arc::new(AgentFactory::new(llm.clone(), event_bus.clone()));
         let router = Arc::new(CapabilityRouter::new());
@@ -1323,8 +1334,7 @@ mod tests {
 
     #[test]
     fn test_build_dependency_context_uses_structured_handoff() {
-        let llm =
-            Arc::new(MockLlmClient::new()) as Arc<dyn crate::cognitive::llm::LlmClient>;
+        let llm = Arc::new(MockLlmClient::new()) as Arc<dyn crate::cognitive::llm::LlmClient>;
         let event_bus = Arc::new(crate::events::EventBus::new(100));
         let factory = Arc::new(AgentFactory::new(llm.clone(), event_bus.clone()));
         let router = Arc::new(CapabilityRouter::new());
@@ -1367,8 +1377,7 @@ mod tests {
     #[tokio::test]
     async fn test_execute_graph_uses_harness_bridge_without_step_prefix() {
         let llm_client = SequenceLlm::new(&["plain harness result"]);
-        let llm =
-            Arc::new(llm_client.clone()) as Arc<dyn crate::cognitive::llm::LlmClient>;
+        let llm = Arc::new(llm_client.clone()) as Arc<dyn crate::cognitive::llm::LlmClient>;
         let event_bus = Arc::new(crate::events::EventBus::new(100));
         let factory = Arc::new(AgentFactory::new(llm.clone(), event_bus.clone()));
         let router = Arc::new(CapabilityRouter::new());
@@ -1403,8 +1412,7 @@ mod tests {
 
     #[test]
     fn test_build_harness_config_marks_swarm_execution_metadata() {
-        let llm =
-            Arc::new(MockLlmClient::new()) as Arc<dyn crate::cognitive::llm::LlmClient>;
+        let llm = Arc::new(MockLlmClient::new()) as Arc<dyn crate::cognitive::llm::LlmClient>;
         let event_bus = Arc::new(crate::events::EventBus::new(100));
         let factory = Arc::new(AgentFactory::new(llm.clone(), event_bus.clone()));
         let router = Arc::new(CapabilityRouter::new());

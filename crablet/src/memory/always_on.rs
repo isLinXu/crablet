@@ -29,18 +29,18 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::info;
 
-use crate::events::EventBus;
-use crate::memory::manager::MemoryManager;
-use crate::memory::background_thinker::{BackgroundThinker, BackgroundThinkerConfig};
-use crate::memory::memory_gardener::{MemoryGardener, MemoryGardenerConfig};
-use crate::memory::event_driven::{EventDrivenMemory, EventDrivenConfig};
-use crate::memory::knowledge_weaver::{KnowledgeWeaver, KnowledgeWeaverConfig};
-use crate::memory::predictive::{PredictiveMemory, PredictiveMemoryConfig};
-use crate::memory::cross_session::{CrossSessionFusion, CrossSessionConfig};
-use crate::memory::self_improvement::{SelfImprovementLoop, SelfImprovementConfig};
-use crate::knowledge::vector_store::VectorStore;
 use crate::cognitive::llm::LlmClient;
 use crate::error::Result;
+use crate::events::EventBus;
+use crate::knowledge::vector_store::VectorStore;
+use crate::memory::background_thinker::{BackgroundThinker, BackgroundThinkerConfig};
+use crate::memory::cross_session::{CrossSessionConfig, CrossSessionFusion};
+use crate::memory::event_driven::{EventDrivenConfig, EventDrivenMemory};
+use crate::memory::knowledge_weaver::{KnowledgeWeaver, KnowledgeWeaverConfig};
+use crate::memory::manager::MemoryManager;
+use crate::memory::memory_gardener::{MemoryGardener, MemoryGardenerConfig};
+use crate::memory::predictive::{PredictiveMemory, PredictiveMemoryConfig};
+use crate::memory::self_improvement::{SelfImprovementConfig, SelfImprovementLoop};
 
 /// Configuration for the entire Always-On Memory system
 #[derive(Debug, Clone)]
@@ -307,7 +307,9 @@ impl AlwaysOnMemory {
     /// Update session metadata
     pub async fn update_session(&self, session_id: &str, message_count: usize, tools: Vec<String>) {
         if let Some(fusion) = &self.cross_session {
-            fusion.update_session(session_id, message_count, tools).await;
+            fusion
+                .update_session(session_id, message_count, tools)
+                .await;
         }
     }
 

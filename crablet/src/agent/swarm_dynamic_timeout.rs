@@ -43,8 +43,8 @@ pub struct ExecutionStats {
 /// System load snapshot (injected by external observer)
 #[derive(Debug, Clone, Copy, Default)]
 pub struct SystemLoadSnapshot {
-    pub cpu_percent: f32,           // 0.0 - 100.0
-    pub memory_percent: f32,        // 0.0 - 100.0
+    pub cpu_percent: f32,    // 0.0 - 100.0
+    pub memory_percent: f32, // 0.0 - 100.0
     pub active_tasks: usize,
     pub llm_queue_depth: usize,
     pub network_latency_ms: Option<u64>,
@@ -57,7 +57,7 @@ pub struct TimeoutConfig {
     pub min_timeout_ms: u64,
     pub max_timeout_ms: u64,
     pub complexity_multiplier: f32, // per unit of complexity
-    pub load_scaling_factor: f32,     // how much load affects timeout
+    pub load_scaling_factor: f32,   // how much load affects timeout
     pub history_weight: f32,        // 0.0-1.0 weight of historical avg vs. base
     pub burst_allowance: f32,       // extra multiplier for burst tasks
 }
@@ -65,13 +65,13 @@ pub struct TimeoutConfig {
 impl Default for TimeoutConfig {
     fn default() -> Self {
         Self {
-            base_timeout_ms: 30_000,   // 30s default
-            min_timeout_ms: 5_000,     // 5s floor
-            max_timeout_ms: 300_000,   // 5m ceiling
+            base_timeout_ms: 30_000,         // 30s default
+            min_timeout_ms: 5_000,           // 5s floor
+            max_timeout_ms: 300_000,         // 5m ceiling
             complexity_multiplier: 20_000.0, // +20s per complexity unit
-            load_scaling_factor: 0.5,  // 50% increase at full load
-            history_weight: 0.6,       // 60% history, 40% base
-            burst_allowance: 1.3,      // +30% for burst
+            load_scaling_factor: 0.5,        // 50% increase at full load
+            history_weight: 0.6,             // 60% history, 40% base
+            burst_allowance: 1.3,            // +30% for burst
         }
     }
 }
@@ -201,7 +201,9 @@ impl DynamicTimeoutEngine {
         };
 
         // 6. Risk adjustment: if historical success rate is low, extend timeout
-        let risk_ms = if history_stats.count > 3 && history_stats.success_count < history_stats.count * 3 / 4 {
+        let risk_ms = if history_stats.count > 3
+            && history_stats.success_count < history_stats.count * 3 / 4
+        {
             (base_ms as f32 * 0.3) as u64 // +30% safety margin for historically flaky tasks
         } else {
             0
@@ -209,8 +211,7 @@ impl DynamicTimeoutEngine {
 
         let total_ms = base_ms + complexity_ms + load_ms + priority_ms + burst_ms + risk_ms;
 
-        let final_ms = total_ms
-            .clamp(config.min_timeout_ms, config.max_timeout_ms);
+        let final_ms = total_ms.clamp(config.min_timeout_ms, config.max_timeout_ms);
 
         debug!(
             "Dynamic timeout for {}|{}: {}ms (base={} complexity={} load={} priority={} burst={} risk={}) | load_score={:.2}",
@@ -221,11 +222,7 @@ impl DynamicTimeoutEngine {
     }
 
     /// Compute timeout for System 3 reasoning / swarm submission
-    pub async fn compute_system3_timeout(
-        &self,
-        goal: &str,
-        context_length: usize,
-    ) -> Duration {
+    pub async fn compute_system3_timeout(&self, goal: &str, context_length: usize) -> Duration {
         // Infer task type from goal prefix (matches existing system logic)
         let task_type = if goal.to_lowercase().starts_with("draft ") {
             "draft"
@@ -246,7 +243,8 @@ impl DynamicTimeoutEngine {
         // The base/max timeout is governed by the shared config; here we only
         // route through the orchestrator role to pick up System 3 scaling.
         let _config = self.config.read().await.clone();
-        self.compute_timeout("orchestrator", task_type, complexity, 128, false).await
+        self.compute_timeout("orchestrator", task_type, complexity, 128, false)
+            .await
     }
 
     // ------------------------------------------------------------------
@@ -269,7 +267,10 @@ impl DynamicTimeoutEngine {
 
         let avg = durations.iter().sum::<u64>() / count.max(1);
         let p95_idx = ((durations.len() as f32) * 0.95).ceil() as usize;
-        let p95 = durations.get(p95_idx.saturating_sub(1)).copied().unwrap_or(avg);
+        let p95 = durations
+            .get(p95_idx.saturating_sub(1))
+            .copied()
+            .unwrap_or(avg);
 
         ExecutionStats {
             count,
@@ -345,7 +346,8 @@ impl DynamicTimeoutAdapter for DynamicTimeoutEngine {
         complexity: f32,
         priority: u8,
     ) -> Duration {
-        self.compute_timeout(role, task_type, complexity, priority, false).await
+        self.compute_timeout(role, task_type, complexity, priority, false)
+            .await
     }
 }
 
@@ -376,7 +378,9 @@ mod tests {
     #[tokio::test]
     async fn test_default_timeout_bounds() {
         let engine = DynamicTimeoutEngine::new();
-        let timeout = engine.compute_timeout("coder", "coding", 0.5, 128, false).await;
+        let timeout = engine
+            .compute_timeout("coder", "coding", 0.5, 128, false)
+            .await;
         let ms = timeout.as_millis() as u64;
         assert!(ms >= 5_000);
         assert!(ms <= 300_000);
@@ -400,7 +404,9 @@ mod tests {
                 .await;
         }
 
-        let timeout1 = engine.compute_timeout("coder", "coding", 0.0, 128, false).await;
+        let timeout1 = engine
+            .compute_timeout("coder", "coding", 0.0, 128, false)
+            .await;
         let ms1 = timeout1.as_millis();
 
         // Record slow history
@@ -417,7 +423,9 @@ mod tests {
                 .await;
         }
 
-        let timeout2 = engine.compute_timeout("coder", "coding", 0.0, 128, false).await;
+        let timeout2 = engine
+            .compute_timeout("coder", "coding", 0.0, 128, false)
+            .await;
         let ms2 = timeout2.as_millis();
 
         assert!(ms2 > ms1, "History of slow tasks should increase timeout");
@@ -426,7 +434,9 @@ mod tests {
     #[tokio::test]
     async fn test_load_scaling() {
         let engine = DynamicTimeoutEngine::new();
-        let base = engine.compute_timeout("coder", "coding", 0.0, 128, false).await;
+        let base = engine
+            .compute_timeout("coder", "coding", 0.0, 128, false)
+            .await;
 
         engine
             .update_system_load(SystemLoadSnapshot {
@@ -438,7 +448,9 @@ mod tests {
             })
             .await;
 
-        let under_load = engine.compute_timeout("coder", "coding", 0.0, 128, false).await;
+        let under_load = engine
+            .compute_timeout("coder", "coding", 0.0, 128, false)
+            .await;
         assert!(under_load > base, "High load should increase timeout");
     }
 
@@ -480,8 +492,12 @@ mod tests {
             })
             .await;
 
-        let risky = engine.compute_timeout("coder", "coding", 0.0, 128, false).await;
-        let safe_role = engine.compute_timeout("coder", "analysis", 0.0, 128, false).await;
+        let risky = engine
+            .compute_timeout("coder", "coding", 0.0, 128, false)
+            .await;
+        let safe_role = engine
+            .compute_timeout("coder", "analysis", 0.0, 128, false)
+            .await;
         // Risky task should get +30% safety margin
         assert!(risky.as_millis() > safe_role.as_millis() || risky.as_millis() >= 6_500);
     }
@@ -498,7 +514,9 @@ mod tests {
         let engine = DynamicTimeoutEngine::with_config(custom);
 
         // With base 20s, complexity 0 → timeout should be ≥ 20s
-        let timeout = engine.compute_timeout("coder", "coding", 0.0, 128, false).await;
+        let timeout = engine
+            .compute_timeout("coder", "coding", 0.0, 128, false)
+            .await;
         let ms = timeout.as_millis() as u64;
         assert!(
             ms >= 20_000,

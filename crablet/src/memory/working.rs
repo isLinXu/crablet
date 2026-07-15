@@ -54,9 +54,7 @@ impl WorkingMemory {
     pub fn count_tokens(&self, text: &str) -> usize {
         #[allow(clippy::expect_used)]
         let tokenizer = BPE.get_or_init(|| cl100k_base().expect("Failed to init tokenizer"));
-        tokenizer
-            .encode_with_special_tokens(text)
-            .len()
+        tokenizer.encode_with_special_tokens(text).len()
     }
 
     pub fn estimate_message_tokens(&self, msg: &Message) -> usize {

@@ -45,11 +45,11 @@ fn is_retryable_error(err: &anyhow::Error) -> bool {
         .to_lowercase();
 
     const NON_RETRYABLE: &[&str] = &[
-        "unauthorized",       // 401
-        "forbidden",          // 403
-        "bad request",        // 400
-        "not found",          // 404
-        "unprocessable",      // 422
+        "unauthorized",  // 401
+        "forbidden",     // 403
+        "bad request",   // 400
+        "not found",     // 404
+        "unprocessable", // 422
         "invalid api key",
         "incorrect api key",
         "invalid_api_key",
@@ -102,7 +102,10 @@ impl RetryLlmClient {
             return false;
         }
         if !is_retryable_error(err) {
-            warn!("LLM call failed with non-retryable error: {}. Aborting.", err);
+            warn!(
+                "LLM call failed with non-retryable error: {}. Aborting.",
+                err
+            );
             return false;
         }
         let delay = self.config.delay_for(attempt);

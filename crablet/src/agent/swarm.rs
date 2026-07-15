@@ -14,14 +14,14 @@ use crate::memory::shared::SharedBlackboard;
 // Declare submodules
 #[path = "swarm/coordinator/mod.rs"]
 pub mod coordinator;
+#[path = "swarm_dynamic_timeout.rs"]
+pub mod dynamic_timeout;
 #[path = "swarm/executor.rs"]
 pub mod executor;
 #[path = "swarm/persister.rs"]
 pub mod persister;
 #[path = "swarm/types.rs"]
 pub mod types;
-#[path = "swarm_dynamic_timeout.rs"]
-pub mod dynamic_timeout;
 
 // Re-export dynamic timeout types
 pub use dynamic_timeout::{

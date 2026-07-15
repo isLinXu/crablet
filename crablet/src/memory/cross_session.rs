@@ -26,20 +26,20 @@
 //! │   └────────────────────────────────────────────────────────────┘   │
 //! └─────────────────────────────────────────────────────────────────────┘
 
-use std::sync::Arc;
+use chrono::{DateTime, Timelike, Utc};
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
-use tracing::{info, warn, debug};
-use chrono::{DateTime, Utc, Timelike};
-use serde::{Deserialize, Serialize};
+use tracing::{debug, info, warn};
 
-use crate::events::{AgentEvent, EventBus};
-use crate::memory::manager::MemoryManager;
-use crate::knowledge::vector_store::VectorStore;
 use crate::cognitive::llm::LlmClient;
-use crate::types::Message;
 use crate::error::Result;
+use crate::events::{AgentEvent, EventBus};
+use crate::knowledge::vector_store::VectorStore;
+use crate::memory::manager::MemoryManager;
+use crate::types::Message;
 
 /// Configuration for Cross-Session Fusion
 #[derive(Debug, Clone)]
@@ -173,9 +173,9 @@ pub enum ExpertiseLevel {
 /// Communication style
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct CommunicationStyle {
-    pub formality: f32, // 0.0 = casual, 1.0 = formal
+    pub formality: f32,         // 0.0 = casual, 1.0 = formal
     pub detail_preference: f32, // 0.0 = brief, 1.0 = detailed
-    pub technical_depth: f32, // 0.0 = high-level, 1.0 = technical
+    pub technical_depth: f32,   // 0.0 = high-level, 1.0 = technical
     pub example_preference: bool,
     pub question_frequency: f32,
 }
@@ -327,10 +327,13 @@ impl CrossSessionFusion {
         info!("Starting cross-session fusion");
 
         let sessions = self.sessions.read().await;
-        
+
         if sessions.len() < self.config.min_sessions_for_fusion {
-            debug!("Not enough sessions for fusion ({} < {})", 
-                   sessions.len(), self.config.min_sessions_for_fusion);
+            debug!(
+                "Not enough sessions for fusion ({} < {})",
+                sessions.len(),
+                self.config.min_sessions_for_fusion
+            );
             return Ok(());
         }
 
@@ -367,7 +370,7 @@ impl CrossSessionFusion {
             } else {
                 stats.avg_fusion_duration_ms =
                     (stats.avg_fusion_duration_ms * (stats.total_fusion_runs - 1) + duration_ms)
-                    / stats.total_fusion_runs;
+                        / stats.total_fusion_runs;
             }
         }
 
@@ -377,7 +380,10 @@ impl CrossSessionFusion {
     }
 
     /// Resolve identities across sessions
-    async fn resolve_identities(&self, sessions: &[SessionMetadata]) -> Result<Vec<Vec<SessionMetadata>>> {
+    async fn resolve_identities(
+        &self,
+        sessions: &[SessionMetadata],
+    ) -> Result<Vec<Vec<SessionMetadata>>> {
         // Group sessions by similarity
         let mut groups: Vec<Vec<SessionMetadata>> = Vec::new();
         let mut assigned: HashSet<String> = HashSet::new();
@@ -397,7 +403,7 @@ impl CrossSessionFusion {
                 }
 
                 let similarity = self.calculate_session_similarity(session, other).await?;
-                
+
                 if similarity >= self.config.session_similarity_threshold {
                     group.push(other.clone());
                     assigned.insert(other.session_id.clone());
@@ -413,35 +419,46 @@ impl CrossSessionFusion {
     }
 
     /// Calculate similarity between two sessions
-    async fn calculate_session_similarity(&self, session_a: &SessionMetadata, session_b: &SessionMetadata) -> Result<f32> {
+    async fn calculate_session_similarity(
+        &self,
+        session_a: &SessionMetadata,
+        session_b: &SessionMetadata,
+    ) -> Result<f32> {
         // Topic overlap
         let topic_overlap: HashSet<_> = session_a.topics.iter().collect();
-        let common_topics: HashSet<_> = session_b.topics.iter()
+        let common_topics: HashSet<_> = session_b
+            .topics
+            .iter()
             .filter(|t| topic_overlap.contains(t))
             .collect();
-        
+
         let topic_similarity = if session_a.topics.is_empty() || session_b.topics.is_empty() {
             0.0
         } else {
-            (common_topics.len() as f32 * 2.0) / 
-                (session_a.topics.len() + session_b.topics.len()) as f32
+            (common_topics.len() as f32 * 2.0)
+                / (session_a.topics.len() + session_b.topics.len()) as f32
         };
 
         // Tool overlap
         let tool_overlap: HashSet<_> = session_a.tools_used.iter().collect();
-        let common_tools: HashSet<_> = session_b.tools_used.iter()
+        let common_tools: HashSet<_> = session_b
+            .tools_used
+            .iter()
             .filter(|t| tool_overlap.contains(t))
             .collect();
-        
-        let tool_similarity = if session_a.tools_used.is_empty() || session_b.tools_used.is_empty() {
+
+        let tool_similarity = if session_a.tools_used.is_empty() || session_b.tools_used.is_empty()
+        {
             0.0
         } else {
-            (common_tools.len() as f32 * 2.0) / 
-                (session_a.tools_used.len() + session_b.tools_used.len()) as f32
+            (common_tools.len() as f32 * 2.0)
+                / (session_a.tools_used.len() + session_b.tools_used.len()) as f32
         };
 
         // Temporal proximity (sessions close in time are more likely same user)
-        let temporal_similarity = if let (Some(end_a), Some(start_b)) = (session_a.end_time, Some(session_b.start_time)) {
+        let temporal_similarity = if let (Some(end_a), Some(start_b)) =
+            (session_a.end_time, Some(session_b.start_time))
+        {
             let gap = (start_b - end_a).num_hours().abs() as f32;
             (1.0 / (1.0 + gap / 24.0)).min(1.0) // Decay over 24 hours
         } else {
@@ -450,7 +467,7 @@ impl CrossSessionFusion {
 
         // Weighted combination
         let similarity = topic_similarity * 0.5 + tool_similarity * 0.3 + temporal_similarity * 0.2;
-        
+
         Ok(similarity)
     }
 
@@ -461,9 +478,10 @@ impl CrossSessionFusion {
 
         // Build or update profile
         let mut profiles = self.profiles.write().await;
-        
-        let profile = profiles.entry(user_id.clone()).or_insert_with(|| {
-            UnifiedUserProfile {
+
+        let profile = profiles
+            .entry(user_id.clone())
+            .or_insert_with(|| UnifiedUserProfile {
                 user_id: user_id.clone(),
                 created_at: now,
                 updated_at: now,
@@ -473,8 +491,7 @@ impl CrossSessionFusion {
                 knowledge_summary: KnowledgeSummary::default(),
                 session_count: 0,
                 total_interactions: 0,
-            }
-        });
+            });
 
         // Update profile
         profile.updated_at = now;
@@ -505,18 +522,29 @@ impl CrossSessionFusion {
         // Publish event
         self.event_bus.publish(AgentEvent::SystemLog(format!(
             "Unified profile updated for user {}: {} sessions, {} preferences",
-            user_id, sessions.len(), profile.aggregated_preferences.len()
+            user_id,
+            sessions.len(),
+            profile.aggregated_preferences.len()
         )));
 
         Ok(())
     }
 
     /// Aggregate preferences across sessions
-    async fn aggregate_preferences(&self, profile: &mut UnifiedUserProfile, sessions: &[SessionMetadata]) -> Result<()> {
+    async fn aggregate_preferences(
+        &self,
+        profile: &mut UnifiedUserProfile,
+        sessions: &[SessionMetadata],
+    ) -> Result<()> {
         // Use LLM to extract and aggregate preferences
-        let session_summary = sessions.iter()
-            .map(|s| format!("Session {}: topics={:?}, tools={:?}", 
-                s.session_id, s.topics, s.tools_used))
+        let session_summary = sessions
+            .iter()
+            .map(|s| {
+                format!(
+                    "Session {}: topics={:?}, tools={:?}",
+                    s.session_id, s.topics, s.tools_used
+                )
+            })
             .collect::<Vec<_>>()
             .join("\n");
 
@@ -544,16 +572,27 @@ impl CrossSessionFusion {
                             if let (Some(pref_type), Some(value), Some(confidence)) = (
                                 pref.get("type").and_then(|t| t.as_str()),
                                 pref.get("value").and_then(|v| v.as_str()),
-                                pref.get("confidence").and_then(|c| c.as_f64())
+                                pref.get("confidence").and_then(|c| c.as_f64()),
                             ) {
                                 let aggregated = AggregatedPreference {
                                     preference_type: pref_type.to_string(),
                                     value: value.to_string(),
                                     confidence: confidence as f32,
                                     supporting_evidence: vec!["cross_session_analysis".to_string()],
-                                    session_sources: sessions.iter().map(|s| s.session_id.clone()).collect(),
-                                    first_observed: sessions.iter().map(|s| s.start_time).min().unwrap_or(Utc::now()),
-                                    last_observed: sessions.iter().filter_map(|s| s.end_time).max().unwrap_or(Utc::now()),
+                                    session_sources: sessions
+                                        .iter()
+                                        .map(|s| s.session_id.clone())
+                                        .collect(),
+                                    first_observed: sessions
+                                        .iter()
+                                        .map(|s| s.start_time)
+                                        .min()
+                                        .unwrap_or(Utc::now()),
+                                    last_observed: sessions
+                                        .iter()
+                                        .filter_map(|s| s.end_time)
+                                        .max()
+                                        .unwrap_or(Utc::now()),
                                     stability_score: 0.8,
                                 };
 
@@ -573,7 +612,11 @@ impl CrossSessionFusion {
     }
 
     /// Build behavior profile from sessions
-    async fn build_behavior_profile(&self, profile: &mut UnifiedUserProfile, sessions: &[SessionMetadata]) -> Result<()> {
+    async fn build_behavior_profile(
+        &self,
+        profile: &mut UnifiedUserProfile,
+        sessions: &[SessionMetadata],
+    ) -> Result<()> {
         // Analyze dominant topics
         let mut topic_counts: HashMap<String, u32> = HashMap::new();
         for session in sessions {
@@ -606,20 +649,28 @@ impl CrossSessionFusion {
             .map(|(hour, _)| hour)
             .collect();
 
-        profile.behavior_profile.interaction_patterns.push(InteractionPattern {
-            pattern_type: "time_preference".to_string(),
-            frequency: sessions.len() as u32,
-            typical_duration: Duration::from_secs(1800), // 30 min placeholder
-            preferred_times: preferred_hours,
-        });
+        profile
+            .behavior_profile
+            .interaction_patterns
+            .push(InteractionPattern {
+                pattern_type: "time_preference".to_string(),
+                frequency: sessions.len() as u32,
+                typical_duration: Duration::from_secs(1800), // 30 min placeholder
+                preferred_times: preferred_hours,
+            });
 
         Ok(())
     }
 
     /// Synthesize knowledge from sessions
-    async fn synthesize_knowledge(&self, profile: &mut UnifiedUserProfile, sessions: &[SessionMetadata]) -> Result<()> {
+    async fn synthesize_knowledge(
+        &self,
+        profile: &mut UnifiedUserProfile,
+        sessions: &[SessionMetadata],
+    ) -> Result<()> {
         // Identify recurring themes and knowledge areas
-        let all_topics: HashSet<_> = sessions.iter()
+        let all_topics: HashSet<_> = sessions
+            .iter()
             .flat_map(|s| s.topics.iter())
             .cloned()
             .collect();

@@ -285,6 +285,9 @@ pub enum Commands {
     /// Start the unified Web UI + API gateway (defaults to token auth)
     #[cfg(feature = "web")]
     ServeWeb {
+        /// Host to bind to. External interfaces require an explicit value such as 0.0.0.0.
+        #[arg(long, default_value = "127.0.0.1")]
+        host: String,
         /// Port to listen on
         #[arg(long, default_value = "18790")]
         port: u16,
