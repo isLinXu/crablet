@@ -9,6 +9,7 @@ pub mod layer_session;
 pub mod layer_soul;
 pub mod layer_tools;
 pub mod layer_user;
+pub mod layer_user_types;
 pub mod weaver;
 
 use chrono::{DateTime, Utc};
