@@ -42,7 +42,7 @@ jobs:
       run:
         working-directory: ./crablet
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -123,7 +123,7 @@ jobs:
       run:
         working-directory: ./crablet
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -147,7 +147,7 @@ jobs:
       run:
         working-directory: ./crablet
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Rust (MSRV)
         uses: dtolnay/rust-toolchain@stable
@@ -175,7 +175,7 @@ jobs:
       run:
         working-directory: ./crablet
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -199,7 +199,7 @@ jobs:
       run:
         working-directory: ./frontend
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
