@@ -1,53 +1,86 @@
+use super::Tool;
 use anyhow::{anyhow, Result};
-use async_trait::async_trait;
 use serde_json::Value;
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use tracing::info;
 
-/// 工具管理器
+/// Name-keyed tool registry.
+///
+/// Registration rejects empty and duplicate names. Lookup is O(1) on average,
+/// while [`ToolManager::list_tools`] sorts names to provide deterministic output.
 pub struct ToolManager {
-    // 工具列表
-    tools: Vec<Box<dyn Tool>>,
-}
-
-/// 工具 trait
-#[async_trait]
-pub trait Tool: Send + Sync {
-    fn name(&self) -> &str;
-    fn description(&self) -> &str;
-    fn parameters(&self) -> Value;
-    async fn execute(&self, command: &str, args: Value) -> Result<String>;
+    tools: HashMap<String, Box<dyn Tool>>,
 }
 
 impl ToolManager {
-    /// 创建新的工具管理器
+    /// Create an empty tool registry.
     pub fn new() -> Self {
-        Self { tools: Vec::new() }
-    }
-
-    /// 添加工具
-    pub fn add_tool(&mut self, tool: Box<dyn Tool>) {
-        self.tools.push(tool);
-    }
-
-    /// 获取工具列表
-    pub fn list_tools(&self) -> &[Box<dyn Tool>] {
-        &self.tools
-    }
-
-    /// 执行工具
-    pub async fn execute(&self, name: &str, args: Value) -> Result<String> {
-        for tool in &self.tools {
-            if tool.name() == name {
-                return tool.execute(name, args).await;
-            }
+        Self {
+            tools: HashMap::new(),
         }
-        Err(anyhow!("Tool not found: {}", name))
     }
 
-    /// 检查是否为空
+    /// Register a tool under its declared name.
+    pub fn add_tool(&mut self, tool: Box<dyn Tool>) -> Result<()> {
+        let declared_name = tool.name();
+        let name = declared_name.trim();
+        if name.is_empty() {
+            return Err(anyhow!("Tool name cannot be empty"));
+        }
+        if name != declared_name {
+            return Err(anyhow!(
+                "Tool name cannot have leading or trailing whitespace"
+            ));
+        }
+        if self.tools.contains_key(name) {
+            return Err(anyhow!("Tool already registered: {}", name));
+        }
+
+        self.tools.insert(name.to_owned(), tool);
+        Ok(())
+    }
+
+    /// Find a tool by its exact registered name in O(1) average time.
+    pub fn get_tool(&self, name: &str) -> Option<&dyn Tool> {
+        self.tools.get(name).map(Box::as_ref)
+    }
+
+    /// Return tools ordered by name for deterministic discovery output.
+    pub fn list_tools(&self) -> Vec<&dyn Tool> {
+        let mut tools: Vec<_> = self.tools.values().map(Box::as_ref).collect();
+        tools.sort_unstable_by(|left, right| left.name().cmp(right.name()));
+        tools
+    }
+
+    /// Return OpenAI-compatible function definitions for tool-aware clients.
+    pub fn to_tool_definitions(&self) -> Vec<Value> {
+        self.list_tools()
+            .into_iter()
+            .map(|tool| {
+                serde_json::json!({
+                    "type": "function",
+                    "function": {
+                        "name": tool.name(),
+                        "description": tool.description(),
+                        "parameters": tool.parameters(),
+                    }
+                })
+            })
+            .collect()
+    }
+
+    /// Execute a registered tool.
+    pub async fn execute(&self, name: &str, args: Value) -> Result<String> {
+        let tool = self
+            .get_tool(name)
+            .ok_or_else(|| anyhow!("Tool not found: {}", name))?;
+        tool.execute(name, args).await
+    }
+
+    /// Check whether the registry is empty.
     pub fn is_empty(&self) -> bool {
         self.tools.is_empty()
     }
@@ -145,5 +178,111 @@ env: {{}}
             "Successfully created skill '{}' in {:?}",
             name, skill_dir
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use async_trait::async_trait;
+    use serde_json::json;
+
+    struct TestTool {
+        name: &'static str,
+    }
+
+    #[async_trait]
+    impl Tool for TestTool {
+        fn name(&self) -> &str {
+            self.name
+        }
+
+        fn description(&self) -> &str {
+            "test tool"
+        }
+
+        fn parameters(&self) -> Value {
+            json!({"type": "object"})
+        }
+
+        async fn execute(&self, command: &str, args: Value) -> Result<String> {
+            Ok(format!("{}:{}", command, args["value"]))
+        }
+    }
+
+    #[test]
+    fn registers_and_lists_tools_deterministically() {
+        let mut manager = ToolManager::new();
+        manager
+            .add_tool(Box::new(TestTool { name: "zeta" }))
+            .unwrap();
+        manager
+            .add_tool(Box::new(TestTool { name: "alpha" }))
+            .unwrap();
+
+        assert!(manager.get_tool("alpha").is_some());
+        let names: Vec<_> = manager
+            .list_tools()
+            .iter()
+            .map(|tool| tool.name())
+            .collect();
+        assert_eq!(names, vec!["alpha", "zeta"]);
+    }
+
+    #[test]
+    fn exposes_tool_definitions_with_declared_schema() {
+        let mut manager = ToolManager::new();
+        manager
+            .add_tool(Box::new(TestTool { name: "echo" }))
+            .unwrap();
+
+        assert_eq!(
+            manager.to_tool_definitions(),
+            vec![json!({
+                "type": "function",
+                "function": {
+                    "name": "echo",
+                    "description": "test tool",
+                    "parameters": {"type": "object"}
+                }
+            })]
+        );
+    }
+
+    #[test]
+    fn rejects_empty_and_duplicate_names() {
+        let mut manager = ToolManager::new();
+        assert!(manager.add_tool(Box::new(TestTool { name: "  " })).is_err());
+        assert!(manager
+            .add_tool(Box::new(TestTool { name: " echo " }))
+            .is_err());
+        manager
+            .add_tool(Box::new(TestTool { name: "echo" }))
+            .unwrap();
+        let error = manager
+            .add_tool(Box::new(TestTool { name: "echo" }))
+            .unwrap_err();
+        assert_eq!(error.to_string(), "Tool already registered: echo");
+    }
+
+    #[tokio::test]
+    async fn preserves_unknown_tool_error() {
+        let manager = ToolManager::new();
+        let error = manager.execute("missing", json!({})).await.unwrap_err();
+        assert_eq!(error.to_string(), "Tool not found: missing");
+    }
+
+    #[tokio::test]
+    async fn executes_registered_tool() {
+        let mut manager = ToolManager::new();
+        manager
+            .add_tool(Box::new(TestTool { name: "echo" }))
+            .unwrap();
+
+        let output = manager
+            .execute("echo", json!({"value": "ok"}))
+            .await
+            .unwrap();
+        assert_eq!(output, "echo:\"ok\"");
     }
 }

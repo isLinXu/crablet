@@ -190,22 +190,22 @@ impl RpaSafetyLayer {
         }
 
         // 2. Consecutive action check
-        {
+        let should_pause = {
             let mut count = self.consecutive_actions.write();
             *count += 1;
             if *count >= self.config.max_consecutive_actions {
                 *count = 0;
-                if self.config.batch_pause_ms > 0 {
-                    debug!(
-                        "Pausing after {} consecutive actions",
-                        self.config.max_consecutive_actions
-                    );
-                    tokio::time::sleep(std::time::Duration::from_millis(
-                        self.config.batch_pause_ms,
-                    ))
-                    .await;
-                }
+                self.config.batch_pause_ms > 0
+            } else {
+                false
             }
+        };
+        if should_pause {
+            debug!(
+                "Pausing after {} consecutive actions",
+                self.config.max_consecutive_actions
+            );
+            tokio::time::sleep(std::time::Duration::from_millis(self.config.batch_pause_ms)).await;
         }
 
         // 3. Check keyboard input for blocked patterns

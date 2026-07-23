@@ -43,7 +43,10 @@ impl RpaWorkflowEngine {
     }
 
     /// Execute a workflow definition
-    #[async_recursion]
+    // Desktop automation is backed by a platform handle that is not `Send` on
+    // macOS. The workflow engine is used in-process, so recursive execution
+    // does not need the macro's default cross-thread future bound.
+    #[async_recursion(?Send)]
     pub async fn execute(
         &self,
         workflow: &WorkflowDefinition,
@@ -350,25 +353,24 @@ impl RpaWorkflowEngine {
     async fn execute_condition(
         &self,
         branches: &[ConditionBranch],
-        context: &WorkflowContext,
+        context: &mut WorkflowContext,
     ) -> RpaResult<StepResult> {
         for branch in branches {
             if self.evaluate_condition(&branch.condition, context).await? {
-                // Execute branch steps recursively
-                for step in &branch.steps {
-                    let step_def = WorkflowDefinition {
-                        id: format!("condition-branch-{}", branch.condition),
-                        name: format!("condition-branch-{}", branch.condition),
-                        description: String::new(),
-                        version: "1.0".to_string(),
-                        triggers: Vec::new(),
-                        variables: Vec::new(),
-                        steps: vec![step.clone()],
-                    };
-                    let mut branch_ctx = context.clone();
-                    self.execute(&step_def, &mut branch_ctx).await?;
-                }
-                return Ok(StepResult::success());
+                let branch_workflow = WorkflowDefinition {
+                    id: format!("condition-branch-{}", branch.condition),
+                    name: format!("condition-branch-{}", branch.condition),
+                    description: String::new(),
+                    version: "1.0".to_string(),
+                    triggers: Vec::new(),
+                    variables: Vec::new(),
+                    steps: branch.steps.clone(),
+                };
+                let result = self.execute(&branch_workflow, context).await?;
+                return Ok(StepResult {
+                    success: result.success,
+                    outputs: result.variables,
+                });
             }
         }
 
@@ -416,33 +418,37 @@ impl RpaWorkflowEngine {
         branches: &[Vec<WorkflowStep>],
         context: &WorkflowContext,
     ) -> RpaResult<StepResult> {
-        // Execute branches concurrently using join_all
-        let mut futures = Vec::new();
+        // Execute branches concurrently against isolated contexts and merge
+        // outputs in declaration order for deterministic precedence.
+        let mut branch_futures = Vec::new();
 
-        for branch in branches {
-            let branch_steps = branch.clone();
-            let ctx = context.clone();
+        for (index, branch) in branches.iter().enumerate() {
+            let branch_workflow = WorkflowDefinition {
+                id: format!("parallel-branch-{}", index),
+                name: format!("parallel-branch-{}", index),
+                description: String::new(),
+                version: "1.0".to_string(),
+                triggers: Vec::new(),
+                variables: Vec::new(),
+                steps: branch.clone(),
+            };
+            let mut branch_context = context.clone();
 
-            futures.push(async move {
-                let mut branch_ctx = ctx;
-                for step in &branch_steps {
-                    // Each step in the branch is executed sequentially
-                    debug!("Executing parallel branch step: {}", step.name);
-                    let _ = &step; // Use step for future implementation
-                }
-                Ok::<StepResult, RpaError>(StepResult::success())
-            });
+            branch_futures
+                .push(async move { self.execute(&branch_workflow, &mut branch_context).await });
         }
 
-        // Run all branches concurrently
-        let results = futures::future::join_all(futures).await;
+        let results = futures::future::join_all(branch_futures).await;
+        let mut outputs = HashMap::new();
         for result in results {
-            if let Err(e) = result {
-                warn!("Parallel branch failed: {}", e);
-            }
+            let result = result?;
+            outputs.extend(result.variables);
         }
 
-        Ok(StepResult::success())
+        Ok(StepResult {
+            success: true,
+            outputs,
+        })
     }
 
     /// Evaluate condition expression
@@ -773,5 +779,90 @@ mod tests {
             result.variables.get("content").map(String::as_str),
             Some("ok")
         );
+    }
+
+    #[tokio::test]
+    async fn test_condition_branch_updates_parent_context() {
+        let engine = RpaWorkflowEngine::new().unwrap();
+        let workflow = WorkflowDefinition {
+            id: "condition-context".to_string(),
+            name: "condition-context".to_string(),
+            description: String::new(),
+            version: "1.0.0".to_string(),
+            triggers: vec![WorkflowTrigger::Manual],
+            variables: vec![],
+            steps: vec![WorkflowStep {
+                id: "condition".to_string(),
+                name: "condition".to_string(),
+                step_type: StepType::Condition {
+                    branches: vec![ConditionBranch {
+                        condition: "vars.enabled".to_string(),
+                        steps: vec![WorkflowStep {
+                            id: "set".to_string(),
+                            name: "set".to_string(),
+                            step_type: StepType::SetVariable {
+                                name: "result".to_string(),
+                                value: "done".to_string(),
+                            },
+                            condition: None,
+                            outputs: vec![],
+                            on_error: ErrorAction::Fail,
+                        }],
+                    }],
+                },
+                condition: None,
+                outputs: vec!["result".to_string()],
+                on_error: ErrorAction::Fail,
+            }],
+        };
+
+        let mut context = WorkflowContext::default();
+        context
+            .variables
+            .insert("enabled".to_string(), "yes".to_string());
+        let result = engine.execute(&workflow, &mut context).await.unwrap();
+        assert_eq!(
+            result.variables.get("result").map(String::as_str),
+            Some("done")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_parallel_branches_execute_and_merge_outputs() {
+        let engine = RpaWorkflowEngine::new().unwrap();
+        let set = |name: &str, value: &str| WorkflowStep {
+            id: name.to_string(),
+            name: name.to_string(),
+            step_type: StepType::SetVariable {
+                name: name.to_string(),
+                value: value.to_string(),
+            },
+            condition: None,
+            outputs: vec![],
+            on_error: ErrorAction::Fail,
+        };
+        let workflow = WorkflowDefinition {
+            id: "parallel-output".to_string(),
+            name: "parallel-output".to_string(),
+            description: String::new(),
+            version: "1.0.0".to_string(),
+            triggers: vec![WorkflowTrigger::Manual],
+            variables: vec![],
+            steps: vec![WorkflowStep {
+                id: "parallel".to_string(),
+                name: "parallel".to_string(),
+                step_type: StepType::Parallel {
+                    branches: vec![vec![set("left", "L")], vec![set("right", "R")]],
+                },
+                condition: None,
+                outputs: vec!["left".to_string(), "right".to_string()],
+                on_error: ErrorAction::Fail,
+            }],
+        };
+
+        let mut context = WorkflowContext::default();
+        let result = engine.execute(&workflow, &mut context).await.unwrap();
+        assert_eq!(result.variables.get("left").map(String::as_str), Some("L"));
+        assert_eq!(result.variables.get("right").map(String::as_str), Some("R"));
     }
 }

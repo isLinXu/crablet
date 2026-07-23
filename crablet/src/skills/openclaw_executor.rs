@@ -377,21 +377,25 @@ pub trait ToolManagerTrait: Send + Sync {
 // 为 ToolManager 实现 trait（需要在 tools/manager.rs 中实现）
 impl ToolManagerTrait for ToolManager {
     fn list_tools(&self) -> Vec<ToolInfo> {
-        // 实现工具列表获取
-        vec![]
+        ToolManager::list_tools(self)
+            .into_iter()
+            .map(|tool| ToolInfo {
+                name: tool.name().to_string(),
+                description: tool.description().to_string(),
+                parameters: tool.parameters(),
+            })
+            .collect()
     }
 
     fn to_tool_definitions(&self) -> Vec<Value> {
-        // 转换为 OpenAI 工具格式
-        vec![]
+        ToolManager::to_tool_definitions(self)
     }
 
     async fn execute(&self, name: &str, args: Value) -> Result<String> {
-        // 执行工具
-        Ok(format!("Tool {} executed with args: {}", name, args))
+        ToolManager::execute(self, name, args).await
     }
 
     fn is_empty(&self) -> bool {
-        true
+        ToolManager::is_empty(self)
     }
 }

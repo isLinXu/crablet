@@ -130,8 +130,8 @@ impl HeartbeatEngine {
 
         let system_msg = Message {
             role: "system".to_string(),
-            content: Some(vec![ContentPart::Text { 
-                text: "You are a memory compression assistant. Your goal is to shrink memory content while preserving its essence.".to_string() 
+            content: Some(vec![ContentPart::Text {
+                text: "You are a memory compression assistant. Your goal is to shrink memory content while preserving its essence.".to_string()
             }]),
             ..Default::default()
         };

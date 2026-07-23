@@ -438,12 +438,20 @@ enum HarnessState {
 }
 
 /// Persisted harness checkpoint.
+pub const HARNESS_CHECKPOINT_SCHEMA_VERSION: u16 = 1;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HarnessCheckpoint {
+    #[serde(default = "harness_checkpoint_schema_version")]
+    pub schema_version: u16,
     pub step_number: usize,
     pub error_history: Vec<HarnessError>,
     pub metadata: ExecutionMetadata,
     pub config: HarnessConfig,
+}
+
+fn harness_checkpoint_schema_version() -> u16 {
+    HARNESS_CHECKPOINT_SCHEMA_VERSION
 }
 
 /// Tracks simple memory/CPU budgets for long-running harnesses.
@@ -741,6 +749,7 @@ impl AgentHarnessContext {
 
     pub fn checkpoint_artifact(&self) -> (HarnessCheckpoint, PathBuf) {
         let checkpoint = HarnessCheckpoint {
+            schema_version: HARNESS_CHECKPOINT_SCHEMA_VERSION,
             step_number: self.metadata().step_count,
             error_history: lock_guard(&self.errors).iter().cloned().collect(),
             metadata: self.metadata(),
@@ -792,6 +801,27 @@ impl AgentHarnessContext {
         let path = candidate_paths.pop()?;
         let data = tokio::fs::read(path).await.ok()?;
         serde_json::from_slice(&data).ok()
+    }
+
+    /// Restore the existing harness state from its latest persisted checkpoint.
+    pub async fn resume_from_checkpoint(&mut self) -> Result<HarnessCheckpoint, HarnessError> {
+        let checkpoint = self
+            .load_checkpoint()
+            .await
+            .ok_or_else(|| HarnessError::ResumeStateUnavailable("checkpoint not found".into()))?;
+        if checkpoint.schema_version != HARNESS_CHECKPOINT_SCHEMA_VERSION {
+            return Err(HarnessError::ResumeStateUnavailable(format!(
+                "unsupported checkpoint schema version {}",
+                checkpoint.schema_version
+            )));
+        }
+
+        self.replace_config(checkpoint.config.clone());
+        self.restore_snapshot(
+            checkpoint.metadata.clone(),
+            checkpoint.error_history.clone(),
+        );
+        Ok(checkpoint)
     }
 
     pub fn reset(&self) {
@@ -851,4 +881,38 @@ pub fn parse_tool_calls(response: &str) -> Vec<(String, serde_json::Value)> {
     }
 
     parsed
+}
+
+#[cfg(test)]
+mod runtime_contract_tests {
+    use super::*;
+
+    #[test]
+    fn checkpoint_round_trip_preserves_version_and_resumable_state() {
+        let source = AgentHarnessContext::new(HarnessConfig::default());
+        source.record_step();
+        source.pause();
+        let (checkpoint, _) = source.checkpoint_artifact();
+
+        let json = serde_json::to_string(&checkpoint).unwrap();
+        let decoded: HarnessCheckpoint = serde_json::from_str(&json).unwrap();
+        assert_eq!(decoded.schema_version, HARNESS_CHECKPOINT_SCHEMA_VERSION);
+        assert_eq!(decoded.step_number, 1);
+
+        let restored = AgentHarnessContext::new(HarnessConfig::default());
+        restored.restore_snapshot(decoded.metadata, decoded.error_history);
+        assert_eq!(restored.metadata().step_count, 1);
+        assert!(restored.is_paused());
+    }
+
+    #[test]
+    fn legacy_checkpoint_defaults_to_current_schema() {
+        let context = AgentHarnessContext::new(HarnessConfig::default());
+        let (checkpoint, _) = context.checkpoint_artifact();
+        let mut value = serde_json::to_value(checkpoint).unwrap();
+        value.as_object_mut().unwrap().remove("schema_version");
+
+        let decoded: HarnessCheckpoint = serde_json::from_value(value).unwrap();
+        assert_eq!(decoded.schema_version, HARNESS_CHECKPOINT_SCHEMA_VERSION);
+    }
 }
