@@ -7,6 +7,7 @@ use std::env;
 use std::pin::Pin;
 
 pub mod cache;
+pub mod capability;
 pub mod fallback;
 pub mod kimi;
 pub mod retry;
@@ -118,6 +119,24 @@ impl OpenAiClient {
         // Support custom base URL (e.g., for DashScope or other compatible APIs)
         let base_url =
             env::var("OPENAI_API_BASE").unwrap_or_else(|_| "https://api.openai.com/v1".to_string());
+
+        Self::with_config(model, Some(api_key), Some(base_url))
+    }
+
+    /// Build an OpenAI-compatible client from explicit provider settings.
+    /// `None` values retain the existing environment/default behavior.
+    pub fn with_config(
+        model: &str,
+        api_key: Option<String>,
+        base_url: Option<String>,
+    ) -> Result<Self> {
+        let api_key = api_key
+            .or_else(|| env::var("DASHSCOPE_API_KEY").ok())
+            .or_else(|| env::var("OPENAI_API_KEY").ok())
+            .context("OPENAI_API_KEY or DASHSCOPE_API_KEY environment variable not set")?;
+        let base_url = base_url
+            .or_else(|| env::var("OPENAI_API_BASE").ok())
+            .unwrap_or_else(|| "https://api.openai.com/v1".to_string());
 
         // Check for DashScope specific case
         if base_url.contains("dashscope")
@@ -417,8 +436,13 @@ pub struct OllamaClient {
 
 impl OllamaClient {
     pub fn new(model: &str) -> Self {
-        let base_url =
-            env::var("OLLAMA_API_BASE").unwrap_or_else(|_| "http://localhost:11434".to_string());
+        Self::with_base_url(model, None)
+    }
+
+    pub fn with_base_url(model: &str, base_url: Option<String>) -> Self {
+        let base_url = base_url
+            .or_else(|| env::var("OLLAMA_API_BASE").ok())
+            .unwrap_or_else(|| "http://localhost:11434".to_string());
 
         // Auto-detect model if "auto" is passed or if env var is not set
         let model = if model == "auto" || model.is_empty() {

@@ -194,8 +194,12 @@ impl FallbackLlmClient {
 
         let client: Arc<dyn LlmClient> = match config.provider.as_str() {
             "openai" | "anthropic" | "deepseek" => Arc::new(
-                OpenAiClient::new(&config.model)
-                    .map_err(|e| LlmError::ConfigError(e.to_string()))?,
+                OpenAiClient::with_config(
+                    &config.model,
+                    config.api_key.clone(),
+                    config.api_base.clone(),
+                )
+                .map_err(|e| LlmError::ConfigError(e.to_string()))?,
             ) as Arc<dyn LlmClient>,
             "kimi" => Arc::new(
                 KimiClient::new(&config.model).map_err(|e| LlmError::ConfigError(e.to_string()))?,
@@ -204,7 +208,10 @@ impl FallbackLlmClient {
                 ZhipuClient::new(&config.model)
                     .map_err(|e| LlmError::ConfigError(e.to_string()))?,
             ) as Arc<dyn LlmClient>,
-            "ollama" | "local" => Arc::new(OllamaClient::new(&config.model)) as Arc<dyn LlmClient>,
+            "ollama" | "local" => Arc::new(OllamaClient::with_base_url(
+                &config.model,
+                config.api_base.clone(),
+            )) as Arc<dyn LlmClient>,
             _ => {
                 return Err(LlmError::ConfigError(format!(
                     "Unknown provider: {}",
@@ -268,6 +275,38 @@ impl FallbackLlmClient {
         Err(LlmError::AllModelsFailed)
     }
 
+    async fn complete_with_messages_and_tools(
+        &self,
+        messages: &[Message],
+        tools: &[serde_json::Value],
+    ) -> Result<Message, LlmError> {
+        if self.is_model_available(0).await {
+            match self
+                .try_complete_with_tools(0, self.primary.clone(), messages, tools)
+                .await
+            {
+                Ok(response) => return Ok(response),
+                Err(error) => warn!("Primary model tool call failed: {}", error),
+            }
+        }
+
+        for (idx, fallback) in self.fallbacks.iter().enumerate() {
+            let health_idx = idx + 1;
+            if !self.is_model_available(health_idx).await {
+                continue;
+            }
+            match self
+                .try_complete_with_tools(health_idx, fallback.clone(), messages, tools)
+                .await
+            {
+                Ok(response) => return Ok(response),
+                Err(error) => warn!("Fallback model {} tool call failed: {}", idx, error),
+            }
+        }
+
+        Err(LlmError::AllModelsFailed)
+    }
+
     /// Try to complete with a specific model
     async fn try_complete(
         &self,
@@ -292,6 +331,32 @@ impl FallbackLlmClient {
                 Err(LlmError::Timeout)
             }
             Err(_) => {
+                self.record_failure(health_idx).await;
+                Err(LlmError::Timeout)
+            }
+        }
+    }
+
+    async fn try_complete_with_tools(
+        &self,
+        health_idx: usize,
+        client: Arc<dyn LlmClient>,
+        messages: &[Message],
+        tools: &[serde_json::Value],
+    ) -> Result<Message, LlmError> {
+        let start = Instant::now();
+        let result = tokio::time::timeout(
+            Duration::from_secs(self.config.timeout_secs),
+            client.chat_complete_with_tools(messages, tools),
+        )
+        .await;
+
+        match result {
+            Ok(Ok(response)) => {
+                self.record_success(health_idx, start.elapsed()).await;
+                Ok(response)
+            }
+            Ok(Err(_)) | Err(_) => {
                 self.record_failure(health_idx).await;
                 Err(LlmError::Timeout)
             }
@@ -412,10 +477,11 @@ impl LlmClient for FallbackLlmClient {
     async fn chat_complete_with_tools(
         &self,
         messages: &[Message],
-        _tools: &[serde_json::Value],
+        tools: &[serde_json::Value],
     ) -> anyhow::Result<Message> {
-        let text = self.chat_complete(messages).await?;
-        Ok(Message::new("assistant", &text))
+        self.complete_with_messages_and_tools(messages, tools)
+            .await
+            .map_err(|e| anyhow::anyhow!("Fallback LLM tool error: {}", e))
     }
 
     fn model_name(&self) -> &str {
