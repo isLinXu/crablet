@@ -70,6 +70,43 @@ jobs:
       - name: Check all-features compile
         run: cargo check --locked --all-features
 
+  backend-feature-matrix:
+    name: Backend Features (${{ matrix.features.name }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        features:
+          - name: default
+            flags: ""
+          - name: no-default
+            flags: --no-default-features
+          - name: knowledge
+            flags: --no-default-features --features knowledge
+          - name: auto-working
+            flags: --no-default-features --features auto-working
+    defaults:
+      run:
+        working-directory: ./crablet
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            ./crablet -> target
+          shared-key: feature-${{ matrix.features.name }}
+
+      - name: Check ${{ matrix.features.name }} feature set
+        run: cargo check --locked ${{ matrix.features.flags }}
+
   backend-tests:
     name: Backend ${{ matrix.suite.name }}
     runs-on: ubuntu-latest

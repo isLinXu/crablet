@@ -28,6 +28,10 @@ test-doc:
 check-all-features:
     cargo check --manifest-path ./crablet/Cargo.toml --locked --all-features
 
+# Single local backend quality gate (no extra system tools required)
+quality:
+    bash ./scripts/quality.sh
+
 # Lint
 lint:
     cargo fmt --manifest-path ./crablet/Cargo.toml --all -- --check
