@@ -18,6 +18,7 @@ pub struct GetChunksQuery {
 }
 
 #[derive(Deserialize)]
+#[allow(dead_code)]
 pub struct SearchQuery {
     q: String,
     limit: Option<usize>,

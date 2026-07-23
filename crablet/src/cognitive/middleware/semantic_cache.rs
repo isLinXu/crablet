@@ -1,3 +1,6 @@
+// WIP: Semantic cache middleware - not yet integrated into the pipeline.
+#![allow(dead_code)]
+
 use super::{CognitiveMiddleware, MiddlewareState};
 use crate::types::{Message, TraceStep};
 use anyhow::Result;

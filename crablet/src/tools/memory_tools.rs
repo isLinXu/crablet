@@ -277,6 +277,7 @@ impl Plugin for ConversationSearchPlugin {
 pub struct ArchivalMemorySearchPlugin {
     #[cfg(feature = "knowledge")]
     vector_store: Option<Arc<crate::knowledge::vector_store::VectorStore>>,
+    #[allow(dead_code)]
     memory_manager: Arc<crate::memory::manager::MemoryManager>,
 }
 
@@ -370,6 +371,7 @@ impl Plugin for ArchivalMemorySearchPlugin {
 pub struct ArchivalMemoryInsertPlugin {
     #[cfg(feature = "knowledge")]
     vector_store: Option<Arc<crate::knowledge::vector_store::VectorStore>>,
+    #[allow(dead_code)]
     event_bus: Arc<EventBus>,
 }
 

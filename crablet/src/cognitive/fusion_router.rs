@@ -522,6 +522,7 @@ impl SessionFusionRouter {
 }
 
 /// Mock cognitive system for testing
+#[allow(dead_code)]
 struct MockCognitiveSystem;
 
 #[async_trait]

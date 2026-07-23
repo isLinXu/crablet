@@ -639,6 +639,7 @@ pub async fn execute_with_harness<A: HarnessAgent + ?Sized>(
 /// Adapter to wrap an existing Agent in a HarnessAgent
 pub struct AgentAdapter<A: Agent> {
     agent: Arc<A>,
+    #[allow(dead_code)]
     llm: Arc<dyn crate::cognitive::llm::LlmClient>,
 }
 

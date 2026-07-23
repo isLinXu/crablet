@@ -64,6 +64,7 @@ struct GenerateOptions {
 
 /// Ollama 响应
 #[derive(Deserialize)]
+#[allow(dead_code)]
 struct GenerateResponse {
     response: String,
     done: bool,
@@ -73,6 +74,7 @@ struct GenerateResponse {
 
 /// 模型信息
 #[derive(Deserialize)]
+#[allow(dead_code)]
 struct ModelInfo {
     name: String,
     modified_at: String,

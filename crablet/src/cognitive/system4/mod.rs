@@ -75,6 +75,7 @@ pub struct System4 {
     execution_history: Arc<RwLock<Vec<ExecutionRecord>>>,
 
     // LLM 客户端
+    #[allow(dead_code)]
     llm: Arc<dyn LlmClient>,
 }
 

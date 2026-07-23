@@ -567,6 +567,7 @@ pub struct DecisionBranch<'a> {
     builder: &'a mut ThoughtGraphBuilder,
     decision_id: String,
     choices: Vec<String>,
+    #[allow(dead_code)]
     current_choice_index: usize,
 }
 

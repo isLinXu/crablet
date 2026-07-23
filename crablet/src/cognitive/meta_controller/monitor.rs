@@ -19,6 +19,7 @@ pub struct Monitor {
 
 /// 执行状态
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct ExecutionState {
     start_time: Instant,
     end_time: Option<Instant>,

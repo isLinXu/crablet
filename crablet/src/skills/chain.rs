@@ -166,6 +166,7 @@ pub struct ChainExecution {
     /// 步骤结果缓存
     step_results: HashMap<String, Value>,
     /// 当前活跃步骤
+    #[allow(dead_code)]
     active_steps: Vec<String>,
     /// 开始时间
     start_time: std::time::Instant,

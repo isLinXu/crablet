@@ -129,6 +129,7 @@ pub struct HarnessManager {
     /// Statistics
     stats: Arc<RwLock<HarnessStats>>,
     /// Shutdown signal
+    #[allow(dead_code)]
     shutdown_tx: Arc<RwLock<Option<broadcast::Sender<HarnessSignal>>>>,
     /// Default configuration
     default_config: HarnessConfig,
@@ -687,6 +688,7 @@ impl Default for HarnessManager {
 
 /// Scope guard for harness execution
 pub struct HarnessScope<'a> {
+    #[allow(dead_code)]
     manager: &'a HarnessManager,
     id: String,
     start_time: Instant,

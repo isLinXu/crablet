@@ -74,7 +74,7 @@ impl ResponseTemplate {
 }
 
 /// Handler function type for commands
-type CommandHandler =
+pub type CommandHandler =
     Arc<dyn Fn(&str, &HashMap<String, String>, &[Message]) -> String + Send + Sync>;
 
 /// Command definition
@@ -128,6 +128,7 @@ pub use super::pattern_matcher::{
 #[derive(Clone)]
 pub struct System1Enhanced {
     commands: Vec<Command>,
+    #[allow(dead_code)]
     fallback_handler: Arc<dyn Fn(&str) -> String + Send + Sync>,
 }
 
@@ -177,7 +178,7 @@ impl System1Enhanced {
                 Pattern::Regex(r"^(?i)hey[!?.]*$".to_string()),
             ],
             response: ResponseTemplate::new(vec![
-                "你好！我是小螃蟹🦀 —— 你的 AI 助手机器人。\n\n我可以帮你做很多事情，比如：\n• 回答问题和解释概念\n• 编写和调试代码\n• 搜索和整理信息\n• 分析数据和文档\n\n有什么我可以帮你的吗？",
+                "你好！我是 Crablet（小螃蟹🦀）—— 你的 AI 助手机器人。\n\n我可以帮你做很多事情，比如：\n• 回答问题和解释概念\n• 编写和调试代码\n• 搜索和整理信息\n• 分析数据和文档\n\n有什么我可以帮你的吗？",
             ]),
             priority: 100,
             context_aware: true,
@@ -185,9 +186,9 @@ impl System1Enhanced {
                 // 根据会话历史个性化问候
                 let is_returning_user = ctx.len() > 2;
                 if is_returning_user {
-                    "欢迎回来！我是小螃蟹🦀。今天想聊点什么？".to_string()
+                    "欢迎回来！我是 Crablet（小螃蟹🦀）。今天想聊点什么？".to_string()
                 } else {
-                    "你好！我是小螃蟹🦀 —— 你的 AI 助手机器人。\n\n我可以帮你做很多事情，比如：\n• 回答问题和解释概念\n• 编写和调试代码\n• 搜索和整理信息\n• 分析数据和文档\n\n有什么我可以帮你的吗？".to_string()
+                    "你好！我是 Crablet（小螃蟹🦀）—— 你的 AI 助手机器人。\n\n我可以帮你做很多事情，比如：\n• 回答问题和解释概念\n• 编写和调试代码\n• 搜索和整理信息\n• 分析数据和文档\n\n有什么我可以帮你的吗？".to_string()
                 }
             })),
         });
@@ -272,6 +273,7 @@ impl System1Enhanced {
                 Pattern::Exact("/?".to_string()),
                 Pattern::Exact("帮助".to_string()),
                 Pattern::Exact("怎么用".to_string()),
+                Pattern::Fuzzy("help".to_string(), 1),
                 Pattern::Contains("需要帮助".to_string()),
                 Pattern::Regex(r"^help (me|us)".to_string()),
             ],
@@ -289,8 +291,10 @@ impl System1Enhanced {
             category: CommandCategory::Status,
             patterns: vec![
                 Pattern::Exact("status".to_string()),
+                Pattern::Exact("stats".to_string()),
                 Pattern::Exact("state".to_string()),
                 Pattern::Exact("状态".to_string()),
+                Pattern::Fuzzy("status".to_string(), 1),
                 Pattern::Contains("系统状态".to_string()),
                 Pattern::Contains("运行情况".to_string()),
                 Pattern::Regex(r"^how (are|r) (u|you) (doing|running)".to_string()),

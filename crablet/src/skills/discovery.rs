@@ -196,6 +196,7 @@ impl SkillDiscovery {
     }
 
     /// Generate default triggers for a skill
+    #[allow(dead_code)]
     fn generate_triggers(
         manifest: &crate::skills::SkillManifest,
     ) -> Vec<crate::skills::SkillTrigger> {

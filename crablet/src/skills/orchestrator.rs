@@ -121,6 +121,7 @@ pub struct SkillOrchestrator {
 }
 
 /// 执行句柄
+#[allow(dead_code)]
 struct ExecutionHandle {
     workflow_id: String,
     status: ExecutionStatus,

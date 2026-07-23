@@ -64,6 +64,7 @@ pub struct MetaCognitiveController {
     optimizer: Arc<RwLock<Optimizer>>,
     /// V2 优化器（可选），启用后替代 v1 优化器，支持实际配置修改与回滚
     optimizer_v2: Option<Arc<OptimizerV2>>,
+    #[allow(dead_code)]
     llm: Arc<dyn LlmClient>,
     config: MetaConfig,
 }

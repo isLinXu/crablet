@@ -682,6 +682,7 @@ pub struct ChainStepResult {
 struct BuiltinTool {
     name: String,
     description: String,
+    #[allow(dead_code)]
     category: String,
     parameters: serde_json::Value,
 }

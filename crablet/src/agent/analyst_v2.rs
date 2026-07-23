@@ -17,6 +17,7 @@ pub struct DataAnalystAgent {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+#[allow(dead_code)] // WIP: analysis request type for future use
 struct AnalysisRequest {
     file_path: String,
     goal: String,

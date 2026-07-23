@@ -36,7 +36,9 @@ pub struct Checkpoint {
 pub struct ExecutionReplay {
     recording: ExecutionRecording,
     current_index: usize,
+    #[allow(dead_code)]
     fork_point: Option<usize>,
+    #[allow(dead_code)]
     modified_context: Option<ExecutionContext>,
 }
 

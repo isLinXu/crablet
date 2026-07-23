@@ -98,6 +98,7 @@ pub struct DiagnosticEngine {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct ErrorRecord {
     error_type: ErrorType,
     timestamp: Instant,
@@ -259,6 +260,7 @@ pub trait RepairStrategy: Send + Sync {
 // ============================================================================
 
 /// Strategy: Retry with exponential backoff
+#[allow(dead_code)]
 pub struct RetryWithBackoffStrategy {
     max_attempts: u32,
     base_delay_ms: u64,

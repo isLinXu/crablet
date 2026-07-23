@@ -331,6 +331,7 @@ impl From<SessionRow> for TraceSession {
     }
 }
 
+#[allow(dead_code)]
 struct SpanRow {
     execution_id: String,
     span_index: i64,

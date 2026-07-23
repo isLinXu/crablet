@@ -7,6 +7,7 @@ use tokio::sync::RwLock;
 #[derive(Clone)]
 pub struct CanvasManager {
     states: Arc<RwLock<HashMap<String, CanvasState>>>, // session_id -> CanvasState
+    #[allow(dead_code)]
     event_bus: Arc<EventBus>,
 }
 

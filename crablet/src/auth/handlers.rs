@@ -21,6 +21,7 @@ pub struct AuthState {
 #[derive(Deserialize)]
 pub struct CallbackQuery {
     code: String,
+    #[allow(dead_code)]
     state: Option<String>,
 }
 

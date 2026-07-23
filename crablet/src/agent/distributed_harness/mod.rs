@@ -24,9 +24,11 @@ pub use distributed_types::{
 };
 
 // Internal re-exports used by control plane and tests
+use distributed_control_plane::NoopHarnessControlPlane;
+#[cfg(feature = "web")]
 use distributed_control_plane::{
     HarnessCreateRequest, HarnessCreateResponse, HarnessDeleteRequest, HarnessDeleteResponse,
-    HarnessSignalRequest, HarnessSignalResponse, NoopHarnessControlPlane,
+    HarnessSignalRequest, HarnessSignalResponse,
 };
 
 use async_trait::async_trait;
@@ -65,6 +67,7 @@ pub struct DistributedHarnessManager {
     /// Local harness IDs
     local_harnesses: Arc<RwLock<HashMap<String, bool>>>,
     /// Shutdown signal
+    #[allow(dead_code)]
     shutdown_tx: Arc<RwLock<Option<broadcast::Sender<ShutdownSignal>>>>,
     /// Statistics
     stats: Arc<RwLock<DistributedStats>>,

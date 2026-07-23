@@ -184,6 +184,7 @@ impl UserPrompt {
 /// 动画效果
 pub struct Spinner {
     message: String,
+    #[allow(dead_code)]
     running: bool,
 }
 

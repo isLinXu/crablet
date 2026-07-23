@@ -43,6 +43,7 @@ pub struct IntentClassifier {
     /// Confidence threshold for automatic classification
     threshold: f32,
     /// Semantic similarity threshold
+    #[allow(dead_code)]
     semantic_threshold: f32,
 }
 

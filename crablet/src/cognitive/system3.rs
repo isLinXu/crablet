@@ -22,7 +22,9 @@ pub struct System3 {
     pub swarm: Arc<Swarm>,
     pub orchestrator: Option<Arc<SwarmOrchestrator>>,
     pub coordinator: CoordinatorAgent, // Make this public
+    #[allow(dead_code)]
     self_id: AgentId,
+    #[allow(dead_code)]
     event_bus: Arc<EventBus>,
     timeout: Duration,
 }

@@ -66,6 +66,7 @@ impl Default for MetricLabels {
 
 /// 指标记录
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct MetricRecord {
     name: String,
     metric_type: MetricType,

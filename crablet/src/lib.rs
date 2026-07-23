@@ -1,5 +1,7 @@
 #![deny(unused_imports)]
-#![allow(dead_code)]
+// Changed from allow to warn: dead code is now visible but non-blocking.
+// Add targeted #[allow(dead_code)] on intentional WIP/experimental modules.
+#![warn(dead_code)]
 #![allow(unknown_lints)]
 // dead_code is a rustc lint, not a clippy lint; suppress the unknown-lint warning
 #![allow(renamed_and_removed_lints)]

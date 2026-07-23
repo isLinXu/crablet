@@ -26,6 +26,7 @@ pub struct SemanticMemoryConfig {
 /// Memory Weaver - Integrates memories across layers
 pub struct MemoryWeaver {
     /// Configuration
+    #[allow(dead_code)]
     config: SemanticMemoryConfig,
 
     /// Extraction patterns

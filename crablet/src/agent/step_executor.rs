@@ -138,6 +138,7 @@ impl Default for StepExecutorConfig {
 
 /// Step Executor - Executes agent tasks step by step with harness tracking
 pub struct StepExecutor {
+    #[allow(dead_code)]
     config: StepExecutorConfig,
 }
 

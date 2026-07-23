@@ -109,6 +109,7 @@ pub struct InteractiveWizard {
     state: WizardState,
     search_manager: SkillSearchManager,
     config: Config,
+    #[allow(dead_code)]
     use_colors: bool,
 }
 

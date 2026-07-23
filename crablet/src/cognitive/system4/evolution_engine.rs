@@ -164,6 +164,7 @@ pub struct EvolutionResult {
 pub struct EvolutionEngine {
     config: Arc<RwLock<EvolutionConfig>>,
     performance_analyzer: Arc<PerformanceAnalyzer>,
+    #[allow(dead_code)]
     skill_discoverer: Arc<SkillDiscoverer>,
     proposals: Arc<RwLock<Vec<ImprovementProposal>>>,
     evolution_history: Arc<RwLock<Vec<EvolutionRecord>>>,

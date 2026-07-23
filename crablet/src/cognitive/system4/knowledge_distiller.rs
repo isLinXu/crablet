@@ -529,6 +529,7 @@ impl KnowledgeDistiller {
 }
 
 /// 轨迹分析结果
+#[allow(dead_code)]
 struct TraceAnalysis {
     tool_frequency: HashMap<String, usize>,
     agent_communication_patterns: Vec<String>,
