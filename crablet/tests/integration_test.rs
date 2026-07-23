@@ -8,8 +8,7 @@ use crablet::types::{ContentPart, Message};
 use std::sync::{Arc, Mutex};
 
 fn test_config() -> crablet::config::Config {
-    std::env::set_var("OPENAI_API_KEY", "sk-test");
-    crablet::config::Config::default()
+    crablet::config::Config::for_test()
 }
 
 // Mock LLM Client that captures context

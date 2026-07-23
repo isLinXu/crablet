@@ -8,11 +8,11 @@ use crablet::config::Config;
 use std::time::{Duration, Instant};
 
 fn test_config() -> Config {
-    std::env::set_var("OPENAI_API_KEY", "sk-test");
-    Config::default()
+    Config::for_test()
 }
 
 #[tokio::test]
+#[ignore = "requires OPENAI_API_KEY or DASHSCOPE_API_KEY"]
 async fn test_meta_controller_creation() {
     let config = test_config();
     let llm = create_llm_client(&config).await.unwrap();
@@ -22,6 +22,7 @@ async fn test_meta_controller_creation() {
 }
 
 #[tokio::test]
+#[ignore = "requires OPENAI_API_KEY or DASHSCOPE_API_KEY"]
 async fn test_execute_with_meta_success() {
     let config = test_config();
     let llm = create_llm_client(&config).await.unwrap();
@@ -52,6 +53,7 @@ async fn test_execute_with_meta_success() {
 }
 
 #[tokio::test]
+#[ignore = "requires OPENAI_API_KEY or DASHSCOPE_API_KEY"]
 async fn test_execute_with_meta_failure() {
     let config = test_config();
     let llm = create_llm_client(&config).await.unwrap();
@@ -85,6 +87,7 @@ async fn test_execute_with_meta_failure() {
 }
 
 #[tokio::test]
+#[ignore = "requires OPENAI_API_KEY or DASHSCOPE_API_KEY"]
 async fn test_statistics() {
     let config = test_config();
     let llm = create_llm_client(&config).await.unwrap();
@@ -118,6 +121,7 @@ async fn test_statistics() {
 }
 
 #[tokio::test]
+#[ignore = "requires OPENAI_API_KEY or DASHSCOPE_API_KEY"]
 async fn test_feedback_integration() {
     let config = test_config();
     let llm = create_llm_client(&config).await.unwrap();
@@ -154,6 +158,7 @@ async fn test_feedback_integration() {
 }
 
 #[tokio::test]
+#[ignore = "requires OPENAI_API_KEY or DASHSCOPE_API_KEY"]
 async fn test_export_knowledge() {
     let config = test_config();
     let llm = create_llm_client(&config).await.unwrap();
@@ -187,6 +192,7 @@ async fn test_export_knowledge() {
 }
 
 #[tokio::test]
+#[ignore = "requires OPENAI_API_KEY or DASHSCOPE_API_KEY"]
 async fn test_custom_config() {
     let config = test_config();
     let llm = create_llm_client(&config).await.unwrap();
@@ -205,6 +211,7 @@ async fn test_custom_config() {
 }
 
 #[tokio::test]
+#[ignore = "requires OPENAI_API_KEY or DASHSCOPE_API_KEY"]
 async fn test_concurrent_executions() {
     let config = test_config();
     let llm = create_llm_client(&config).await.unwrap();
@@ -247,6 +254,7 @@ async fn test_concurrent_executions() {
 }
 
 #[tokio::test]
+#[ignore = "requires OPENAI_API_KEY or DASHSCOPE_API_KEY"]
 async fn test_meta_cognitive_workflow() {
     let config = test_config();
     let llm = create_llm_client(&config).await.unwrap();

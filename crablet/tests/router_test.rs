@@ -12,8 +12,7 @@ use serde_json::json;
 use std::sync::{Arc, Mutex};
 
 fn test_config() -> Config {
-    std::env::set_var("OPENAI_API_KEY", "sk-test");
-    Config::default()
+    Config::for_test()
 }
 
 // Mock LLM

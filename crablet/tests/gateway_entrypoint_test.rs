@@ -48,8 +48,6 @@ fn build_test_config(skills_dir: std::path::PathBuf) -> Config {
 }
 
 async fn build_gateway() -> Result<(TempDir, CrabletGateway)> {
-    std::env::set_var("OPENAI_API_KEY", "sk-test");
-
     let temp_dir = TempDir::new()?;
     let skills_dir = temp_dir.path().join("skills");
     tokio::fs::create_dir_all(&skills_dir).await?;

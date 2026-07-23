@@ -7,8 +7,6 @@ use tempfile::TempDir;
 
 #[tokio::test]
 async fn test_e2e_full_flow() -> Result<()> {
-    std::env::set_var("OPENAI_API_KEY", "sk-test");
-
     let temp_dir = TempDir::new()?;
     let skills_dir = temp_dir.path().join("skills");
 

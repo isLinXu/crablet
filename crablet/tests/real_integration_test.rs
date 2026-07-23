@@ -15,13 +15,11 @@ async fn test_real_llm_integration() {
     }
 
     let model = env::var("CRABLET_TEST_MODEL").unwrap_or_else(|_| "qwen3.6:latest".to_string());
-    env::set_var("OLLAMA_MODEL", &model);
-    // Ensure OPENAI_API_KEY is NOT set so it falls back to Ollama
-    env::remove_var("OPENAI_API_KEY");
-    env::remove_var("DASHSCOPE_API_KEY");
 
     let event_bus = Arc::new(EventBus::new(100));
-    let config = crablet::config::Config::default();
+    let mut config = crablet::config::Config::default();
+    config.ollama_model = model.clone();
+    config.openai_api_key = None; // Force Ollama fallback
 
     // Initialize Router (this will pick up OLLAMA_MODEL and use OllamaClient)
     let router = CognitiveRouter::new(&config, None, event_bus).await;
@@ -71,12 +69,11 @@ async fn test_real_llm_tool_usage() {
     }
 
     let model = env::var("CRABLET_TEST_MODEL").unwrap_or_else(|_| "qwen3.6:latest".to_string());
-    env::set_var("OLLAMA_MODEL", &model);
-    env::remove_var("OPENAI_API_KEY");
-    env::remove_var("DASHSCOPE_API_KEY");
 
     let event_bus = Arc::new(EventBus::new(100));
-    let config = crablet::config::Config::default();
+    let mut config = crablet::config::Config::default();
+    config.ollama_model = model.clone();
+    config.openai_api_key = None; // Force Ollama fallback
 
     // Initialize Router (this will pick up OLLAMA_MODEL and use OllamaClient)
     let router = CognitiveRouter::new(&config, None, event_bus).await;

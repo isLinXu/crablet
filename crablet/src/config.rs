@@ -137,6 +137,17 @@ pub struct Config {
     pub jwt_secret: Option<String>,
 }
 
+impl Config {
+    /// Create a deterministic test configuration without touching environment variables.
+    /// This avoids test race conditions caused by `std::env::set_var`.
+    pub fn for_test() -> Self {
+        Self {
+            openai_api_key: Some("sk-test".to_string()),
+            ..Self::default()
+        }
+    }
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -286,6 +297,12 @@ pub struct ProviderConfig {
     pub api_key_env: Option<String>,
     pub base_url: Option<String>,
     pub models: Vec<String>,
+    /// Per-model capability overrides. No provider capability is inferred.
+    #[serde(default)]
+    pub capabilities: HashMap<String, crate::cognitive::llm::capability::CapabilityDescriptor>,
+    /// Deterministic model fallback order within this provider.
+    #[serde(default)]
+    pub fallback_order: Vec<String>,
 }
 
 #[derive(Deserialize)]

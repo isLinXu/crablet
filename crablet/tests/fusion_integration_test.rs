@@ -42,8 +42,7 @@ impl LlmClient for MockLlm {
 }
 
 fn test_config() -> Config {
-    std::env::set_var("OPENAI_API_KEY", "sk-test");
-    Config::default()
+    Config::for_test()
 }
 
 fn build_fusion_config(temp_dir: &TempDir) -> Arc<FusionConfig> {
